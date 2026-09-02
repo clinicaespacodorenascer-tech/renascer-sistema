@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
-
+const { calcularMetricasCliente } = require("../utils/metricas");
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
 
@@ -55,6 +55,12 @@ router.get("/clientes", async (req, res) => {
   res.json(clientes);
 });
 
+// ---------- Métricas de retenção de um cliente (tempo de casa, renovações) ----------
+router.get("/clientes/:id/metricas", async (req, res) => {
+  const metricas = await calcularMetricasCliente(req.params.id);
+  if (!metricas) return res.status(404).json({ erro: "Cliente não encontrado." });
+  res.json(metricas);
+});
 // ---------- Financeiro consolidado ----------
 router.get("/financeiro", async (req, res) => {
   const { mes, ano } = req.query;
