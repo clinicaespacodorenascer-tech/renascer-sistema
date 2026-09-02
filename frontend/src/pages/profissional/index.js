@@ -235,6 +235,7 @@ function ChatCliente({ clienteId }) {
   const [mensagens, setMensagens] = useState([]);
   const [texto, setTexto] = useState("");
   const [tipo, setTipo] = useState("mensagem");
+  const [erro, setErro] = useState("");
 
   async function carregar() {
     const { data } = await api.get(`/profissional/clientes/${clienteId}/mensagens`);
@@ -246,17 +247,25 @@ function ChatCliente({ clienteId }) {
 
   async function enviar() {
     if (!texto.trim()) return;
-    if (tipo === "recado_diario") {
-      await api.post(`/profissional/clientes/${clienteId}/recado`, { texto });
-    } else {
-      await api.post(`/profissional/clientes/${clienteId}/mensagens`, { texto, tipo });
+    setErro("");
+    try {
+      if (tipo === "recado_diario") {
+        await api.post(`/profissional/clientes/${clienteId}/recado`, { texto });
+      } else {
+        await api.post(`/profissional/clientes/${clienteId}/mensagens`, { texto, tipo });
+      }
+      setTexto("");
+      carregar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível enviar a mensagem.");
     }
-    setTexto("");
-    carregar();
   }
 
   return (
     <div>
+      <p className="text-xs text-renascer-ink/50 mb-2">
+        Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
+      </p>
       <div className="h-56 overflow-y-auto border border-renascer/10 rounded-lg p-3 space-y-2 mb-3 bg-renascer-light/30">
         {mensagens.map((m) => (
           <div key={m.id} className={`text-sm ${m.autor === "PROFISSIONAL" ? "text-right" : ""}`}>
@@ -265,6 +274,7 @@ function ChatCliente({ clienteId }) {
         ))}
         {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
       </div>
+      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
       <div className="flex gap-2">
         <select className="input !w-auto" value={tipo} onChange={(e) => setTipo(e.target.value)}>
           <option value="mensagem">Mensagem</option>
