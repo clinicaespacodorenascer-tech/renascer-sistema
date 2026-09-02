@@ -355,21 +355,63 @@ function AbaFinanceiro() {
 
 // ---------------- CHAT / RECADOS ----------------
 function AbaChat() {
-  const [recados, setRecados] = useState([]);
+  const [mensagens, setMensagens] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [erro, setErro] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get("/cliente/chat");
+    setMensagens(data);
+  }
   useEffect(() => {
-    api.get("/cliente/recados").then((r) => setRecados(r.data));
+    carregar();
   }, []);
+
+  async function enviar() {
+    if (!texto.trim()) return;
+    setErro("");
+    setEnviando(true);
+    try {
+      await api.post("/cliente/chat", { texto });
+      setTexto("");
+      carregar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível enviar a mensagem.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   return (
     <div className="card">
-      <h2 className="font-semibold mb-3">Recados da sua profissional</h2>
-      <div className="space-y-2">
-        {recados.map((r) => (
-          <div key={r.id} className="border border-renascer/10 rounded-lg p-3 bg-renascer-light/30">
-            <p className="text-xs text-renascer-ink/50">{new Date(r.data).toLocaleString("pt-BR")}</p>
-            <p>{r.texto}</p>
+      <h2 className="font-semibold mb-1">Chat com sua profissional</h2>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
+      </p>
+      <div className="h-64 overflow-y-auto border border-renascer/10 rounded-lg p-3 space-y-2 mb-3 bg-renascer-light/30">
+        {mensagens.map((m) => (
+          <div key={m.id} className={`text-sm ${m.autor === "CLIENTE" ? "text-right" : ""}`}>
+            <span className="inline-block bg-white px-3 py-1.5 rounded-lg border border-renascer/10">
+              {m.tipo === "recado_diario" && <span className="block text-xs text-renascer font-medium mb-0.5">Recado do dia</span>}
+              {m.texto}
+            </span>
           </div>
         ))}
-        {recados.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum recado ainda.</p>}
+        {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
+      </div>
+      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+      <div className="flex gap-2">
+        <input
+          className="input"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && enviar()}
+          placeholder="Escreva sua mensagem..."
+        />
+        <button className="btn-primary" onClick={enviar} disabled={enviando}>
+          Enviar
+        </button>
       </div>
     </div>
   );
