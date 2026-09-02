@@ -227,7 +227,6 @@ router.post("/renovar-ou-trocar-plano", exigirContrato, async (req, res) => {
   );
   res.json({ ok: true, valor, linkWhatsapp: `https://wa.me/${WHATSAPP_RENASCER}?text=${mensagem}` });
 });
-
 // Observação: a confirmação do pagamento e a criação do pacote em si são feitas pela
 // profissional (POST /api/profissional/clientes/:id/pacotes) depois que o pagamento cai
 // no WhatsApp — o cliente nunca cria o próprio pacote, por segurança (fase 2 automatiza
@@ -332,3 +331,86 @@ router.put("/tarefas/:id/concluir", exigirContrato, async (req, res) => {
 
 // Biblioteca geral de tarefas de apoio por tema (item 17) — livre pra consulta
 router.get("/biblioteca-tarefas", async (req, res) => {
+  const { tema } = req.query;
+  const tarefas = await prisma.tarefa.findMany({
+    where: { publica: true, ...(tema ? { tema } : {}) },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json({
+    aviso: "Estas tarefas são apenas de apoio ao seu desenvolvimento pessoal. Elas não substituem diagnóstico, tratamento ou orientação profissional — fale sempre com sua profissional sobre o que sentir.",
+    tarefas,
+  });
+});
+
+// ---------- 14. Relatório do profissional (quando publicado) ----------
+router.get("/relatorios", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const relatorios = await prisma.relatorioCliente.findMany({
+    where: { clienteId, visivelParaCliente: true },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json(relatorios);
+});
+
+// ---------- 15. Videochamada ----------
+router.post("/agenda/:id/iniciar-chamada", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  // update vazio: se a profissional (ou o próprio cliente) já entrou antes, mantém o
+  // horário original de início — não reseta a duração toda vez que alguém entra de novo
+  const chamada = await prisma.chamadaVideo.upsert({
+    where: { agendamentoId: agendamento.id },
+    update: {},
+    create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
+  });
+  // Fase 2: aqui entra a criação real da sala via API do Daily.co (precisa de DAILY_API_KEY)
+  res.json({ ...chamada, aviso: process.env.DAILY_API_KEY ? undefined : "Videochamada ainda não configurada (falta DAILY_API_KEY). Sala de demonstração." });
+});
+
+router.post("/agenda/:id/encerrar-chamada", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const chamada = await prisma.chamadaVideo.findUnique({ where: { agendamentoId: agendamento.id } });
+  if (!chamada?.iniciadaEm) return res.status(400).json({ erro: "Chamada não foi iniciada." });
+  if (chamada.encerradaEm) return res.json(chamada);
+
+  const encerradaEm = new Date();
+  const duracaoMinutos = Math.round((encerradaEm.getTime() - chamada.iniciadaEm.getTime()) / 60000);
+  const atualizado = await prisma.chamadaVideo.update({
+    where: { agendamentoId: agendamento.id },
+    data: { encerradaEm, duracaoMinutos },
+  });
+  res.json(atualizado);
+});
+
+// ---------- 18. Dúvidas ----------
+router.get("/duvidas", (req, res) => {
+  res.json(FAQ_CLIENTE);
+});
+
+const FAQ_CLIENTE = [
+  { pergunta: "Como funciona o atendimento?", resposta: "Todo o atendimento do Espaço do Renascer é 100% online, feito por videochamada dentro do próprio aplicativo." },
+  { pergunta: "Posso trocar de profissional?", resposta: "Sim. Você precisa encerrar seu pacote atual e depois pode escolher uma nova profissional direto pelo app." },
+  { pergunta: "Até quando posso reagendar uma sessão?", resposta: "Reagendamentos precisam ser feitos com pelo menos 24h de antecedência da sessão marcada." },
+  { pergunta: "As tarefas de apoio substituem o acompanhamento profissional?", resposta: "Não. As tarefas são só um apoio ao seu desenvolvimento pessoal, nunca um diagnóstico ou substituto do acompanhamento com sua profissional." },
+  { pergunta: "Como faço uma reclamação sobre minha profissional?", resposta: "Na aba de Suporte, você pode abrir um chamado e marcar a opção de falar diretamente com a gerência." },
+];
+
+const TEXTO_CONTRATO = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE PSICOTERAPIA ONLINE — ESPAÇO DO RENASCER
+
+1. OBJETO: Prestação de serviços de psicoterapia/acompanhamento terapêutico, realizados exclusivamente de forma online, por profissionais parceiros do Espaço do Renascer.
+2. PACOTES E PAGAMENTO: O cliente contrata pacotes de sessões conforme os planos vigentes (30 ou 50 minutos), com pagamento antecipado via Pix ou cartão.
+3. VALIDADE DO PACOTE: Pacotes de 2 ou 4 sessões têm validade de 30 (trinta) dias corridos, contados a partir da data da contratação/pagamento, para que todas as sessões sejam utilizadas.
+4. REAGENDAMENTO: Reagendamentos devem ser solicitados com no mínimo 24 horas de antecedência da sessão marcada. Caso o reagendamento ou cancelamento seja feito com menos de 24h de antecedência, no mesmo dia ou em cima do horário já marcado, a sessão será considerada realizada e descontada normalmente do pacote.
+5. REEMBOLSO: Não são realizados reembolsos após 7 (sete) dias da contratação, conforme o prazo de arrependimento previsto no Código de Defesa do Consumidor (art. 49, Lei nº 8.078/1990).
+6. CONFIDENCIALIDADE: As informações trocadas durante o atendimento são sigilosas, respeitando o código de ética profissional aplicável.
+7. RESPONSABILIDADE: As tarefas de apoio disponibilizadas no aplicativo têm caráter exclusivamente educativo e de apoio, não configurando diagnóstico ou tratamento à distância fora das sessões.
+8. ACEITE: Ao preencher seus dados, anexar foto de documento e confirmar abaixo, o cliente declara ter lido e concordado com os termos acima.
+
+(Texto de demonstração — recomenda-se revisão por um profissional jurídico antes da publicação definitiva.)`;
+
+module.exports = router;
