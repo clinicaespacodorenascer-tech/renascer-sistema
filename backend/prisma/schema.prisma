@@ -1,0 +1,450 @@
+// Espaço do Renascer — Sistema de Gestão
+// Schema de dados (PostgreSQL via Prisma)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ENUMS ----------
+
+enum Role {
+  DONO
+  ATENDENTE
+  PROFISSIONAL
+  CLIENTE
+}
+
+enum DiaSemana {
+  SEGUNDA
+  TERCA
+  QUARTA
+  QUINTA
+  SEXTA
+  SABADO
+  DOMINGO
+}
+
+enum StatusAgendamento {
+  AGENDADO
+  CONFIRMADO
+  REALIZADO
+  CANCELADO
+  REAGENDADO
+  FALTOU
+}
+
+enum DuracaoSessao {
+  MIN30
+  MIN50
+}
+
+enum StatusPacote {
+  ATIVO
+  ENCERRADO
+  AGUARDANDO_RENOVACAO
+  CANCELADO
+}
+
+enum TipoTransacao {
+  PACOTE_NOVO
+  RENOVACAO
+  SESSAO_EXTRA
+  OUTRO
+}
+
+enum StatusSuporte {
+  ABERTO
+  EM_ANDAMENTO
+  ESCALADO_GERENCIA
+  RESOLVIDO
+}
+
+enum TemaTarefa {
+  ANSIEDADE
+  DEPRESSAO
+  RELACIONAMENTOS
+  AUTOESTIMA
+  LUTO_MUDANCAS
+  SONO
+  ESTRESSE
+  OUTRO
+}
+
+enum HumorDia {
+  MUITO_BOM
+  BOM
+  NEUTRO
+  RUIM
+  MUITO_RUIM
+}
+
+// ---------- USUÁRIO BASE ----------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  senha         String
+  role          Role
+  nome          String
+  telefone      String?
+  fotoUrl       String?
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  profissional  Profissional?
+  cliente       Cliente?
+  atendente     Atendente?
+  dono          Dono?
+
+  notificacoes  Notificacao[]
+  mensagensEnviadas Mensagem[] @relation("MensagensEnviadas")
+
+  @@map("users")
+}
+
+model Dono {
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("donos")
+}
+
+model Atendente {
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  clientesCadastrados Cliente[] @relation("CadastradoPorAtendente")
+
+  @@map("atendentes")
+}
+
+// ---------- PROFISSIONAL ----------
+
+model Profissional {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  titulo       String   // ex: "Psicóloga Clínica", "Psicanalista"
+  registro     String?  // CRP, quando houver
+  bio          String?  @db.Text
+  idade        Int?     // idade da profissional, pra atendente conseguir filtrar/indicar melhor
+  especialidades String[] @default([]) // "o que atende" / categorias (ex: Ansiedade, Relacionamentos, Autoestima)
+  abordagens   String?  // ex: "TCC, Psicanálise"
+  percentualRepasse Float @default(50) // % que fica com a profissional (padrão 50/50)
+
+  disponibilidades Disponibilidade[]
+  clientes         Cliente[]           @relation("ClienteDoProfissional")
+  agendamentos     Agendamento[]
+  transacoes       TransacaoFinanceira[]
+  relatorios       RelatorioCliente[]
+  mensagens        MensagemInterna[]    @relation("MensagensDoProfissional")
+  tarefasCriadas   Tarefa[]             @relation("TarefasCriadasPeloProfissional")
+
+  criadoEm     DateTime @default(now())
+
+  @@map("profissionais")
+}
+
+model Disponibilidade {
+  id             String       @id @default(cuid())
+  profissionalId String
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+  diaSemana      DiaSemana
+  horaInicio     String       // "08:00"
+  horaFim        String       // "12:00"
+  ativo          Boolean      @default(true)
+
+  @@map("disponibilidades")
+}
+
+// ---------- CLIENTE ----------
+
+model Cliente {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cpf            String?
+  dataNascimento DateTime?
+
+  profissionalAtualId String?
+  profissionalAtual   Profissional? @relation("ClienteDoProfissional", fields: [profissionalAtualId], references: [id])
+
+  cadastradoPorId     String?
+  cadastradoPor       Atendente? @relation("CadastradoPorAtendente", fields: [cadastradoPorId], references: [id])
+
+  contrato       Contrato?
+  pacotes        Pacote[]
+  agendamentos   Agendamento[]
+  transacoes     TransacaoFinanceira[]
+  relatorios     RelatorioCliente[]
+  recados        RecadoDiario[]
+  checkins       CheckinDiario[]
+  tarefasAtribuidas TarefaCliente[]
+  tickets        TicketSuporte[]
+  mensagens      MensagemInterna[] @relation("MensagensDoCliente")
+
+  criadoEm       DateTime @default(now())
+
+  @@map("clientes")
+}
+
+// Contrato de aceite (item 16 do cliente)
+model Contrato {
+  id            String   @id @default(cuid())
+  clienteId     String   @unique
+  cliente       Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  nomeCompleto  String
+  cpf           String
+  fotoDocumentoUrl String
+  fotoRostoUrl     String?
+  versaoContrato   String   @default("1.0")
+  aceitoEm         DateTime?
+  ip               String?
+
+  @@map("contratos")
+}
+
+// ---------- PACOTES / PLANOS ----------
+// Planos fixos do Espaço do Renascer (30min: 1/2/4 sessões — 50min: 1/2/4 sessões)
+
+model Pacote {
+  id             String        @id @default(cuid())
+  clienteId      String
+  cliente        Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  profissionalId String
+
+  duracao        DuracaoSessao
+  totalSessoes   Int           // 1, 2 ou 4
+  sessoesUsadas  Int           @default(0)
+  valorTotal     Float
+  status         StatusPacote  @default(ATIVO)
+
+  iniciadoEm     DateTime      @default(now())
+  encerradoEm    DateTime?
+
+  agendamentos   Agendamento[]
+
+  @@map("pacotes")
+}
+
+// ---------- AGENDA ----------
+
+model Agendamento {
+  id             String            @id @default(cuid())
+  profissionalId String
+  profissional   Profissional      @relation(fields: [profissionalId], references: [id])
+  clienteId      String
+  cliente        Cliente           @relation(fields: [clienteId], references: [id])
+  pacoteId       String?
+  pacote         Pacote?           @relation(fields: [pacoteId], references: [id])
+
+  data           DateTime
+  diaSemana      DiaSemana
+  horaInicio     String
+  duracao        DuracaoSessao
+  status         StatusAgendamento @default(AGENDADO)
+
+  reagendadoDe   String?           // id do agendamento original, se veio de reagendamento
+  motivoCancelamento String?
+
+  chamadaVideo   ChamadaVideo?
+
+  criadoEm       DateTime          @default(now())
+  atualizadoEm   DateTime          @updatedAt
+
+  @@map("agendamentos")
+}
+
+// Videochamada (Daily.co) — registro de duração exata
+model ChamadaVideo {
+  id             String       @id @default(cuid())
+  agendamentoId  String       @unique
+  agendamento    Agendamento  @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  provider       String       @default("daily") // "daily" | "jitsi" | etc
+  roomUrl        String?
+  roomName       String?
+  iniciadaEm     DateTime?
+  encerradaEm    DateTime?
+  duracaoMinutos Int?
+
+  criadoEm       DateTime     @default(now())
+
+  @@map("chamadas_video")
+}
+
+// ---------- FINANCEIRO ----------
+
+model TransacaoFinanceira {
+  id             String         @id @default(cuid())
+  profissionalId String
+  profissional   Profissional   @relation(fields: [profissionalId], references: [id])
+  clienteId      String?
+  cliente        Cliente?       @relation(fields: [clienteId], references: [id])
+
+  tipo           TipoTransacao  @default(OUTRO)
+  valorTotal     Float
+  valorProfissional Float       // já calculado (percentualRepasse)
+  valorRenascer     Float
+
+  comprovanteUrl String?
+  reconhecidoPorIA Boolean      @default(false)
+  dadosBrutosIA    String?      @db.Text // resposta crua da IA (auditoria)
+
+  data           DateTime       @default(now())
+  observacao     String?
+
+  criadoEm       DateTime       @default(now())
+
+  @@map("transacoes_financeiras")
+}
+
+// ---------- RELATÓRIOS DE CLIENTE ----------
+
+model RelatorioCliente {
+  id             String       @id @default(cuid())
+  profissionalId String
+  profissional   Profissional @relation(fields: [profissionalId], references: [id])
+  clienteId      String
+  cliente        Cliente      @relation(fields: [clienteId], references: [id])
+
+  titulo         String
+  conteudo       String       @db.Text
+  visivelParaCliente Boolean  @default(false)
+
+  criadoEm       DateTime     @default(now())
+
+  @@map("relatorios_cliente")
+}
+
+// ---------- COMUNICAÇÃO ----------
+
+// Chat profissional <-> cliente (item 3 do profissional / itens 8,9 do cliente)
+model MensagemInterna {
+  id             String       @id @default(cuid())
+  profissionalId String
+  profissional   Profissional @relation("MensagensDoProfissional", fields: [profissionalId], references: [id])
+  clienteId      String
+  cliente        Cliente      @relation("MensagensDoCliente", fields: [clienteId], references: [id])
+
+  autor          Role         // PROFISSIONAL ou CLIENTE
+  texto          String       @db.Text
+  tipo           String       @default("mensagem") // "mensagem" | "recado_diario" | "checkin"
+
+  lida           Boolean      @default(false)
+  criadoEm       DateTime     @default(now())
+
+  @@map("mensagens_internas")
+}
+
+// Recado do profissional pro dia do cliente (item 8 do cliente)
+model RecadoDiario {
+  id         String   @id @default(cuid())
+  clienteId  String
+  cliente    Cliente  @relation(fields: [clienteId], references: [id])
+  texto      String   @db.Text
+  data       DateTime @default(now())
+
+  @@map("recados_diarios")
+}
+
+// Diário de humor do cliente (item 9 do cliente) — opcional, todo dia
+model CheckinDiario {
+  id         String   @id @default(cuid())
+  clienteId  String
+  cliente    Cliente  @relation(fields: [clienteId], references: [id])
+  humor      HumorDia
+  nota       String?  @db.Text
+  tarefaFeita Boolean?
+  data       DateTime @default(now())
+
+  @@map("checkins_diarios")
+}
+
+// Mensagem genérica (suporte, sistema)
+model Mensagem {
+  id         String   @id @default(cuid())
+  remetenteId String
+  remetente   User    @relation("MensagensEnviadas", fields: [remetenteId], references: [id])
+  ticketId    String?
+  ticket      TicketSuporte? @relation(fields: [ticketId], references: [id])
+  texto       String  @db.Text
+  anexoUrl    String?
+  criadoEm    DateTime @default(now())
+
+  @@map("mensagens")
+}
+
+// Suporte / chat com atendente-psicólogo / escalonamento pra gerência (item 7 e 19)
+model TicketSuporte {
+  id          String        @id @default(cuid())
+  clienteId   String
+  cliente     Cliente       @relation(fields: [clienteId], references: [id])
+  assunto     String
+  status      StatusSuporte @default(ABERTO)
+  escalonadoGerencia Boolean @default(false)
+  mensagens   Mensagem[]
+
+  criadoEm    DateTime      @default(now())
+  atualizadoEm DateTime     @updatedAt
+
+  @@map("tickets_suporte")
+}
+
+// ---------- TAREFAS DE APOIO ----------
+// Biblioteca de tarefas por tema (item 17) — apoio, nunca diagnóstico
+
+model Tarefa {
+  id             String     @id @default(cuid())
+  criadaPorId    String?
+  criadaPor      Profissional? @relation("TarefasCriadasPeloProfissional", fields: [criadaPorId], references: [id])
+
+  tema           TemaTarefa
+  titulo         String
+  descricao      String     @db.Text
+  publica        Boolean    @default(true) // aparece na biblioteca geral
+
+  atribuicoes    TarefaCliente[]
+  criadoEm       DateTime   @default(now())
+
+  @@map("tarefas")
+}
+
+model TarefaCliente {
+  id         String   @id @default(cuid())
+  tarefaId   String
+  tarefa     Tarefa   @relation(fields: [tarefaId], references: [id])
+  clienteId  String
+  cliente    Cliente  @relation(fields: [clienteId], references: [id])
+  concluida  Boolean  @default(false)
+  atribuidoEm DateTime @default(now())
+  concluidoEm DateTime?
+
+  @@map("tarefas_cliente")
+}
+
+// ---------- NOTIFICAÇÕES ----------
+
+model Notificacao {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  titulo    String
+  mensagem  String
+  tipo      String   // "renovacao" | "pendencia" | "tarefa" | "financeiro" | "sistema"
+  lida      Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+
+  @@map("notificacoes")
+}
