@@ -88,11 +88,13 @@ function Profissionais() {
 
 function Clientes() {
   const [lista, setLista] = useState([]);
+  const [expandido, setExpandido] = useState(null);
   useEffect(() => {
     api.get("/dono/clientes").then((r) => setLista(r.data));
   }, []);
   return (
     <div className="card overflow-x-auto">
+      <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-renascer-ink/50">
@@ -103,16 +105,61 @@ function Clientes() {
           </tr>
         </thead>
         <tbody>
-          {lista.map((c) => (
-            <tr key={c.id} className="border-t border-renascer/10">
-              <td className="py-1">{c.user.nome}</td>
-              <td>{c.profissionalAtual?.user?.nome || "-"}</td>
-              <td>{c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes}` : "-"}</td>
-              <td>{c.pacotes[0]?.status || "-"}</td>
-            </tr>
-          ))}
+          {lista.flatMap((c) => {
+            const linhas = [
+              <tr
+                key={c.id}
+                className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
+                onClick={() => setExpandido(expandido === c.id ? null : c.id)}
+              >
+                <td className="py-1">{c.user.nome}</td>
+                <td>{c.profissionalAtual?.user?.nome || "-"}</td>
+                <td>{c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes}` : "-"}</td>
+                <td>{c.pacotes[0]?.status || "-"}</td>
+              </tr>,
+            ];
+            if (expandido === c.id) {
+              linhas.push(
+                <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
+                  <td colSpan={4} className="py-2">
+                    <MetricasCliente clienteId={c.id} rotaBase="/dono" />
+                  </td>
+                </tr>
+              );
+            }
+            return linhas;
+          })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function MetricasCliente({ clienteId, rotaBase }) {
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    api.get(`${rotaBase}/clientes/${clienteId}/metricas`).then((r) => setM(r.data));
+  }, [clienteId, rotaBase]);
+
+  if (!m) return <p className="text-xs text-renascer-ink/40">Carregando métricas...</p>;
+
+  const cartoes = [
+    ["Cliente desde", new Date(m.clienteDesde).toLocaleDateString("pt-BR")],
+    ["Tempo de casa", `${m.diasDeCasa} dia(s)`],
+    ["Pacotes contratados", m.totalPacotesContratados],
+    ["Renovações", m.renovacoes],
+    ["Sessões realizadas", m.sessoesRealizadas],
+    ["Total pago", `R$ ${m.valorTotalPago.toFixed(2)}`],
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {cartoes.map(([label, valor]) => (
+        <div key={label} className="bg-white border border-renascer/10 rounded-lg p-2">
+          <p className="text-xs text-renascer-ink/50">{label}</p>
+          <p className="font-semibold text-renascer">{valor}</p>
+        </div>
+      ))}
     </div>
   );
 }
