@@ -365,8 +365,13 @@ router.post("/agenda/:id/iniciar-chamada", exigirContrato, async (req, res) => {
     update: {},
     create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
   });
-  // Fase 2: aqui entra a criação real da sala via API do Daily.co (precisa de DAILY_API_KEY)
-  res.json({ ...chamada, aviso: process.env.DAILY_API_KEY ? undefined : "Videochamada ainda não configurada (falta DAILY_API_KEY). Sala de demonstração." });
+  // A sala é o link fixo do Google Meet cadastrado pela própria profissional no perfil dela
+  const profissional = await prisma.profissional.findUnique({ where: { id: agendamento.profissionalId }, select: { linkMeet: true } });
+  res.json({
+    ...chamada,
+    linkMeet: profissional?.linkMeet || null,
+    aviso: profissional?.linkMeet ? undefined : "Sua profissional ainda não cadastrou o link da videochamada. Entre em contato com a recepção do Espaço do Renascer.",
+  });
 });
 
 router.post("/agenda/:id/encerrar-chamada", exigirContrato, async (req, res) => {
