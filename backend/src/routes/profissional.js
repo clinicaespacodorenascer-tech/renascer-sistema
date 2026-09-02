@@ -117,6 +117,40 @@ router.put("/agenda/:id/status", async (req, res) => {
   res.json(atualizado);
 });
 
+// Videochamada (espelha as rotas do cliente — as duas pontas usam o mesmo registro
+// de ChamadaVideo, ligado ao agendamento, então quem entra primeiro "inicia" e o
+// outro lado só acompanha o mesmo horário/duração registrados)
+router.post("/agenda/:id/iniciar-chamada", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, profissionalId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const chamada = await prisma.chamadaVideo.upsert({
+    where: { agendamentoId: agendamento.id },
+    update: {},
+    create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
+  });
+  res.json({ ...chamada, aviso: process.env.DAILY_API_KEY ? undefined : "Videochamada ainda não configurada (falta DAILY_API_KEY). Sala de demonstração." });
+});
+
+router.post("/agenda/:id/encerrar-chamada", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, profissionalId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const chamada = await prisma.chamadaVideo.findUnique({ where: { agendamentoId: agendamento.id } });
+  if (!chamada?.iniciadaEm) return res.status(400).json({ erro: "Chamada não foi iniciada." });
+  if (chamada.encerradaEm) return res.json(chamada);
+
+  const encerradaEm = new Date();
+  const duracaoMinutos = Math.round((encerradaEm.getTime() - chamada.iniciadaEm.getTime()) / 60000);
+  const atualizado = await prisma.chamadaVideo.update({
+    where: { agendamentoId: agendamento.id },
+    data: { encerradaEm, duracaoMinutos },
+  });
+  res.json(atualizado);
+});
+
 // Imprevisto / reagendar por iniciativa da profissional
 router.post("/agenda/:id/reagendar", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
