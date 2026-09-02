@@ -104,29 +104,26 @@ router.get("/agenda/disponibilidade", exigirContrato, async (req, res) => {
   res.json({ disponibilidades, ocupados });
 });
 
+// Fase atual (combinada com a Renascer): quem marca a sessão é a atendente, que já
+// desconta a agenda real da profissional (ver rota /atendente/agendamentos). O
+// agendamento direto pelo cliente fica pausado por enquanto para não gerar horário
+// duplicado ou fora da disponibilidade real — é só reativar esta rota quando a fase
+// de auto-agendamento do cliente for ligada.
 router.post("/agenda/agendar", exigirContrato, async (req, res) => {
-  const clienteId = await getClienteId(req);
-  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId }, include: { pacotes: { where: { status: "ATIVO" } } } });
-  if (!cliente.profissionalAtualId) return res.status(400).json({ erro: "Você ainda não tem uma profissional vinculada." });
-
-  const pacote = cliente.pacotes[0];
-  if (!pacote || pacote.sessoesUsadas >= pacote.totalSessoes) {
-    return res.status(400).json({ erro: "Você não tem sessões disponíveis no pacote atual. Renove ou escolha um plano." });
-  }
-
-  const { data, diaSemana, horaInicio, duracao } = req.body;
-  const agendamento = await prisma.agendamento.create({
-    data: {
-      profissionalId: cliente.profissionalAtualId,
-      clienteId,
-      pacoteId: pacote.id,
-      data: new Date(data),
-      diaSemana,
-      horaInicio,
-      duracao,
-    },
+  res.status(400).json({
+    erro: "Agendamento direto pelo app ainda não está disponível. Fale com a recepção do Espaço do Renascer para marcar sua sessão.",
   });
-  res.json(agendamento);
+});
+
+// Lista as sessões já marcadas do próprio cliente (passadas e futuras)
+router.get("/agenda", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamentos = await prisma.agendamento.findMany({
+    where: { clienteId },
+    include: { profissional: { include: { user: { select: { nome: true } } } } },
+    orderBy: { data: "asc" },
+  });
+  res.json(agendamentos);
 });
 
 // ---------- 2. Reagendar (regra de 24h de antecedência) ----------
@@ -335,81 +332,3 @@ router.put("/tarefas/:id/concluir", exigirContrato, async (req, res) => {
 
 // Biblioteca geral de tarefas de apoio por tema (item 17) — livre pra consulta
 router.get("/biblioteca-tarefas", async (req, res) => {
-  const { tema } = req.query;
-  const tarefas = await prisma.tarefa.findMany({
-    where: { publica: true, ...(tema ? { tema } : {}) },
-    orderBy: { criadoEm: "desc" },
-  });
-  res.json({
-    aviso: "Estas tarefas são apenas de apoio ao seu desenvolvimento pessoal. Elas não substituem diagnóstico, tratamento ou orientação profissional — fale sempre com sua profissional sobre o que sentir.",
-    tarefas,
-  });
-});
-
-// ---------- 14. Relatório do profissional (quando publicado) ----------
-router.get("/relatorios", exigirContrato, async (req, res) => {
-  const clienteId = await getClienteId(req);
-  const relatorios = await prisma.relatorioCliente.findMany({
-    where: { clienteId, visivelParaCliente: true },
-    orderBy: { criadoEm: "desc" },
-  });
-  res.json(relatorios);
-});
-
-// ---------- 15. Videochamada ----------
-router.post("/agenda/:id/iniciar-chamada", exigirContrato, async (req, res) => {
-  const clienteId = await getClienteId(req);
-  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
-  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
-
-  const chamada = await prisma.chamadaVideo.upsert({
-    where: { agendamentoId: agendamento.id },
-    update: { iniciadaEm: new Date() },
-    create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
-  });
-  // Fase 2: aqui entra a criação real da sala via API do Daily.co (precisa de DAILY_API_KEY)
-  res.json({ ...chamada, aviso: process.env.DAILY_API_KEY ? undefined : "Videochamada ainda não configurada (falta DAILY_API_KEY). Sala de demonstração." });
-});
-
-router.post("/agenda/:id/encerrar-chamada", exigirContrato, async (req, res) => {
-  const clienteId = await getClienteId(req);
-  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
-  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
-
-  const chamada = await prisma.chamadaVideo.findUnique({ where: { agendamentoId: agendamento.id } });
-  if (!chamada?.iniciadaEm) return res.status(400).json({ erro: "Chamada não foi iniciada." });
-
-  const encerradaEm = new Date();
-  const duracaoMinutos = Math.round((encerradaEm.getTime() - chamada.iniciadaEm.getTime()) / 60000);
-  const atualizado = await prisma.chamadaVideo.update({
-    where: { agendamentoId: agendamento.id },
-    data: { encerradaEm, duracaoMinutos },
-  });
-  res.json(atualizado);
-});
-
-// ---------- 18. Dúvidas ----------
-router.get("/duvidas", (req, res) => {
-  res.json(FAQ_CLIENTE);
-});
-
-const FAQ_CLIENTE = [
-  { pergunta: "Como funciona o atendimento?", resposta: "Todo o atendimento do Espaço do Renascer é 100% online, feito por videochamada dentro do próprio aplicativo." },
-  { pergunta: "Posso trocar de profissional?", resposta: "Sim. Você precisa encerrar seu pacote atual e depois pode escolher uma nova profissional direto pelo app." },
-  { pergunta: "Até quando posso reagendar uma sessão?", resposta: "Reagendamentos precisam ser feitos com pelo menos 24h de antecedência da sessão marcada." },
-  { pergunta: "As tarefas de apoio substituem o acompanhamento profissional?", resposta: "Não. As tarefas são só um apoio ao seu desenvolvimento pessoal, nunca um diagnóstico ou substituto do acompanhamento com sua profissional." },
-  { pergunta: "Como faço uma reclamação sobre minha profissional?", resposta: "Na aba de Suporte, você pode abrir um chamado e marcar a opção de falar diretamente com a gerência." },
-];
-
-const TEXTO_CONTRATO = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE PSICOTERAPIA ONLINE — ESPAÇO DO RENASCER
-
-1. OBJETO: Prestação de serviços de psicoterapia/acompanhamento terapêutico, realizados exclusivamente de forma online, por profissionais parceiros do Espaço do Renascer.
-2. PACOTES E PAGAMENTO: O cliente contrata pacotes de sessões conforme os planos vigentes (30 ou 50 minutos), com pagamento antecipado via Pix ou cartão.
-3. REAGENDAMENTO: Reagendamentos devem ser solicitados com no mínimo 24 horas de antecedência.
-4. CONFIDENCIALIDADE: As informações trocadas durante o atendimento são sigilosas, respeitando o código de ética profissional aplicável.
-5. RESPONSABILIDADE: As tarefas de apoio disponibilizadas no aplicativo têm caráter exclusivamente educativo e de apoio, não configurando diagnóstico ou tratamento à distância fora das sessões.
-6. ACEITE: Ao preencher seus dados, anexar foto de documento e confirmar abaixo, o cliente declara ter lido e concordado com os termos acima.
-
-(Texto de demonstração — recomenda-se revisão por um profissional jurídico antes da publicação definitiva.)`;
-
-module.exports = router;
