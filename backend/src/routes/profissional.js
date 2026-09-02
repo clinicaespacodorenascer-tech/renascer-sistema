@@ -44,7 +44,8 @@ router.put("/perfil", async (req, res) => {
       ...(bio !== undefined && { bio }),
       ...(idade !== undefined && { idade: idade ? Number(idade) : null }),
       ...(especialidades !== undefined && { especialidades }),
-      ...(abordagens !== undefined && { abordagens }),
+            ...(abordagens !== undefined && { abordagens }),
+      ...(linkMeet !== undefined && { linkMeet: linkMeet || null }),
     },
     include: { user: { select: { nome: true, fotoUrl: true } } },
   });
