@@ -228,8 +228,9 @@ function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [form, setForm] = useState({ nome: "", email: "", telefone: "", profissionalAtualId: "" });
-  const [resultado, setResultado] = useState(null);
+    const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
+  const [expandido, setExpandido] = useState(null);
 
   async function carregar() {
     const [c, p] = await Promise.all([api.get("/atendente/clientes"), api.get("/atendente/profissionais")]);
@@ -281,8 +282,22 @@ function Clientes() {
         )}
       </div>
 
-      <div className="card overflow-x-auto">
+        const [resultado, setResultado] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [expandido, setExpandido] = useState(null);
+
+  async function carregar() {
+    const [c, p] = await Promise.all([api.get("/atendente/clientes"), api.get("/atendente/profissionais")]);
+
+function AgendaGeral() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    api.get("/atendente/agenda-geral").then((r) => setLista(r.data));
+  }, []);
+  return (
+          <div className="card overflow-x-auto">
         <h2 className="font-semibold mb-2">Clientes cadastrados</h2>
+        <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-renascer-ink/50">
@@ -292,13 +307,29 @@ function Clientes() {
             </tr>
           </thead>
           <tbody>
-            {lista.map((c) => (
-              <tr key={c.id} className="border-t border-renascer/10">
-                <td className="py-1">{c.user.nome}</td>
-                <td>{c.user.email}</td>
-                <td>{c.profissionalAtual?.user?.nome || "-"}</td>
-              </tr>
-            ))}
+            {lista.flatMap((c) => {
+              const linhas = [
+                <tr
+                  key={c.id}
+                  className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
+                  onClick={() => setExpandido(expandido === c.id ? null : c.id)}
+                >
+                  <td className="py-1">{c.user.nome}</td>
+                  <td>{c.user.email}</td>
+                  <td>{c.profissionalAtual?.user?.nome || "-"}</td>
+                </tr>,
+              ];
+              if (expandido === c.id) {
+                linhas.push(
+                  <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
+                    <td colSpan={3} className="py-2">
+                      <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
+                    </td>
+                  </tr>
+                );
+              }
+              return linhas;
+            })}
           </tbody>
         </table>
       </div>
@@ -306,33 +337,31 @@ function Clientes() {
   );
 }
 
-function AgendaGeral() {
-  const [lista, setLista] = useState([]);
+function MetricasCliente({ clienteId, rotaBase }) {
+  const [m, setM] = useState(null);
   useEffect(() => {
-    api.get("/atendente/agenda-geral").then((r) => setLista(r.data));
-  }, []);
+    api.get(`${rotaBase}/clientes/${clienteId}/metricas`).then((r) => setM(r.data));
+  }, [clienteId, rotaBase]);
+
+  if (!m) return <p className="text-xs text-renascer-ink/40">Carregando métricas...</p>;
+
+  const cartoes = [
+    ["Cliente desde", new Date(m.clienteDesde).toLocaleDateString("pt-BR")],
+    ["Tempo de casa", `${m.diasDeCasa} dia(s)`],
+    ["Pacotes contratados", m.totalPacotesContratados],
+    ["Renovações", m.renovacoes],
+    ["Sessões realizadas", m.sessoesRealizadas],
+    ["Total pago", `R$ ${m.valorTotalPago.toFixed(2)}`],
+  ];
+
   return (
-    <div className="card overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-renascer-ink/50">
-            <th>Data</th>
-            <th>Profissional</th>
-            <th>Cliente</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map((a) => (
-            <tr key={a.id} className="border-t border-renascer/10">
-              <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
-              <td>{a.profissional.user.nome}</td>
-              <td>{a.cliente.user.nome}</td>
-              <td>{a.status}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {cartoes.map(([label, valor]) => (
+        <div key={label} className="bg-white border border-renascer/10 rounded-lg p-2">
+          <p className="text-xs text-renascer-ink/50">{label}</p>
+          <p className="font-semibold text-renascer">{valor}</p>
+        </div>
+      ))}
     </div>
   );
 }
