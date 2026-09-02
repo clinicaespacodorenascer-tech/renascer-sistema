@@ -140,7 +140,7 @@ model Profissional {
   especialidades String[] @default([]) // "o que atende" / categorias (ex: Ansiedade, Relacionamentos, Autoestima)
   abordagens   String?  // ex: "TCC, Psicanálise"
   percentualRepasse Float @default(50) // % que fica com a profissional (padrão 50/50)
-
+  linkMeet     String?  // link fixo do Google Meet da profissional, usado em todas as sessões dela
   disponibilidades Disponibilidade[]
   clientes         Cliente[]           @relation("ClienteDoProfissional")
   agendamentos     Agendamento[]
