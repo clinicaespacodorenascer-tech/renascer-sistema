@@ -520,6 +520,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   const [idade, setIdade] = useState(perfil.idade || "");
   const [bio, setBio] = useState(perfil.bio || "");
   const [abordagens, setAbordagens] = useState(perfil.abordagens || "");
+    const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
   const [especialidades, setEspecialidades] = useState(perfil.especialidades || []);
   const [foto, setFoto] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -547,9 +548,9 @@ function PerfilCompleto({ perfil, onAtualizado }) {
         titulo,
         registro,
         idade: idade || null,
-        bio,
-        abordagens,
+                abordagens,
         especialidades,
+        linkMeet,
         ...(fotoBase64 && { fotoBase64 }),
       });
       setMsg("Perfil atualizado! A atendente já vê essas informações pra te encaixar certinho.");
@@ -605,7 +606,22 @@ function PerfilCompleto({ perfil, onAtualizado }) {
 
       <textarea className="input" rows={3} placeholder="Bio curta" value={bio} onChange={(e) => setBio(e.target.value)} />
 
-      <button className="btn-primary" onClick={salvar} disabled={salvando}>
+      
+          <div>
+  <label className="text-sm text-renascer-ink/60 block mb-1">
+    Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
+  </label>
+  <input
+    className="input"
+    placeholder="https://meet.google.com/xxx-xxxx-xxx"
+    value={linkMeet}
+    onChange={(e) => setLinkMeet(e.target.value)}
+  />
+  <p className="text-xs text-renascer-ink/50 mt-1">
+    Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
+  </p>
+</div>
+          <button className="btn-primary" onClick={salvar} disabled={salvando}>
         {salvando ? "Salvando..." : "Salvar perfil"}
       </button>
       {msg && <p className="text-sm">{msg}</p>}
