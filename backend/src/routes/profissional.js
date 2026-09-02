@@ -4,7 +4,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { calcularRepasse, valorDoPlano } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
-
+const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const router = express.Router();
 router.use(autenticar, permitir("PROFISSIONAL"));
 
@@ -200,6 +200,9 @@ router.get("/clientes/:clienteId/mensagens", async (req, res) => {
 router.post("/clientes/:clienteId/mensagens", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { texto, tipo } = req.body;
+  if (contemTelefone(texto)) {
+    return res.status(400).json({ erro: MENSAGEM_BLOQUEIO });
+  }
   const msg = await prisma.mensagemInterna.create({
     data: { profissionalId, clienteId: req.params.clienteId, autor: "PROFISSIONAL", texto, tipo: tipo || "mensagem" },
   });
@@ -217,6 +220,9 @@ router.post("/clientes/:clienteId/mensagens", async (req, res) => {
 // Recado sobre o dia (imprevisto / o que vai trabalhar) — vira RecadoDiario visível ao cliente
 router.post("/clientes/:clienteId/recado", async (req, res) => {
   const { texto } = req.body;
+  if (contemTelefone(texto)) {
+    return res.status(400).json({ erro: MENSAGEM_BLOQUEIO });
+  }
   const recado = await prisma.recadoDiario.create({ data: { clienteId: req.params.clienteId, texto } });
   const cliente = await prisma.cliente.findUnique({ where: { id: req.params.clienteId } });
   await notificar(cliente.userId, { titulo: "Recado da sua profissional", mensagem: texto.slice(0, 120), tipo: "sistema" });
