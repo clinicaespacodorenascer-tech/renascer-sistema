@@ -15,6 +15,9 @@ export default function VideoChamadaProfissional() {
     const { data } = await api.post(`/profissional/agenda/${agendamentoId}/iniciar-chamada`);
     setChamada(data);
     setAviso(data.aviso || "");
+    if (data.linkMeet) {
+      window.open(data.linkMeet, "_blank", "noopener,noreferrer");
+    }
   }
 
   async function encerrar() {
@@ -29,8 +32,24 @@ export default function VideoChamadaProfissional() {
       <div className="card max-w-2xl mx-auto text-center">
         <h1 className="text-xl font-semibold mb-3">Sessão por videochamada</h1>
         {aviso && <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 text-sm mb-3">{aviso}</p>}
-        <div className="aspect-video bg-renascer-ink/90 rounded-xl flex items-center justify-center text-white mb-4">
-          {chamada?.iniciadaEm && !chamada?.encerradaEm ? "Chamada em andamento..." : "A chamada aparecerá aqui"}
+        <div className="aspect-video bg-renascer-ink/90 rounded-xl flex flex-col items-center justify-center text-white mb-4 gap-3">
+          {chamada?.iniciadaEm && !chamada?.encerradaEm ? (
+            <>
+              <span>Sessão em andamento.</span>
+              {chamada?.linkMeet && (
+                
+                  href={chamada.linkMeet}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary"
+                >
+                  Abrir Google Meet
+                </a>
+              )}
+            </>
+          ) : (
+            <span>A sala do Google Meet vai abrir em uma nova aba quando você entrar.</span>
+          )}
         </div>
         <div className="flex justify-center gap-3">
           {!chamada?.iniciadaEm && (
