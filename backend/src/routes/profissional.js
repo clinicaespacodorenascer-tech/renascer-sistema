@@ -5,6 +5,8 @@ const { calcularRepasse, valorDoPlano } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
+
+const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 const router = express.Router();
 router.use(autenticar, permitir("PROFISSIONAL"));
 
@@ -116,7 +118,44 @@ router.put("/agenda/:id/status", async (req, res) => {
 
   res.json(atualizado);
 });
+// Move a sessão pra outro dia da mesma semana (drag-and-drop na Agenda), mantendo o
+// mesmo horário. Bloqueia se já existir outra sessão dela nesse horário no dia de destino.
+router.put("/agenda/:id/mover", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const { novoDiaSemana } = req.body;
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, profissionalId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+  if (agendamento.status === "REALIZADO" || agendamento.status === "CANCELADO") {
+    return res.status(400).json({ erro: "Não é possível mover uma sessão já realizada ou cancelada." });
+  }
 
+  const indiceAtual = DIAS_SEMANA_JS.indexOf(agendamento.diaSemana);
+  const indiceNovo = DIAS_SEMANA_JS.indexOf(novoDiaSemana);
+  if (indiceNovo === -1) return res.status(400).json({ erro: "Dia da semana inválido." });
+  if (indiceNovo === indiceAtual) return res.json(agendamento);
+
+  const novaData = new Date(agendamento.data);
+  novaData.setDate(novaData.getDate() + (indiceNovo - indiceAtual));
+
+  const conflito = await prisma.agendamento.findFirst({
+    where: {
+      profissionalId,
+      id: { not: agendamento.id },
+      data: novaData,
+      horaInicio: agendamento.horaInicio,
+      status: { in: ["AGENDADO", "CONFIRMADO"] },
+    },
+  });
+  if (conflito) {
+    return res.status(400).json({ erro: "Já existe uma sessão marcada nesse horário no dia de destino." });
+  }
+
+  const atualizado = await prisma.agendamento.update({
+    where: { id: agendamento.id },
+    data: { diaSemana: novoDiaSemana, data: novaData },
+  });
+  res.json(atualizado);
+});
 // Videochamada (espelha as rotas do cliente — as duas pontas usam o mesmo registro
 // de ChamadaVideo, ligado ao agendamento, então quem entra primeiro "inicia" e o
 // outro lado só acompanha o mesmo horário/duração registrados)
