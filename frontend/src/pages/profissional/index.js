@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
@@ -93,14 +94,22 @@ function AbaAgenda() {
                   <p className="text-sm font-medium">{ag.horaInicio} · {ag.cliente.user.nome}</p>
                   <span className={`badge mt-1 ${STATUS_COR[ag.status]}`}>{ag.status}</span>
                   {ag.status !== "REALIZADO" && ag.status !== "CANCELADO" && (
-                    <div className="flex gap-1 mt-2">
-                      <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
-                        Realizada
-                      </button>
-                      <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
-                        Cancelar
-                      </button>
-                    </div>
+                    <>
+                      <Link
+                        href={`/profissional/videochamada/${ag.id}`}
+                        className="block text-xs text-renascer underline mt-2"
+                      >
+                        🎥 Entrar na videochamada
+                      </Link>
+                      <div className="flex gap-1 mt-1">
+                        <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
+                          Realizada
+                        </button>
+                        <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
