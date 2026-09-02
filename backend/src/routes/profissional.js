@@ -130,7 +130,12 @@ router.post("/agenda/:id/iniciar-chamada", async (req, res) => {
     update: {},
     create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
   });
-  res.json({ ...chamada, aviso: process.env.DAILY_API_KEY ? undefined : "Videochamada ainda não configurada (falta DAILY_API_KEY). Sala de demonstração." });
+  const profissional = await prisma.profissional.findUnique({ where: { id: profissionalId }, select: { linkMeet: true } });
+  res.json({
+    ...chamada,
+    linkMeet: profissional?.linkMeet || null,
+    aviso: profissional?.linkMeet ? undefined : "Você ainda não cadastrou seu link do Google Meet. Vá em Perfil e cole o link da sua sala fixa.",
+  });
 });
 
 router.post("/agenda/:id/encerrar-chamada", async (req, res) => {
