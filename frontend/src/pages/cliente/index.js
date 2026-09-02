@@ -159,49 +159,50 @@ function AbaPainel() {
 }
 
 // ---------------- AGENDA / TROCA DE PROFISSIONAL ----------------
+const STATUS_COR_CLIENTE = {
+  AGENDADO: "bg-blue-100 text-blue-700",
+  CONFIRMADO: "bg-emerald-100 text-emerald-700",
+  REALIZADO: "bg-renascer-light text-renascer",
+  CANCELADO: "bg-red-100 text-red-700",
+  REAGENDADO: "bg-amber-100 text-amber-700",
+  FALTOU: "bg-gray-200 text-gray-600",
+};
+
 function AbaAgenda() {
-  const [disp, setDisp] = useState(null);
-  const [form, setForm] = useState({ diaSemana: "SEGUNDA", horaInicio: "", duracao: "MIN50", data: "" });
-  const [msg, setMsg] = useState("");
+  const [sessoes, setSessoes] = useState(null);
   const [mostrarTroca, setMostrarTroca] = useState(false);
 
   useEffect(() => {
-    api.get("/cliente/agenda/disponibilidade").then((r) => setDisp(r.data)).catch((e) => setMsg(e?.response?.data?.erro || ""));
+    api.get("/cliente/agenda").then((r) => setSessoes(r.data));
   }, []);
-
-  async function agendar() {
-    setMsg("");
-    try {
-      await api.post("/cliente/agenda/agendar", form);
-      setMsg("Sessão agendada com sucesso!");
-    } catch (e) {
-      setMsg(e?.response?.data?.erro || "Não foi possível agendar.");
-    }
-  }
 
   return (
     <div className="space-y-6">
       <div className="card">
-        <h2 className="font-semibold mb-3">Agendar nova sessão</h2>
-        {msg && <p className="text-sm mb-2 text-renascer">{msg}</p>}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-          <select className="input" value={form.diaSemana} onChange={(e) => setForm({ ...form, diaSemana: e.target.value })}>
-            {["SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO", "DOMINGO"].map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-          <input type="date" className="input" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
-          <input placeholder="Hora (ex: 14:00)" className="input" value={form.horaInicio} onChange={(e) => setForm({ ...form, horaInicio: e.target.value })} />
-          <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
-            <option value="MIN30">30 minutos</option>
-            <option value="MIN50">50 minutos</option>
-          </select>
+        <h2 className="font-semibold mb-1">Suas sessões</h2>
+        <p className="text-xs text-renascer-ink/50 mb-3">
+          Quem marca sua sessão é a recepção do Espaço do Renascer, de acordo com os horários da sua profissional.
+          Fale com a recepção pra marcar uma nova sessão.
+        </p>
+        {sessoes === null && <p className="text-sm text-renascer-ink/50">Carregando...</p>}
+        {sessoes?.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma sessão marcada ainda.</p>}
+        <div className="space-y-2">
+          {sessoes?.map((ag) => (
+            <div key={ag.id} className="border border-renascer/10 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <p className="text-sm font-medium">
+                  {new Date(ag.data).toLocaleDateString("pt-BR")} às {ag.horaInicio} · {ag.profissional?.user?.nome}
+                </p>
+                <span className={`badge mt-1 ${STATUS_COR_CLIENTE[ag.status] || ""}`}>{ag.status}</span>
+              </div>
+              {ag.status !== "REALIZADO" && ag.status !== "CANCELADO" && (
+                <a href={`/cliente/videochamada/${ag.id}`} className="text-sm text-renascer underline">
+                  🎥 Entrar na videochamada
+                </a>
+              )}
+            </div>
+          ))}
         </div>
-        <button className="btn-primary mt-3" onClick={agendar}>
-          Confirmar agendamento
-        </button>
       </div>
 
       <ReagendarSessao />
