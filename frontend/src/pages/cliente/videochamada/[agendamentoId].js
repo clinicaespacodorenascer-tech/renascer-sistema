@@ -37,7 +37,7 @@ export default function VideoChamada() {
             <>
               <span>Sessão em andamento.</span>
               {chamada?.linkMeet && (
-                
+               <a 
                   href={chamada.linkMeet}
                   target="_blank"
                   rel="noopener noreferrer"
