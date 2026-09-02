@@ -3,7 +3,7 @@ const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { valorDoPlano } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
-
+const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const router = express.Router();
 router.use(autenticar, permitir("CLIENTE"));
 
@@ -293,6 +293,47 @@ router.get("/recados", exigirContrato, async (req, res) => {
   res.json(recados);
 });
 
+// ---------- Chat com a profissional (histórico salvo, com bloqueio de telefone/WhatsApp) ----------
+router.get("/chat", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+  if (!cliente.profissionalAtualId) return res.json([]);
+
+  const mensagens = await prisma.mensagemInterna.findMany({
+    where: { profissionalId: cliente.profissionalAtualId, clienteId, tipo: { in: ["mensagem", "recado_diario"] } },
+    orderBy: { criadoEm: "asc" },
+  });
+  res.json(mensagens);
+});
+
+router.post("/chat", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { texto } = req.body;
+  if (!texto || !texto.trim()) return res.status(400).json({ erro: "Escreva uma mensagem." });
+  if (contemTelefone(texto)) {
+    return res.status(400).json({ erro: MENSAGEM_BLOQUEIO });
+  }
+
+  const cliente = await prisma.cliente.findUnique({
+    where: { id: clienteId },
+    include: { profissionalAtual: { include: { user: true } } },
+  });
+  if (!cliente.profissionalAtualId) {
+    return res.status(400).json({ erro: "Você ainda não tem uma profissional vinculada." });
+  }
+
+  const msg = await prisma.mensagemInterna.create({
+    data: { profissionalId: cliente.profissionalAtualId, clienteId, autor: "CLIENTE", texto, tipo: "mensagem" },
+  });
+
+  await notificar(cliente.profissionalAtual.user.id, {
+    titulo: "Nova mensagem do cliente",
+    mensagem: texto.slice(0, 120),
+    tipo: "sistema",
+  });
+
+  res.json(msg);
+});
 // ---------- 9. Diário de humor (opcional, todo dia) ----------
 router.post("/checkin", exigirContrato, async (req, res) => {
   const clienteId = await getClienteId(req);
