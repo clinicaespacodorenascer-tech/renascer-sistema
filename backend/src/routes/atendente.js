@@ -5,7 +5,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { valorDoPlano } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
-
+const { calcularMetricasCliente } = require("../utils/metricas");
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
@@ -52,6 +52,12 @@ router.get("/clientes", async (req, res) => {
   res.json(clientes);
 });
 
+// ---------- Métricas de retenção de um cliente (tempo de casa, renovações) ----------
+router.get("/clientes/:id/metricas", async (req, res) => {
+  const metricas = await calcularMetricasCliente(req.params.id);
+  if (!metricas) return res.status(404).json({ erro: "Cliente não encontrado." });
+  res.json(metricas);
+});
 router.put("/clientes/:id/vincular-profissional", async (req, res) => {
   const { profissionalId } = req.body;
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: { profissionalAtualId: profissionalId } });
