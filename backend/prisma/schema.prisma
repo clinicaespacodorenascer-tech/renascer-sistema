@@ -179,8 +179,15 @@ model Cliente {
   profissionalAtualId String?
   profissionalAtual   Profissional? @relation("ClienteDoProfissional", fields: [profissionalAtualId], references: [id])
 
-  cadastradoPorId     String?
+    cadastradoPorId     String?
   cadastradoPor       Atendente? @relation("CadastradoPorAtendente", fields: [cadastradoPorId], references: [id])
+
+  // Contato dedicado pra receber avisos automáticos (pode ser diferente do login)
+  notifEmail          String?
+  notifTelefone       String?
+  // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
+  renovarEm             DateTime?
+  renovarEmAvisoEnviado Boolean  @default(false)
 
   contrato       Contrato?
   pacotes        Pacote[]
@@ -230,8 +237,9 @@ model Pacote {
   valorTotal     Float
   status         StatusPacote  @default(ATIVO)
 
-  iniciadoEm     DateTime      @default(now())
+    iniciadoEm     DateTime      @default(now())
   encerradoEm    DateTime?
+  avisoRenovacaoEmailEm DateTime? // controla pra não mandar o e-mail de renovação mais de uma vez
 
   agendamentos   Agendamento[]
 
@@ -255,8 +263,12 @@ model Agendamento {
   duracao        DuracaoSessao
   status         StatusAgendamento @default(AGENDADO)
 
-  reagendadoDe   String?           // id do agendamento original, se veio de reagendamento
+    reagendadoDe   String?           // id do agendamento original, se veio de reagendamento
   motivoCancelamento String?
+
+  // Controle dos lembretes automáticos por e-mail (pra não mandar duas vezes)
+  lembrete24hEmailEm DateTime?
+  lembrete6hEmailEm  DateTime?
 
   chamadaVideo   ChamadaVideo?
 
