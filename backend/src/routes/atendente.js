@@ -6,6 +6,7 @@ const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { valorDoPlano } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { calcularMetricasCliente } = require("../utils/metricas");
+const { excluirCliente } = require("../utils/excluirUsuario");
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
@@ -62,6 +63,33 @@ router.put("/clientes/:id/vincular-profissional", async (req, res) => {
   const { profissionalId } = req.body;
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: { profissionalAtualId: profissionalId } });
   res.json(cliente);
+});
+
+// ---------- Contato de notificação (e-mail/telefone) + data prevista de renovação ----------
+// A atendente cadastra pra que o sistema mande aviso automático de sessão/renovação.
+router.put("/clientes/:id/notificacao", async (req, res) => {
+  const { notifEmail, notifTelefone, renovarEm } = req.body;
+  const dados = {
+    ...(notifEmail !== undefined && { notifEmail: notifEmail || null }),
+    ...(notifTelefone !== undefined && { notifTelefone: notifTelefone || null }),
+  };
+  if (renovarEm !== undefined) {
+    dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
+    dados.renovarEmAvisoEnviado = false;
+  }
+  const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
+  res.json(cliente);
+});
+
+// ---------- Excluir login de cliente ----------
+// Hierarquia: a atendente só pode excluir CLIENTES (nunca profissional/atendente/dono).
+router.delete("/clientes/:id", async (req, res) => {
+  try {
+    await excluirCliente(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ erro: e.message || "Erro ao excluir cliente." });
+  }
 });
 
 // Lista completa das profissionais — com foto, o que atende, idade e abordagem — pra atendente
