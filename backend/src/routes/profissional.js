@@ -279,9 +279,19 @@ router.get("/financeiro/resumo", async (req, res) => {
   const inicio = new Date(a, m, 1);
   const fim = new Date(a, m + 1, 1);
 
-  const transacoes = await prisma.transacaoFinanceira.findMany({
+    const transacoes = await prisma.transacaoFinanceira.findMany({
     where: { profissionalId, data: { gte: inicio, lt: fim } },
-    include: { cliente: { include: { user: { select: { nome: true } } } } },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorProfissional: true,
+      valorRenascer: true,
+      data: true,
+      reconhecidoPorIA: true,
+      comprovanteMimeType: true,
+      cliente: { select: { id: true, user: { select: { nome: true } } } },
+    },
     orderBy: { data: "desc" },
   });
 
@@ -289,7 +299,14 @@ router.get("/financeiro/resumo", async (req, res) => {
   const totalProfissional = transacoes.reduce((s, t) => s + t.valorProfissional, 0);
   const totalRenascer = transacoes.reduce((s, t) => s + t.valorRenascer, 0);
 
-  res.json({ transacoes, totalRecebido, totalProfissional, totalRenascer, mes: m + 1, ano: a });
+  res.json({
+    transacoes: transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })),
+    totalRecebido,
+    totalProfissional,
+    totalRenascer,
+    mes: m + 1,
+    ano: a,
+  });
 });
 
 // Calculadora manual de repasse (sem precisar anexar comprovante)
@@ -330,7 +347,8 @@ router.post("/financeiro/comprovante", async (req, res) => {
       valorTotal: valorFinal,
       valorProfissional,
       valorRenascer,
-      comprovanteUrl: imagemBase64 ? "anexado-base64" : null, // fase 2: subir pra storage (S3/Cloudinary) e salvar URL real
+      comprovanteBase64: imagemBase64 || null,
+      comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
       reconhecidoPorIA: !!reconhecido.valor,
       dadosBrutosIA: reconhecido.respostaCrua || null,
     },
