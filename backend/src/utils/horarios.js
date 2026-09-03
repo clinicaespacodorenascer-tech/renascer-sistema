@@ -1,7 +1,8 @@
-// Calcula, a partir da disponibilidade semanal que a profissional liberou (dia + faixa de
-// horário), quais horários exatos estão livres numa data específica — descontando o que já
-// está ocupado na agenda dela. É essa lista que a atendente vê pra marcar exatamente o que o
-// cliente quer, e é a mesma base que alimenta a escolha de horário do cliente ao reagendar.
+// A profissional não libera uma faixa contínua de horário (ex: "8h às 18h") — ela cadastra os
+// horários EXATOS que atende naquele dia da semana (ex: 08:30, 10:30, 18:00). Isso evita que o
+// sistema "invente" horários livres que ela na verdade não atende, só porque caem dentro de uma
+// faixa ampla. Aqui a gente só descobre, dentre os horários que ela realmente atende, quais
+// ainda estão livres numa data específica (descontando o que já está ocupado na agenda dela).
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 const DURACAO_MINUTOS = { MIN30: 30, MIN50: 50 };
@@ -15,58 +16,9 @@ function paraMinutos(hhmm) {
   return h * 60 + m;
 }
 
-function paraHHMM(minutos) {
-  const h = Math.floor(minutos / 60)
-    .toString()
-    .padStart(2, "0");
-  const m = (minutos % 60).toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-// Gera os horários possíveis dentro de uma faixa (ex: 14:00-18:00), pulando de `duracao` em `duracao`
-function gerarSlots(horaInicio, horaFim, duracaoMinutos) {
-  const inicio = paraMinutos(horaInicio);
-  const fim = paraMinutos(horaFim);
-  const slots = [];
-  for (let t = inicio; t + duracaoMinutos <= fim; t += duracaoMinutos) {
-    slots.push(paraHHMM(t));
-  }
-  return slots;
-}
-
-// Recebe as disponibilidades (faixas) de um dia + os agendamentos já existentes naquela data
-// e devolve só os horários realmente livres (checando sobreposição real de intervalos, não só
-// o horário exato de início — assim um agendamento de 50min bloqueia de verdade quem tentaria
-// começar 30min depois, por exemplo).
-function horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao }) {
-  const duracaoMinutos = DURACAO_MINUTOS[duracao] || 50;
-
-  const intervalosOcupados = agendamentosDoDia.map((ag) => {
-    const inicio = paraMinutos(ag.horaInicio);
-    const duracaoOcupada = DURACAO_MINUTOS[ag.duracao] || 50;
-    return [inicio, inicio + duracaoOcupada];
-  });
-
-  function estaLivre(slotHHMM) {
-    const inicioSlot = paraMinutos(slotHHMM);
-    const fimSlot = inicioSlot + duracaoMinutos;
-    // dois intervalos [a,b) e [c,d) se sobrepõem quando a < d e c < b
-    return !intervalosOcupados.some(([oi, of]) => inicioSlot < of && oi < fimSlot);
-  }
-
-  const livres = [];
-  for (const disp of disponibilidadesDoDia) {
-    for (const slot of gerarSlots(disp.horaInicio, disp.horaFim, duracaoMinutos)) {
-      if (estaLivre(slot)) livres.push(slot);
-    }
-  }
-  return [...new Set(livres)].sort();
-}
-
 // Diz se um horário específico (início + duração) colide com algum agendamento já existente
-// naquele dia — mesma matemática de sobreposição do horariosLivres, mas pra checar um único
-// horário direto (útil quando já se sabe o horário e só precisa confirmar que não bate em nada,
-// como ao mover uma sessão pra outro dia da semana mantendo o mesmo horário).
+// naquele dia — dois intervalos [a,b) e [c,d) se sobrepõem quando a < d e c < b. Assim uma
+// sessão de 50min bloqueia de verdade quem tentaria começar 30min depois, por exemplo.
 function haConflito({ horaInicio, duracao, agendamentosDoDia }) {
   const duracaoMinutos = DURACAO_MINUTOS[duracao] || 50;
   const inicioNovo = paraMinutos(horaInicio);
@@ -78,4 +30,12 @@ function haConflito({ horaInicio, duracao, agendamentosDoDia }) {
   });
 }
 
-module.exports = { diaSemanaDeData, horariosLivres, haConflito, gerarSlots, DURACAO_MINUTOS };
+// Pega os horários exatos que a profissional cadastrou pra esse dia da semana e devolve só os
+// que ainda estão livres pra a duração pedida (30 ou 50min) — nunca inventa um horário que ela
+// não colocou na disponibilidade dela.
+function horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao }) {
+  const horarios = [...new Set(disponibilidadesDoDia.map((d) => d.horaInicio))].sort();
+  return horarios.filter((horaInicio) => !haConflito({ horaInicio, duracao, agendamentosDoDia }));
+}
+
+module.exports = { diaSemanaDeData, horariosLivres, haConflito, DURACAO_MINUTOS };
