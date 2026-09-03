@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
+import { linkWhatsapp } from "../../lib/whatsapp";
 
 export default function AreaCliente() {
   const { user, carregando } = useAuth("CLIENTE");
@@ -147,12 +148,42 @@ function AbaPainel() {
           <p className="text-sm text-renascer-ink/60">Sessões restantes</p>
           <p className="text-2xl font-bold text-renascer">{painel.sessoesRestantes}</p>
         </div>
-        <div className="card">
+                <div className="card">
           <p className="text-sm text-renascer-ink/60">Próxima sessão</p>
           <p className="font-semibold">
             {painel.proximaSessao ? new Date(painel.proximaSessao.data).toLocaleString("pt-BR") : "Nenhuma agendada"}
           </p>
         </div>
+      </div>
+      <ContatoWhatsapp />
+    </div>
+  );
+}
+
+// ---------------- CONTATO RÁPIDO PELO WHATSAPP ----------------
+function ContatoWhatsapp() {
+  const opcoes = [
+    {
+      label: "💬 Trocar de plano / Renovar pacote",
+      msg: "Olá! Quero saber sobre trocar de plano ou renovar meu pacote no Espaço do Renascer.",
+    },
+    {
+      label: "💬 Dúvidas gerais / suporte",
+      msg: "Olá! Tenho uma dúvida sobre meu atendimento no Espaço do Renascer.",
+    },
+  ];
+  return (
+    <div className="card">
+      <h3 className="font-semibold mb-1">Fale com a gente no WhatsApp</h3>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Pra trocar de plano, renovar seu pacote ou tirar outras dúvidas, é só chamar.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {opcoes.map((o) => (
+          <a key={o.label} href={linkWhatsapp(o.msg)} target="_blank" rel="noreferrer" className="btn-secondary text-sm">
+            {o.label}
+          </a>
+        ))}
       </div>
     </div>
   );
