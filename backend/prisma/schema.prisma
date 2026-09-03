@@ -64,6 +64,23 @@ enum StatusSuporte {
   RESOLVIDO
 }
 
+// Situação do cliente na lista de uma profissional: ATIVO é o normal, EXCLUIDO é quando a
+// profissional (ou a atendente) marcou que ele não renovou — ele some da lista dela, mas
+// continua existindo no sistema pra aparecer na fila de reativação do dono/atendente.
+enum SituacaoCliente {
+  ATIVO
+  EXCLUIDO
+}
+
+// Cada linha do histórico registra um momento importante da vida do cliente no sistema —
+// só o dono enxerga essa linha do tempo completa.
+enum TipoEventoHistorico {
+  ENTROU
+  RENOVOU
+  EXCLUIDO
+  REATIVADO
+}
+
 enum TemaTarefa {
   ANSIEDADE
   DEPRESSAO
@@ -185,9 +202,15 @@ model Cliente {
   // Contato dedicado pra receber avisos automáticos (pode ser diferente do login)
   notifEmail          String?
   notifTelefone       String?
-  // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
+    // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
   renovarEm             DateTime?
   renovarEmAvisoEnviado Boolean  @default(false)
+
+  // Situação atual (ativo na lista da profissional, ou marcado como "não renovou e saiu") e o
+  // WhatsApp exato que ele informou no cadastro — guardado à parte pra nunca se perder, mesmo
+  // que o telefone de contato mude depois. É esse número que aparece na fila de reativação.
+  situacao         SituacaoCliente @default(ATIVO)
+  whatsappCadastro String?
 
   contrato       Contrato?
   pacotes        Pacote[]
@@ -199,10 +222,31 @@ model Cliente {
   tarefasAtribuidas TarefaCliente[]
   tickets        TicketSuporte[]
   mensagens      MensagemInterna[] @relation("MensagensDoCliente")
+  historico      HistoricoCliente[]
 
   criadoEm       DateTime @default(now())
 
   @@map("clientes")
+}
+
+// Linha do tempo do cliente (entrou, renovou, foi excluído por não renovar, foi reativado) —
+// guarda uma "foto" do nome/whatsapp/pacote no momento do evento, pra continuar legível mesmo
+// que o cadastro mude depois. Só o dono enxerga essa lista completa.
+model HistoricoCliente {
+  id               String              @id @default(cuid())
+  clienteId        String
+  cliente          Cliente             @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  tipo             TipoEventoHistorico
+  nomeCliente      String
+  whatsapp         String?
+  pacoteResumo     String?             // ex: "50min - 4 sessão(ões)"
+  profissionalNome String?
+  motivo           String?
+
+  criadoEm         DateTime            @default(now())
+
+  @@map("historico_clientes")
 }
 
 // Contrato de aceite (item 16 do cliente)
