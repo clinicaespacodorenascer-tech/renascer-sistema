@@ -61,11 +61,22 @@ async function main() {
           especialidades: ["Ansiedade", "Relacionamentos", "Autoestima"],
           abordagens: "TCC",
           percentualRepasse: 50,
-          disponibilidades: {
+                    disponibilidades: {
             create: [
-              { diaSemana: "SEGUNDA", horaInicio: "14:00", horaFim: "18:00" },
-              { diaSemana: "QUARTA", horaInicio: "14:00", horaFim: "18:00" },
-              { diaSemana: "SEXTA", horaInicio: "08:00", horaFim: "12:00" },
+              // Cada linha é um horário exato que ela atende (não uma faixa) — ex: só atende
+              // 14h, 15h, 16h e 17h na segunda, não "qualquer hora entre 14h e 18h".
+              { diaSemana: "SEGUNDA", horaInicio: "14:00" },
+              { diaSemana: "SEGUNDA", horaInicio: "15:00" },
+              { diaSemana: "SEGUNDA", horaInicio: "16:00" },
+              { diaSemana: "SEGUNDA", horaInicio: "17:00" },
+              { diaSemana: "QUARTA", horaInicio: "14:00" },
+              { diaSemana: "QUARTA", horaInicio: "15:00" },
+              { diaSemana: "QUARTA", horaInicio: "16:00" },
+              { diaSemana: "QUARTA", horaInicio: "17:00" },
+              { diaSemana: "SEXTA", horaInicio: "08:00" },
+              { diaSemana: "SEXTA", horaInicio: "09:00" },
+              { diaSemana: "SEXTA", horaInicio: "10:00" },
+              { diaSemana: "SEXTA", horaInicio: "11:00" },
             ],
           },
         },
