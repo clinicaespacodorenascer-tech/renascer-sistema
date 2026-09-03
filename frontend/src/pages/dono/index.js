@@ -89,8 +89,13 @@ function Profissionais() {
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [expandido, setExpandido] = useState(null);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/clientes");
+    setLista(data);
+  }
   useEffect(() => {
-    api.get("/dono/clientes").then((r) => setLista(r.data));
+    carregar();
   }, []);
   return (
     <div className="card overflow-x-auto">
