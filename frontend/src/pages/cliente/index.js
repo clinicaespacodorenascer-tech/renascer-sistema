@@ -122,13 +122,29 @@ function TelaContrato({ textoContrato, onAceito }) {
 // ---------------- PAINEL (início) ----------------
 function AbaPainel() {
   const [painel, setPainel] = useState(null);
+  const [popupAberto, setPopupAberto] = useState(false);
   useEffect(() => {
-    api.get("/cliente/painel").then((r) => setPainel(r.data));
+    api.get("/cliente/painel").then((r) => {
+      setPainel(r.data);
+      setPopupAberto(!!r.data.pacoteAtivo?.avisoPopupNivel && !r.data.pacoteAtivo?.popupVisualizadoEm);
+    });
   }, []);
   if (!painel) return <p>Carregando...</p>;
 
+  async function fecharPopup() {
+    setPopupAberto(false);
+    if (painel.pacoteAtivo) {
+      try {
+        await api.put(`/cliente/pacote/${painel.pacoteAtivo.id}/popup-visto`);
+      } catch (e) {
+        // não é crítico — o pop-up só reaparece se atualizar a página, sem travar nada
+      }
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {popupAberto && <PopupRenovacao pacoteAtivo={painel.pacoteAtivo} onFechar={fecharPopup} />}
       {painel.pendencias.length > 0 && (
         <div className="card border-amber-300 bg-amber-50">
           <h3 className="font-semibold text-amber-700 mb-1">Pendências</h3>
@@ -156,6 +172,49 @@ function AbaPainel() {
         </div>
       </div>
       <ContatoWhatsapp />
+    </div>
+  );
+}
+
+// ---------------- POP-UP DE RENOVAÇÃO (avisa na penúltima e na última sessão do pacote) ----------------
+function PopupRenovacao({ pacoteAtivo, onFechar }) {
+  if (!pacoteAtivo?.avisoPopupNivel) return null;
+  const vermelho = pacoteAtivo.avisoPopupNivel === "VERMELHO";
+  const mensagem = vermelho
+    ? `Olá! Meu pacote no Espaço do Renascer terminou (${pacoteAtivo.sessoesUsadas}/${pacoteAtivo.totalSessoes} sessões) e eu quero renovar pra continuar meus atendimentos.`
+    : `Olá! Minhas sessões no Espaço do Renascer estão quase terminando (${pacoteAtivo.sessoesUsadas}/${pacoteAtivo.totalSessoes}) e eu já quero garantir a renovação do meu pacote.`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div
+        className={`max-w-md w-full rounded-2xl p-6 shadow-2xl text-white bg-gradient-to-br ${
+          vermelho ? "from-red-600 to-rose-800" : "from-amber-500 to-orange-600"
+        }`}
+      >
+        <p className="text-xs uppercase tracking-wide opacity-80 mb-1">
+          {vermelho ? "Seu pacote encerrou" : "Suas sessões estão acabando"}
+        </p>
+        <h3 className="text-xl font-bold mb-2">{vermelho ? "Vamos renovar seu pacote?" : "Já pensou em renovar?"}</h3>
+        <p className="text-sm opacity-90 mb-5">
+          {vermelho
+            ? `Você já usou todas as ${pacoteAtivo.totalSessoes} sessões do seu pacote. Renove agora pra não perder seu horário fixo com sua profissional.`
+            : `Você já usou ${pacoteAtivo.sessoesUsadas} de ${pacoteAtivo.totalSessoes} sessões. Garanta sua renovação antes de acabar.`}
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          
+            href={linkWhatsapp(mensagem)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
+            onClick={onFechar}
+          >
+            💬 Renovar agora no WhatsApp
+          </a>
+          <button className="text-sm underline opacity-80 hover:opacity-100" onClick={onFechar}>
+            Lembrar depois
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
