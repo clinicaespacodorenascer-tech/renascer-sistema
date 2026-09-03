@@ -8,6 +8,7 @@ const clienteRoutes = require("./routes/cliente");
 const donoRoutes = require("./routes/dono");
 const atendenteRoutes = require("./routes/atendente");
 const comumRoutes = require("./routes/comum");
+const { verificarLembretes } = require("./utils/lembretes");
 
 const app = express();
 
@@ -33,4 +34,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`API do Espaço do Renascer rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`API do Espaço do Renascer rodando na porta ${PORT}`);
+  // Checa lembretes de sessão (24h/6h antes) e de renovação assim que sobe, e depois a cada 15 minutos.
+  verificarLembretes();
+  setInterval(verificarLembretes, 15 * 60 * 1000);
+});
