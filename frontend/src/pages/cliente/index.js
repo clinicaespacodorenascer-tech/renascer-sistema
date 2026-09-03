@@ -202,14 +202,15 @@ function PopupRenovacao({ pacoteAtivo, onFechar }) {
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           
-            href={linkWhatsapp(mensagem)}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
-            onClick={onFechar}
-          >
-            💬 Renovar agora no WhatsApp
-          </a>
+            <button
+  className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
+  onClick={() => {
+    window.open(linkWhatsapp(mensagem), "_blank");
+    onFechar?.();
+  }}
+>
+  💬 Renovar agora no WhatsApp
+</button>
           <button className="text-sm underline opacity-80 hover:opacity-100" onClick={onFechar}>
             Lembrar depois
           </button>
