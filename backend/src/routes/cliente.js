@@ -4,6 +4,8 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { valorDoPlano } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
+const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
+
 const router = express.Router();
 router.use(autenticar, permitir("CLIENTE"));
 
@@ -127,6 +129,38 @@ router.get("/agenda", exigirContrato, async (req, res) => {
 });
 
 // ---------- 2. Reagendar (regra de 24h de antecedência) ----------
+
+// Horários livres da profissional pra reagendar ESSA sessão específica — usa a duração exata
+// dela (30 ou 50min, a mesma regra usada pela atendente e pela profissional) e desconta o que
+// já está ocupado, sem contar a própria sessão que está sendo movida (senão ela bloquearia a
+// si mesma). É essa lista que decide o que aparece pro cliente escolher — ele nunca digita um
+// horário livremente, só pode clicar num horário que a agenda real da profissional permite.
+router.get("/agenda/:id/horarios", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const original = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!original) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const { data } = req.query;
+  if (!data) return res.status(400).json({ erro: "Informe a data (YYYY-MM-DD)." });
+
+  const diaSemana = diaSemanaDeData(data);
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({ where: { profissionalId: original.profissionalId, diaSemana, ativo: true } }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId: original.profissionalId,
+        id: { not: original.id },
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: original.duracao });
+  res.json({ diaSemana, duracao: original.duracao, livres });
+});
+
 router.post("/agenda/:id/reagendar", exigirContrato, async (req, res) => {
   const clienteId = await getClienteId(req);
   const original = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
@@ -140,7 +174,33 @@ router.post("/agenda/:id/reagendar", exigirContrato, async (req, res) => {
     });
   }
 
-  const { data, diaSemana, horaInicio } = req.body;
+  const { data, horaInicio } = req.body;
+  if (!data || !horaInicio) {
+    return res.status(400).json({ erro: "Escolha a nova data e o novo horário." });
+  }
+  const diaSemana = diaSemanaDeData(data);
+
+  // Revalida no servidor que esse horário está mesmo livre na agenda real da profissional —
+  // nunca confia só no que veio do app. Isso é o que garante que o cliente só consegue cair
+  // num horário que a profissional de fato disponibilizou, sem virar bagunça de horários
+  // batendo um em cima do outro.
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({ where: { profissionalId: original.profissionalId, diaSemana, ativo: true } }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId: original.profissionalId,
+        id: { not: original.id },
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: original.duracao });
+  if (!livres.includes(horaInicio)) {
+    return res.status(400).json({ erro: "Esse horário não está disponível na agenda da sua profissional. Escolha outro." });
+  }
+
   await prisma.agendamento.update({ where: { id: original.id }, data: { status: "REAGENDADO" } });
   const novo = await prisma.agendamento.create({
     data: {
@@ -227,6 +287,7 @@ router.post("/renovar-ou-trocar-plano", exigirContrato, async (req, res) => {
   );
   res.json({ ok: true, valor, linkWhatsapp: `https://wa.me/${WHATSAPP_RENASCER}?text=${mensagem}` });
 });
+
 // Observação: a confirmação do pagamento e a criação do pacote em si são feitas pela
 // profissional (POST /api/profissional/clientes/:id/pacotes) depois que o pagamento cai
 // no WhatsApp — o cliente nunca cria o próprio pacote, por segurança (fase 2 automatiza
@@ -334,6 +395,7 @@ router.post("/chat", exigirContrato, async (req, res) => {
 
   res.json(msg);
 });
+
 // ---------- 9. Diário de humor (opcional, todo dia) ----------
 router.post("/checkin", exigirContrato, async (req, res) => {
   const clienteId = await getClienteId(req);
