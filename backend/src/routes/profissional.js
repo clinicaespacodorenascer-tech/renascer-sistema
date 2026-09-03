@@ -1,4 +1,5 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularRepasse, valorDoPlano } = require("../utils/financeiro");
@@ -339,6 +340,39 @@ router.post("/financeiro/comprovante", async (req, res) => {
 });
 
 // ---------- 5. Clientes do profissional ----------
+
+// Cadastrar direto um cliente que a profissional já atendia antes (sem precisar da
+// recepção cadastrar um por um). Já entra vinculado a ela mesma.
+router.post("/clientes", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const { nome, email, telefone, senhaProvisoria } = req.body;
+  if (!nome || !email) {
+    return res.status(400).json({ erro: "Informe nome e e-mail do cliente." });
+  }
+
+  const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+  if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
+
+  const senha = senhaProvisoria || Math.random().toString(36).slice(-8);
+  const hash = await bcrypt.hash(senha, 10);
+
+  const user = await prisma.user.create({
+    data: {
+      nome,
+      email: email.toLowerCase().trim(),
+      telefone,
+      senha: hash,
+      role: "CLIENTE",
+      cliente: {
+        create: { profissionalAtualId: profissionalId },
+      },
+    },
+    include: { cliente: true },
+  });
+
+  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente });
+});
+
 router.get("/clientes", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const clientes = await prisma.cliente.findMany({
