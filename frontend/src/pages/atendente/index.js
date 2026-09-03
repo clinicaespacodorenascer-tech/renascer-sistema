@@ -223,12 +223,11 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
     </div>
   );
 }
-
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [form, setForm] = useState({ nome: "", email: "", telefone: "", profissionalAtualId: "" });
-    const [resultado, setResultado] = useState(null);
+  const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
   const [expandido, setExpandido] = useState(null);
 
@@ -282,20 +281,7 @@ function Clientes() {
         )}
       </div>
 
-        const [resultado, setResultado] = useState(null);
-  const [msg, setMsg] = useState("");
-  const [expandido, setExpandido] = useState(null);
-
-  async function carregar() {
-    const [c, p] = await Promise.all([api.get("/atendente/clientes"), api.get("/atendente/profissionais")]);
-
-function AgendaGeral() {
-  const [lista, setLista] = useState([]);
-  useEffect(() => {
-    api.get("/atendente/agenda-geral").then((r) => setLista(r.data));
-  }, []);
-  return (
-          <div className="card overflow-x-auto">
+      <div className="card overflow-x-auto">
         <h2 className="font-semibold mb-2">Clientes cadastrados</h2>
         <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
         <table className="w-full text-sm">
@@ -362,6 +348,37 @@ function MetricasCliente({ clienteId, rotaBase }) {
           <p className="font-semibold text-renascer">{valor}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function AgendaGeral() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    api.get("/atendente/agenda-geral").then((r) => setLista(r.data));
+  }, []);
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-renascer-ink/50">
+            <th>Data</th>
+            <th>Profissional</th>
+            <th>Cliente</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lista.map((a) => (
+            <tr key={a.id} className="border-t border-renascer/10">
+              <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
+              <td>{a.profissional.user.nome}</td>
+              <td>{a.cliente.user.nome}</td>
+              <td>{a.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
