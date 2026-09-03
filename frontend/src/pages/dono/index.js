@@ -3,6 +3,7 @@ import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante } from "../../lib/comprovante";
+import StatusCliente from "../../components/StatusCliente";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -20,6 +21,8 @@ export default function AreaDono() {
     { id: "dashboard", label: "Visão geral" },
     { id: "profissionais", label: "Profissionais" },
     { id: "clientes", label: "Clientes" },
+    { id: "reativar", label: "Reativar clientes" },
+    { id: "historico", label: "Histórico" },
     { id: "financeiro", label: "Financeiro" },
     { id: "usuarios", label: "Usuários" },
     { id: "suporte", label: "Suporte escalado" },
@@ -30,10 +33,154 @@ export default function AreaDono() {
       {aba === "dashboard" && <Dashboard />}
       {aba === "profissionais" && <Profissionais />}
       {aba === "clientes" && <Clientes />}
+      {aba === "reativar" && <ClientesParaReativar rotaBase="/dono" />}
+      {aba === "historico" && <HistoricoClientes />}
       {aba === "financeiro" && <Financeiro />}
       {aba === "usuarios" && <Usuarios />}
       {aba === "suporte" && <SuporteEscalado />}
     </Layout>
+  );
+}
+
+// Fila de clientes marcados como "não renovou" por alguma profissional — dá pra chamar no
+// WhatsApp com o número que ele deixou no cadastro e, se ele voltar, vincular de novo com
+// uma profissional direto por aqui (mesma função que a recepção tem).
+function ClientesParaReativar({ rotaBase }) {
+  const [lista, setLista] = useState([]);
+  const [profissionais, setProfissionais] = useState([]);
+  const [escolha, setEscolha] = useState({});
+
+  async function carregar() {
+    const [r, p] = await Promise.all([api.get(`${rotaBase}/clientes-reativar`), api.get(`${rotaBase}/profissionais`)]);
+    setLista(r.data);
+    setProfissionais(p.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function reativar(id) {
+    const profissionalId = escolha[id];
+    if (!profissionalId) return;
+    await api.put(`${rotaBase}/clientes/${id}/reativar`, { profissionalId });
+    carregar();
+  }
+
+  return (
+    <div className="card">
+      <h2 className="font-semibold mb-1">Clientes pra reativar</h2>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Clientes que alguma profissional marcou como "não renovou". Chama no WhatsApp com o número que ele
+        deixou no cadastro e, se ele topar voltar, vincula de novo com uma profissional aqui mesmo.
+      </p>
+      <div className="space-y-2">
+        {lista.map((c) => (
+          <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-medium">{c.nome}</p>
+              <p className="text-xs text-renascer-ink/50">
+                {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
+                {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {c.whatsapp && (
+                
+                  className="btn-secondary text-sm"
+                  href={`https://wa.me/${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                    `Olá, ${c.nome}! Aqui é do Espaço do Renascer. Sentimos sua falta — quer voltar a agendar suas sessões?`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  💬 Chamar no WhatsApp
+                </a>
+              )}
+              <select
+                className="input !w-auto !py-1.5 text-sm"
+                value={escolha[c.id] || ""}
+                onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
+              >
+                <option value="">Reativar com...</option>
+                {profissionais.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.user.nome}
+                  </option>
+                ))}
+              </select>
+              <button className="btn-primary text-sm" onClick={() => reativar(c.id)} disabled={!escolha[c.id]}>
+                Reativar
+              </button>
+            </div>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Ninguém na fila de reativação agora.</p>}
+      </div>
+    </div>
+  );
+}
+
+// Linha do tempo completa de clientes (entrou, renovou, saiu/não renovou, foi reativado) —
+// essa aba só o dono enxerga.
+const TIPO_HISTORICO_LABEL = {
+  ENTROU: "Entrou",
+  RENOVOU: "Renovou",
+  EXCLUIDO: "Saiu / não renovou",
+  REATIVADO: "Reativado",
+};
+const TIPO_HISTORICO_COR = {
+  ENTROU: "bg-blue-100 text-blue-700",
+  RENOVOU: "bg-emerald-100 text-emerald-700",
+  EXCLUIDO: "bg-red-100 text-red-700",
+  REATIVADO: "bg-renascer-light text-renascer",
+};
+
+function HistoricoClientes() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    api.get("/dono/historico-clientes").then((r) => setLista(r.data));
+  }, []);
+
+  return (
+    <div className="card overflow-x-auto">
+      <h2 className="font-semibold mb-1">Histórico de clientes</h2>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Só você vê essa aba — todo mundo que entrou, renovou, saiu (não renovou) ou foi reativado.
+      </p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-renascer-ink/50">
+            <th className="py-1">Data</th>
+            <th>Cliente</th>
+            <th>Evento</th>
+            <th>Pacote</th>
+            <th>Profissional</th>
+            <th>WhatsApp</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lista.map((h) => (
+            <tr key={h.id} className="border-t border-renascer/10">
+              <td className="py-1">{new Date(h.criadoEm).toLocaleDateString("pt-BR")}</td>
+              <td>{h.nomeCliente}</td>
+              <td>
+                <span className={`badge ${TIPO_HISTORICO_COR[h.tipo]}`}>{TIPO_HISTORICO_LABEL[h.tipo] || h.tipo}</span>
+              </td>
+              <td>{h.pacoteResumo || "-"}</td>
+              <td>{h.profissionalNome || "-"}</td>
+              <td>{h.whatsapp || "-"}</td>
+            </tr>
+          ))}
+          {lista.length === 0 && (
+            <tr>
+              <td colSpan={6} className="text-renascer-ink/50 py-2">
+                Nenhum evento registrado ainda.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -43,7 +190,6 @@ function Dashboard() {
     api.get("/dono/dashboard").then((r) => setD(r.data));
   }, []);
   if (!d) return <p>Carregando...</p>;
-
   const cartoes = [
     ["Profissionais ativas", d.totalProfissionais],
     ["Clientes cadastrados", d.totalClientes],
@@ -53,7 +199,6 @@ function Dashboard() {
     ["Receita da Renascer no mês", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
   ];
   const profissionaisHoje = Object.entries(d.porProfissionalHoje || {});
-
   return (
     <div className="space-y-4">
       <div className="card !border-renascer/30 bg-renascer-light/30">
@@ -89,6 +234,7 @@ function Dashboard() {
         )}
         {profissionaisHoje.length === 0 && <p className="text-xs text-renascer-ink/40">Nada registrado hoje ainda.</p>}
       </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cartoes.map(([label, valor]) => (
           <div key={label} className="card">
@@ -97,6 +243,7 @@ function Dashboard() {
           </div>
         ))}
       </div>
+
       <div className="card">
         <h3 className="font-semibold mb-3">Clientes por profissional</h3>
         <p className="text-xs text-renascer-ink/50 mb-3">
@@ -123,7 +270,6 @@ function Profissionais() {
   useEffect(() => {
     api.get("/dono/profissionais").then((r) => setLista(r.data));
   }, []);
-
   return (
     <div className="space-y-3">
       {lista.map((p) => (
@@ -161,7 +307,6 @@ function Clientes() {
   useEffect(() => {
     carregar();
   }, []);
-
   return (
     <div className="card overflow-x-auto">
       <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
@@ -182,7 +327,10 @@ function Clientes() {
                 className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
                 onClick={() => setExpandido(expandido === c.id ? null : c.id)}
               >
-                <td className="py-1">{c.user.nome}</td>
+                <td className="py-1 flex items-center gap-1.5">
+                  <StatusCliente status={c.statusCliente} />
+                  {c.user.nome}
+                </td>
                 <td>{c.profissionalAtual?.user?.nome || "-"}</td>
                 <td>{c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes}` : "-"}</td>
                 <td>{c.pacotes[0]?.status || "-"}</td>
@@ -309,6 +457,7 @@ function MetricasCliente({ clienteId, rotaBase }) {
   useEffect(() => {
     api.get(`${rotaBase}/clientes/${clienteId}/metricas`).then((r) => setM(r.data));
   }, [clienteId, rotaBase]);
+
   if (!m) return <p className="text-xs text-renascer-ink/40">Carregando métricas...</p>;
 
   const cartoes = [
@@ -338,7 +487,6 @@ function Financeiro() {
     api.get("/dono/financeiro").then((r) => setF(r.data));
   }, []);
   if (!f) return <p>Carregando...</p>;
-
   return (
     <div className="space-y-4">
       <div className="card overflow-x-auto">
@@ -371,6 +519,7 @@ function Financeiro() {
           </tbody>
         </table>
       </div>
+
       <div className="card overflow-x-auto">
         <h3 className="font-semibold mb-2">Todas as transações do mês</h3>
         <table className="w-full text-sm">
@@ -473,6 +622,7 @@ function Usuarios() {
         </button>
         {msg && <p className="text-sm mt-2">{msg}</p>}
       </div>
+
       <div className="card overflow-x-auto">
         <h2 className="font-semibold mb-2">Todos os usuários</h2>
         <p className="text-xs text-renascer-ink/50 mb-2">
