@@ -4,6 +4,7 @@ import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante } from "../../lib/comprovante";
+import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -50,7 +51,7 @@ export default function AreaProfissional() {
 
   if (carregando) return null;
 
-    const ABAS = [
+  const ABAS = [
     { id: "agenda", label: "Agenda" },
     { id: "clientes", label: "Clientes" },
     { id: "cadastrar", label: "Cadastrar cliente" },
@@ -340,7 +341,7 @@ function AbaClientes() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card md:col-span-1">
+      <div className="card md:col-span-1">
         <h2 className="font-semibold mb-1">Meus clientes</h2>
         <p className="text-xs text-renascer-ink/50 mb-3">Você tem {clientes.length} cliente(s) no Espaço do Renascer.</p>
         <div className="space-y-2">
@@ -539,7 +540,7 @@ function ChatCliente({ clienteId }) {
         ))}
         {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
       </div>
-            {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
       <div className="flex flex-wrap gap-2">
         <select className="input !w-full sm:!w-56" value={tipo} onChange={(e) => setTipo(e.target.value)}>
           <option value="mensagem">Mensagem</option>
@@ -790,34 +791,22 @@ function AbaConfig() {
   async function carregarPerfil() {
     const r = await api.get("/profissional/perfil");
     setPerfil(r.data);
-    setDisponibilidades(r.data.disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, horaFim: d.horaFim })));
+    setDisponibilidades(r.data.disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio })));
   }
   useEffect(() => {
     carregarPerfil();
   }, []);
-
-  function addLinha() {
-    setDisponibilidades([...disponibilidades, { diaSemana: "SEGUNDA", horaInicio: "08:00", horaFim: "12:00" }]);
-  }
-  function atualizar(i, campo, valor) {
-    const copia = [...disponibilidades];
-    copia[i][campo] = valor;
-    setDisponibilidades(copia);
-  }
-  function remover(i) {
-    setDisponibilidades(disponibilidades.filter((_, idx) => idx !== i));
-  }
-  async function salvar() {
-    await api.put("/profissional/disponibilidades", { disponibilidades });
-    alert("Disponibilidade atualizada!");
-  }
 
   if (!perfil) return <p>Carregando...</p>;
 
   return (
     <div className="space-y-4">
       <PerfilCompleto perfil={perfil} onAtualizado={carregarPerfil} />
-      <DisponibilidadeSemanal disponibilidades={disponibilidades} setDisponibilidades={setDisponibilidades} />
+      <DisponibilidadeSemanal
+        disponibilidades={disponibilidades}
+        setDisponibilidades={setDisponibilidades}
+        salvar={(disp) => api.put("/profissional/disponibilidades", { disponibilidades: disp })}
+      />
     </div>
   );
 }
@@ -829,7 +818,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   const [idade, setIdade] = useState(perfil.idade || "");
   const [bio, setBio] = useState(perfil.bio || "");
   const [abordagens, setAbordagens] = useState(perfil.abordagens || "");
-    const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
+  const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
   const [especialidades, setEspecialidades] = useState(perfil.especialidades || []);
   const [foto, setFoto] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -857,7 +846,8 @@ function PerfilCompleto({ perfil, onAtualizado }) {
         titulo,
         registro,
         idade: idade || null,
-                abordagens,
+        bio,
+        abordagens,
         especialidades,
         linkMeet,
         ...(fotoBase64 && { fotoBase64 }),
@@ -915,75 +905,25 @@ function PerfilCompleto({ perfil, onAtualizado }) {
 
       <textarea className="input" rows={3} placeholder="Bio curta" value={bio} onChange={(e) => setBio(e.target.value)} />
 
-      
-          <div>
-  <label className="text-sm text-renascer-ink/60 block mb-1">
-    Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
-  </label>
-  <input
-    className="input"
-    placeholder="https://meet.google.com/xxx-xxxx-xxx"
-    value={linkMeet}
-    onChange={(e) => setLinkMeet(e.target.value)}
-  />
-  <p className="text-xs text-renascer-ink/50 mt-1">
-    Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
-  </p>
-</div>
-          <button className="btn-primary" onClick={salvar} disabled={salvando}>
+      <div>
+        <label className="text-sm text-renascer-ink/60 block mb-1">
+          Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
+        </label>
+        <input
+          className="input"
+          placeholder="https://meet.google.com/xxx-xxxx-xxx"
+          value={linkMeet}
+          onChange={(e) => setLinkMeet(e.target.value)}
+        />
+        <p className="text-xs text-renascer-ink/50 mt-1">
+          Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
+        </p>
+      </div>
+
+      <button className="btn-primary" onClick={salvar} disabled={salvando}>
         {salvando ? "Salvando..." : "Salvar perfil"}
       </button>
       {msg && <p className="text-sm">{msg}</p>}
-    </div>
-  );
-}
-
-function DisponibilidadeSemanal({ disponibilidades, setDisponibilidades }) {
-  function addLinha() {
-    setDisponibilidades([...disponibilidades, { diaSemana: "SEGUNDA", horaInicio: "08:00", horaFim: "12:00" }]);
-  }
-  function atualizar(i, campo, valor) {
-    const copia = [...disponibilidades];
-    copia[i][campo] = valor;
-    setDisponibilidades(copia);
-  }
-  function remover(i) {
-    setDisponibilidades(disponibilidades.filter((_, idx) => idx !== i));
-  }
-  async function salvar() {
-    await api.put("/profissional/disponibilidades", { disponibilidades });
-    alert("Disponibilidade atualizada!");
-  }
-
-  return (
-    <div className="card space-y-3">
-      <h2 className="font-semibold">Sua disponibilidade semanal (libere seus horários)</h2>
-      <p className="text-xs text-renascer-ink/50">
-        É com base nesses horários que a atendente (e, no futuro, você mesma) vai enxergar exatamente quando você está livre pra marcar sessões.
-      </p>
-      {disponibilidades.map((d, i) => (
-        <div key={i} className="flex gap-2 items-center">
-          <select className="input !w-40" value={d.diaSemana} onChange={(e) => atualizar(i, "diaSemana", e.target.value)}>
-            {DIAS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-          <input className="input !w-28" value={d.horaInicio} onChange={(e) => atualizar(i, "horaInicio", e.target.value)} placeholder="08:00" />
-          <span>até</span>
-          <input className="input !w-28" value={d.horaFim} onChange={(e) => atualizar(i, "horaFim", e.target.value)} placeholder="12:00" />
-          <button className="text-red-600 text-sm" onClick={() => remover(i)}>
-            remover
-          </button>
-        </div>
-      ))}
-      <button className="btn-secondary" onClick={addLinha}>
-        + adicionar horário
-      </button>
-      <button className="btn-primary block" onClick={salvar}>
-        Salvar disponibilidade
-      </button>
     </div>
   );
 }
