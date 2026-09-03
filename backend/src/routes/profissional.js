@@ -6,8 +6,10 @@ const { calcularRepasse, valorDoPlano } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
+const { haConflito } = require("../utils/horarios");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+
 const router = express.Router();
 router.use(autenticar, permitir("PROFISSIONAL"));
 
@@ -29,6 +31,7 @@ router.get("/perfil", async (req, res) => {
 router.put("/perfil", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { nome, fotoBase64, titulo, registro, bio, idade, especialidades, abordagens, linkMeet } = req.body;
+
   if (nome || fotoBase64) {
     await prisma.user.update({
       where: { id: req.user.id },
@@ -47,7 +50,7 @@ router.put("/perfil", async (req, res) => {
       ...(bio !== undefined && { bio }),
       ...(idade !== undefined && { idade: idade ? Number(idade) : null }),
       ...(especialidades !== undefined && { especialidades }),
-            ...(abordagens !== undefined && { abordagens }),
+      ...(abordagens !== undefined && { abordagens }),
       ...(linkMeet !== undefined && { linkMeet: linkMeet || null }),
     },
     include: { user: { select: { nome: true, fotoUrl: true } } },
@@ -119,8 +122,10 @@ router.put("/agenda/:id/status", async (req, res) => {
 
   res.json(atualizado);
 });
+
 // Move a sessão pra outro dia da mesma semana (drag-and-drop na Agenda), mantendo o
-// mesmo horário. Bloqueia se já existir outra sessão dela nesse horário no dia de destino.
+// mesmo horário. Bloqueia se já existir outra sessão dela que se sobreponha nesse
+// horário (considerando a duração real de cada sessão) no dia de destino.
 router.put("/agenda/:id/mover", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { novoDiaSemana } = req.body;
@@ -138,17 +143,19 @@ router.put("/agenda/:id/mover", async (req, res) => {
   const novaData = new Date(agendamento.data);
   novaData.setDate(novaData.getDate() + (indiceNovo - indiceAtual));
 
-  const conflito = await prisma.agendamento.findFirst({
+  // Checa sobreposição real de horário (não só o horário exato de início) — assim uma sessão de
+  // 50min não fica "encaixada" por engano em cima do fim de outra de 30min no dia de destino.
+  const agendamentosDoDiaDestino = await prisma.agendamento.findMany({
     where: {
       profissionalId,
       id: { not: agendamento.id },
       data: novaData,
-      horaInicio: agendamento.horaInicio,
-      status: { in: ["AGENDADO", "CONFIRMADO"] },
+      status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
     },
+    select: { horaInicio: true, duracao: true },
   });
-  if (conflito) {
-    return res.status(400).json({ erro: "Já existe uma sessão marcada nesse horário no dia de destino." });
+  if (haConflito({ horaInicio: agendamento.horaInicio, duracao: agendamento.duracao, agendamentosDoDia: agendamentosDoDiaDestino })) {
+    return res.status(400).json({ erro: "Já existe uma sessão que se sobrepõe a esse horário no dia de destino." });
   }
 
   const atualizado = await prisma.agendamento.update({
@@ -157,6 +164,7 @@ router.put("/agenda/:id/mover", async (req, res) => {
   });
   res.json(atualizado);
 });
+
 // Videochamada (espelha as rotas do cliente — as duas pontas usam o mesmo registro
 // de ChamadaVideo, ligado ao agendamento, então quem entra primeiro "inicia" e o
 // outro lado só acompanha o mesmo horário/duração registrados)
@@ -279,7 +287,7 @@ router.get("/financeiro/resumo", async (req, res) => {
   const inicio = new Date(a, m, 1);
   const fim = new Date(a, m + 1, 1);
 
-    const transacoes = await prisma.transacaoFinanceira.findMany({
+  const transacoes = await prisma.transacaoFinanceira.findMany({
     where: { profissionalId, data: { gte: inicio, lt: fim } },
     select: {
       id: true,
@@ -317,7 +325,9 @@ router.post("/financeiro/calcular", async (req, res) => {
   res.json(calcularRepasse(Number(valorTotal), prof.percentualRepasse));
 });
 
-// Upload de comprovante — a IA tenta reconhecer valor/tipo automaticamente
+// Upload de comprovante — a IA tenta reconhecer valor/tipo automaticamente.
+// Serve tanto pra pacote novo quanto pra renovação ou sessão extra (campo tipoManual);
+// o comprovante fica guardado de verdade (base64 no banco) pra poder ser visto depois.
 router.post("/financeiro/comprovante", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const prof = await prisma.profissional.findUnique({ where: { id: profissionalId } });
