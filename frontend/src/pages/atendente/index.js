@@ -3,6 +3,7 @@ import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
+import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -48,6 +49,7 @@ function ProfissionaisEAgendar() {
   const [profissionais, setProfissionais] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [selecionada, setSelecionada] = useState(null);
+  const [editando, setEditando] = useState(null);
 
   async function carregar() {
     const [p, c] = await Promise.all([api.get("/atendente/profissionais"), api.get("/atendente/clientes")]);
@@ -89,19 +91,49 @@ function ProfissionaisEAgendar() {
             {p.disponibilidades.length === 0 && "Nenhum horário liberado ainda."}
             {p.disponibilidades.map((d) => (
               <span key={d.id} className="inline-block mr-2">
-                {DIAS_LABEL[d.diaSemana]} {d.horaInicio}–{d.horaFim}
+                {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
               </span>
             ))}
           </div>
 
-          <button className="btn-secondary mt-3 text-sm" onClick={() => setSelecionada(selecionada?.id === p.id ? null : p)}>
-            {selecionada?.id === p.id ? "Fechar" : "Ver horários e agendar"}
-          </button>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button className="btn-secondary text-sm" onClick={() => setSelecionada(selecionada?.id === p.id ? null : p)}>
+              {selecionada?.id === p.id ? "Fechar" : "Ver horários e agendar"}
+            </button>
+            <button className="btn-secondary text-sm" onClick={() => setEditando(editando === p.id ? null : p.id)}>
+              {editando === p.id ? "Fechar edição de horários" : "Editar horários dela"}
+            </button>
+          </div>
 
           {selecionada?.id === p.id && <AgendarComProfissional profissional={p} clientes={clientes} onAgendado={carregar} />}
+          {editando === p.id && <EditarDisponibilidadeProfissional profissional={p} onSalvo={carregar} />}
         </div>
       ))}
       {profissionais.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma profissional cadastrada ainda.</p>}
+    </div>
+  );
+}
+
+// A atendente também pode ajustar os horários exatos que uma profissional atende (a pedido
+// dela) — mesmo componente e mesma regra da tela da própria profissional, pra recepção,
+// profissional e cliente sempre enxergarem exatamente os mesmos horários (sem faixa "8h às
+// 18h" que deixaria parecer livre um horário que ela na verdade não atende).
+function EditarDisponibilidadeProfissional({ profissional, onSalvo }) {
+  const [disponibilidades, setDisponibilidades] = useState(
+    (profissional.disponibilidades || []).map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio }))
+  );
+
+  return (
+    <div className="mt-3 border-t border-renascer/10 pt-3">
+      <DisponibilidadeSemanal
+        disponibilidades={disponibilidades}
+        setDisponibilidades={setDisponibilidades}
+        aviso={`Horários que ${profissional.user.nome} atende — o que você salvar aqui aparece igual pra ela e pro cliente.`}
+        salvar={async (disp) => {
+          await api.put(`/atendente/profissionais/${profissional.id}/disponibilidades`, { disponibilidades: disp });
+          onSalvo?.();
+        }}
+      />
     </div>
   );
 }
