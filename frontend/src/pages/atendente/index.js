@@ -139,8 +139,8 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
           </option>
         ))}
       </select>
-      <div className="flex gap-2">
-        <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+            <div className="flex flex-wrap gap-2">
+        <input type="date" className="input flex-1 min-w-[150px]" value={data} onChange={(e) => setData(e.target.value)} />
         <select className="input !w-40" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
           <option value="MIN30">30 minutos</option>
           <option value="MIN50">50 minutos</option>
