@@ -9,10 +9,14 @@ router.use(autenticar, permitir("DONO"));
 
 // ---------- Visão geral ----------
 router.get("/dashboard", async (req, res) => {
-  const [totalProfissionais, totalClientes, pacotesAtivos] = await Promise.all([
+  const [totalProfissionais, totalClientes, pacotesAtivos, profissionais] = await Promise.all([
     prisma.profissional.count(),
     prisma.cliente.count(),
     prisma.pacote.count({ where: { status: "ATIVO" } }),
+    prisma.profissional.findMany({
+      include: { user: { select: { nome: true } }, _count: { select: { clientes: true } } },
+      orderBy: { criadoEm: "asc" },
+    }),
   ]);
 
   const hoje = new Date();
@@ -29,6 +33,9 @@ router.get("/dashboard", async (req, res) => {
     faturamentoMes: transacoesMes._sum.valorTotal || 0,
     repasseProfissionaisMes: transacoesMes._sum.valorProfissional || 0,
     receitaRenascerMes: transacoesMes._sum.valorRenascer || 0,
+    // Quantos clientes cada profissional tem hoje — soma tudo, seja cliente cadastrado
+    // pela recepção ou pela própria profissional na aba dela.
+    clientesPorProfissional: profissionais.map((p) => ({ nome: p.user.nome, total: p._count.clientes })),
   });
 });
 
