@@ -4,6 +4,8 @@ import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
+import StatusCliente from "../../components/StatusCliente";
+import SituacaoCliente from "../../components/SituacaoCliente";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -20,6 +22,7 @@ export default function AreaAtendente() {
   const ABAS = [
     { id: "clientes", label: "Clientes" },
     { id: "profissionais", label: "Profissionais e agendar" },
+    { id: "reativar", label: "Reativar clientes" },
     { id: "agenda", label: "Agenda geral" },
     { id: "suporte", label: "Suporte escalado" },
   ];
@@ -28,9 +31,88 @@ export default function AreaAtendente() {
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "clientes" && <Clientes />}
       {aba === "profissionais" && <ProfissionaisEAgendar />}
+      {aba === "reativar" && <ClientesParaReativar rotaBase="/atendente" />}
       {aba === "agenda" && <AgendaGeral />}
       {aba === "suporte" && <SuporteEscalado />}
     </Layout>
+  );
+}
+
+// Fila de clientes marcados como "não renovou" por alguma profissional (ou pela própria
+// recepção) — dá pra chamar no WhatsApp com o número que ele informou no cadastro e, se ele
+// voltar, vincular de novo com uma profissional direto por aqui.
+function ClientesParaReativar({ rotaBase }) {
+  const [lista, setLista] = useState([]);
+  const [profissionais, setProfissionais] = useState([]);
+  const [escolha, setEscolha] = useState({});
+
+  async function carregar() {
+    const [r, p] = await Promise.all([api.get(`${rotaBase}/clientes-reativar`), api.get(`${rotaBase}/profissionais`)]);
+    setLista(r.data);
+    setProfissionais(p.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function reativar(id) {
+    const profissionalId = escolha[id];
+    if (!profissionalId) return;
+    await api.put(`${rotaBase}/clientes/${id}/reativar`, { profissionalId });
+    carregar();
+  }
+
+  return (
+    <div className="card">
+      <h2 className="font-semibold mb-1">Clientes pra reativar</h2>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Clientes que alguma profissional marcou como "não renovou". Chama no WhatsApp com o número que ele
+        deixou no cadastro e, se ele topar voltar, vincula de novo com uma profissional aqui mesmo.
+      </p>
+      <div className="space-y-2">
+        {lista.map((c) => (
+          <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-medium">{c.nome}</p>
+              <p className="text-xs text-renascer-ink/50">
+                {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
+                {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {c.whatsapp && (
+                
+                  className="btn-secondary text-sm"
+                  href={`https://wa.me/${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                    `Olá, ${c.nome}! Aqui é do Espaço do Renascer. Sentimos sua falta — quer voltar a agendar suas sessões?`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  💬 Chamar no WhatsApp
+                </a>
+              )}
+              <select
+                className="input !w-auto !py-1.5 text-sm"
+                value={escolha[c.id] || ""}
+                onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
+              >
+                <option value="">Reativar com...</option>
+                {profissionais.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.user.nome}
+                  </option>
+                ))}
+              </select>
+              <button className="btn-primary text-sm" onClick={() => reativar(c.id)} disabled={!escolha[c.id]}>
+                Reativar
+              </button>
+            </div>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Ninguém na fila de reativação agora.</p>}
+      </div>
+    </div>
   );
 }
 
@@ -375,7 +457,10 @@ function Clientes() {
                   className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
                   onClick={() => setExpandido(expandido === c.id ? null : c.id)}
                 >
-                  <td className="py-1">{c.user.nome}</td>
+                  <td className="py-1 flex items-center gap-1.5">
+                    <StatusCliente status={c.statusCliente} />
+                    {c.user.nome}
+                  </td>
                   <td>{c.user.email}</td>
                   <td>{c.profissionalAtual?.user?.nome || "-"}</td>
                 </tr>,
@@ -387,6 +472,7 @@ function Clientes() {
                       <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
                       <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
                       <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
+                      <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />
                     </td>
                   </tr>
                 );
