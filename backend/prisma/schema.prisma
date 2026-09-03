@@ -281,12 +281,17 @@ model Pacote {
   valorTotal     Float
   status         StatusPacote  @default(ATIVO)
 
-    iniciadoEm     DateTime      @default(now())
+      iniciadoEm     DateTime      @default(now())
   encerradoEm    DateTime?
   avisoRenovacaoEmailEm DateTime? // controla pra não mandar o e-mail de renovação mais de uma vez
 
-  agendamentos   Agendamento[]
+  // Pop-up premium de renovação que o cliente vê no painel dele: fica "AMARELO" na penúltima
+  // sessão do pacote e "VERMELHO" quando termina todas sem renovar. popupVisualizadoEm marca
+  // que ele já viu e fechou (não reaparece até o próximo nível).
+  avisoPopupNivel    String?
+  popupVisualizadoEm DateTime?
 
+  agendamentos   Agendamento[]
   @@map("pacotes")
 }
 
