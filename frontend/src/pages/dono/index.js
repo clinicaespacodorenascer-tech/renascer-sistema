@@ -38,12 +38,12 @@ export default function AreaDono() {
 }
 
 function Dashboard() {
-  function Dashboard() {
   const [d, setD] = useState(null);
   useEffect(() => {
     api.get("/dono/dashboard").then((r) => setD(r.data));
   }, []);
   if (!d) return <p>Carregando...</p>;
+
   const cartoes = [
     ["Profissionais ativas", d.totalProfissionais],
     ["Clientes cadastrados", d.totalClientes],
@@ -53,6 +53,7 @@ function Dashboard() {
     ["Receita da Renascer no mês", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
   ];
   const profissionaisHoje = Object.entries(d.porProfissionalHoje || {});
+
   return (
     <div className="space-y-4">
       <div className="card !border-renascer/30 bg-renascer-light/30">
@@ -88,7 +89,6 @@ function Dashboard() {
         )}
         {profissionaisHoje.length === 0 && <p className="text-xs text-renascer-ink/40">Nada registrado hoje ainda.</p>}
       </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cartoes.map(([label, valor]) => (
           <div key={label} className="card">
@@ -97,7 +97,6 @@ function Dashboard() {
           </div>
         ))}
       </div>
-
       <div className="card">
         <h3 className="font-semibold mb-3">Clientes por profissional</h3>
         <p className="text-xs text-renascer-ink/50 mb-3">
@@ -118,11 +117,13 @@ function Dashboard() {
     </div>
   );
 }
+
 function Profissionais() {
   const [lista, setLista] = useState([]);
   useEffect(() => {
     api.get("/dono/profissionais").then((r) => setLista(r.data));
   }, []);
+
   return (
     <div className="space-y-3">
       {lista.map((p) => (
@@ -160,6 +161,7 @@ function Clientes() {
   useEffect(() => {
     carregar();
   }, []);
+
   return (
     <div className="card overflow-x-auto">
       <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
@@ -186,10 +188,10 @@ function Clientes() {
                 <td>{c.pacotes[0]?.status || "-"}</td>
               </tr>,
             ];
-                        if (expandido === c.id) {
+            if (expandido === c.id) {
               linhas.push(
                 <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                                    <td colSpan={4} className="py-2 space-y-3">
+                  <td colSpan={4} className="py-2 space-y-3">
                     <MetricasCliente clienteId={c.id} rotaBase="/dono" />
                     <NotificacaoECliente cliente={c} onExcluido={carregar} />
                     <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
@@ -307,7 +309,6 @@ function MetricasCliente({ clienteId, rotaBase }) {
   useEffect(() => {
     api.get(`${rotaBase}/clientes/${clienteId}/metricas`).then((r) => setM(r.data));
   }, [clienteId, rotaBase]);
-
   if (!m) return <p className="text-xs text-renascer-ink/40">Carregando métricas...</p>;
 
   const cartoes = [
@@ -337,6 +338,7 @@ function Financeiro() {
     api.get("/dono/financeiro").then((r) => setF(r.data));
   }, []);
   if (!f) return <p>Carregando...</p>;
+
   return (
     <div className="space-y-4">
       <div className="card overflow-x-auto">
@@ -369,7 +371,6 @@ function Financeiro() {
           </tbody>
         </table>
       </div>
-
       <div className="card overflow-x-auto">
         <h3 className="font-semibold mb-2">Todas as transações do mês</h3>
         <table className="w-full text-sm">
@@ -415,6 +416,7 @@ function Financeiro() {
     </div>
   );
 }
+
 function Usuarios() {
   const [lista, setLista] = useState([]);
   const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL" });
@@ -471,8 +473,7 @@ function Usuarios() {
         </button>
         {msg && <p className="text-sm mt-2">{msg}</p>}
       </div>
-
-            <div className="card overflow-x-auto">
+      <div className="card overflow-x-auto">
         <h2 className="font-semibold mb-2">Todos os usuários</h2>
         <p className="text-xs text-renascer-ink/50 mb-2">
           Como dono, você pode editar ou excluir qualquer login (cliente, profissional, atendente ou outro dono).
@@ -602,7 +603,7 @@ function SuporteEscalado() {
               </p>
             ))}
           </div>
-                   <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               className="input flex-1 min-w-[150px]"
               placeholder="Responder..."
@@ -618,8 +619,7 @@ function SuporteEscalado() {
           </div>
         </div>
       ))}
-           ))}
-{tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
+      {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
     </div>
   );
 }
