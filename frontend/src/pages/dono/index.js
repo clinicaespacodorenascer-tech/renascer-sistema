@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
+import { verComprovante } from "../../lib/comprovante";
+
+const TIPO_LABEL = {
+  PACOTE_NOVO: "Contratação nova",
+  RENOVACAO: "Renovação",
+  SESSAO_EXTRA: "Sessão extra",
+  OUTRO: "Outro",
+};
 
 export default function AreaDono() {
   const { user, carregando } = useAuth("DONO");
@@ -30,6 +38,7 @@ export default function AreaDono() {
 }
 
 function Dashboard() {
+  function Dashboard() {
   const [d, setD] = useState(null);
   useEffect(() => {
     api.get("/dono/dashboard").then((r) => setD(r.data));
@@ -39,12 +48,47 @@ function Dashboard() {
     ["Profissionais ativas", d.totalProfissionais],
     ["Clientes cadastrados", d.totalClientes],
     ["Pacotes ativos", d.pacotesAtivos],
-    ["Faturamento do mês", `R$ ${d.faturamentoMes.toFixed(2)}`],
-    ["Repasse às profissionais", `R$ ${d.repasseProfissionaisMes.toFixed(2)}`],
-    ["Receita da Renascer", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
+    ["Recebido no mês (total)", `R$ ${d.faturamentoMes.toFixed(2)}`],
+    ["Repasse às profissionais no mês", `R$ ${d.repasseProfissionaisMes.toFixed(2)}`],
+    ["Receita da Renascer no mês", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
   ];
-    return (
+  const profissionaisHoje = Object.entries(d.porProfissionalHoje || {});
+  return (
     <div className="space-y-4">
+      <div className="card !border-renascer/30 bg-renascer-light/30">
+        <h3 className="font-semibold mb-1">A receber hoje</h3>
+        <p className="text-xs text-renascer-ink/50 mb-3">
+          Tudo que foi registrado hoje (contratação, renovação ou pacote) pela atendente ou pelas profissionais. Esse
+          número reinicia sozinho todo dia — amanhã começa do zero de novo.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <p className="text-xs text-renascer-ink/50">Total registrado hoje</p>
+            <p className="text-xl font-bold text-renascer">R$ {d.hoje.totalRecebido.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-renascer-ink/50">Vai pras profissionais</p>
+            <p className="text-xl font-bold text-renascer-ink/70">R$ {d.hoje.valorProfissional.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-renascer-ink/50">Você vai receber hoje</p>
+            <p className="text-xl font-bold text-emerald-600">R$ {d.hoje.valorRenascer.toFixed(2)}</p>
+          </div>
+        </div>
+        {profissionaisHoje.length > 0 && (
+          <div className="border-t border-renascer/10 pt-2 space-y-1">
+            <p className="text-xs font-medium text-renascer-ink/60">Quanto você vai receber de cada profissional hoje</p>
+            {profissionaisHoje.map(([nome, v]) => (
+              <div key={nome} className="flex items-center justify-between text-sm">
+                <span>{nome}</span>
+                <span className="font-semibold text-emerald-600">R$ {v.valorRenascer.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {profissionaisHoje.length === 0 && <p className="text-xs text-renascer-ink/40">Nada registrado hoje ainda.</p>}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cartoes.map(([label, valor]) => (
           <div key={label} className="card">
@@ -74,7 +118,6 @@ function Dashboard() {
     </div>
   );
 }
-
 function Profissionais() {
   const [lista, setLista] = useState([]);
   useEffect(() => {
@@ -146,9 +189,10 @@ function Clientes() {
                         if (expandido === c.id) {
               linhas.push(
                 <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                  <td colSpan={4} className="py-2 space-y-3">
+                                    <td colSpan={4} className="py-2 space-y-3">
                     <MetricasCliente clienteId={c.id} rotaBase="/dono" />
                     <NotificacaoECliente cliente={c} onExcluido={carregar} />
+                    <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
                   </td>
                 </tr>
               );
@@ -220,6 +264,44 @@ function NotificacaoECliente({ cliente, onExcluido }) {
   );
 }
 
+// Histórico de pagamentos do cliente (contratações, renovações, sessões extra) — os
+// comprovantes anexados ficam guardados aqui pra sempre poder ver de novo.
+function HistoricoPagamentos({ clienteId, rotaBase }) {
+  const [lista, setLista] = useState([]);
+  const [carregado, setCarregado] = useState(false);
+
+  useEffect(() => {
+    setCarregado(false);
+    api.get(`${rotaBase}/clientes/${clienteId}/transacoes`).then((r) => {
+      setLista(r.data);
+      setCarregado(true);
+    });
+  }, [clienteId, rotaBase]);
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-1">
+      <p className="text-xs font-medium text-renascer-ink/60">Pagamentos registrados</p>
+      {!carregado && <p className="text-xs text-renascer-ink/40">Carregando...</p>}
+      {carregado && lista.length === 0 && <p className="text-xs text-renascer-ink/40">Nenhum pagamento registrado ainda.</p>}
+      {lista.map((t) => (
+        <div key={t.id} className="flex items-center justify-between flex-wrap gap-1 text-xs border-t border-renascer/10 pt-1">
+          <span>
+            {new Date(t.data).toLocaleDateString("pt-BR")} · {t.profissional?.user?.nome} · {TIPO_LABEL[t.tipo] || t.tipo} · R${" "}
+            {t.valorTotal.toFixed(2)}
+          </span>
+          {t.temComprovante ? (
+            <button className="text-renascer underline" onClick={() => verComprovante(t.id)}>
+              Ver comprovante
+            </button>
+          ) : (
+            <span className="text-renascer-ink/30">sem comprovante</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MetricasCliente({ clienteId, rotaBase }) {
   const [m, setM] = useState(null);
   useEffect(() => {
@@ -277,13 +359,62 @@ function Financeiro() {
                 <td>R$ {v.valorRenascer.toFixed(2)}</td>
               </tr>
             ))}
+            {Object.keys(f.porProfissional).length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-2 text-renascer-ink/50">
+                  Nenhuma transação neste mês.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card overflow-x-auto">
+        <h3 className="font-semibold mb-2">Todas as transações do mês</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-renascer-ink/50">
+              <th className="py-1">Data</th>
+              <th>Profissional</th>
+              <th>Cliente</th>
+              <th>Tipo</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {f.transacoes.map((t) => (
+              <tr key={t.id} className="border-t border-renascer/10">
+                <td className="py-1">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
+                <td>{t.profissional.user.nome}</td>
+                <td>{t.cliente?.user?.nome || "-"}</td>
+                <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
+                <td>R$ {t.valorTotal.toFixed(2)}</td>
+                <td className="text-right">
+                  {t.temComprovante ? (
+                    <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
+                      Ver comprovante
+                    </button>
+                  ) : (
+                    <span className="text-renascer-ink/30 text-xs">sem comprovante</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {f.transacoes.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-2 text-renascer-ink/50">
+                  Nenhuma transação neste mês.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
     </div>
   );
 }
-
 function Usuarios() {
   const [lista, setLista] = useState([]);
   const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL" });
