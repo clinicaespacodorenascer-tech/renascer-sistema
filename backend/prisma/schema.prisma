@@ -310,7 +310,9 @@ model TransacaoFinanceira {
   valorProfissional Float       // já calculado (percentualRepasse)
   valorRenascer     Float
 
-  comprovanteUrl String?
+    comprovanteUrl String?
+  comprovanteBase64   String?   @db.Text // conteúdo real do comprovante, guardado pra poder ver depois
+  comprovanteMimeType String?
   reconhecidoPorIA Boolean      @default(false)
   dadosBrutosIA    String?      @db.Text // resposta crua da IA (auditoria)
 
