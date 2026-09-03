@@ -104,6 +104,23 @@ router.get("/profissionais", async (req, res) => {
   res.json(profissionais);
 });
 
+// A atendente também pode ajustar os horários exatos que uma profissional atende (útil quando
+// a própria profissional pede pra recepção alterar). Cada item é um horário EXATO daquele dia
+// (ex: {diaSemana: "SEGUNDA", horaInicio: "08:30"}) — não uma faixa contínua — pra não liberar
+// pro cliente/atendente horário que ela na verdade não atende.
+router.put("/profissionais/:id/disponibilidades", async (req, res) => {
+  const profissionalId = req.params.id;
+  const { disponibilidades } = req.body; // [{diaSemana, horaInicio}]
+  const existe = await prisma.profissional.findUnique({ where: { id: profissionalId } });
+  if (!existe) return res.status(404).json({ erro: "Profissional não encontrada." });
+
+  await prisma.disponibilidade.deleteMany({ where: { profissionalId } });
+  await prisma.disponibilidade.createMany({
+    data: (disponibilidades || []).map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
+  });
+  res.json({ ok: true });
+});
+
 // Horários livres de uma profissional numa data específica, já descontando o que está ocupado —
 // é essa lista que a atendente usa pra marcar exatamente o horário que o cliente quer.
 router.get("/profissionais/:id/horarios", async (req, res) => {
