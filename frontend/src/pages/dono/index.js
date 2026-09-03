@@ -43,14 +43,34 @@ function Dashboard() {
     ["Repasse às profissionais", `R$ ${d.repasseProfissionaisMes.toFixed(2)}`],
     ["Receita da Renascer", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
   ];
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      {cartoes.map(([label, valor]) => (
-        <div key={label} className="card">
-          <p className="text-sm text-renascer-ink/60">{label}</p>
-          <p className="text-2xl font-bold text-renascer">{valor}</p>
+    return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {cartoes.map(([label, valor]) => (
+          <div key={label} className="card">
+            <p className="text-sm text-renascer-ink/60">{label}</p>
+            <p className="text-2xl font-bold text-renascer">{valor}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold mb-3">Clientes por profissional</h3>
+        <p className="text-xs text-renascer-ink/50 mb-3">
+          Conta tanto os clientes cadastrados pela recepção quanto os que a própria profissional cadastrou na aba dela.
+        </p>
+        <div className="space-y-1">
+          {d.clientesPorProfissional.map((p) => (
+            <div key={p.nome} className="flex items-center justify-between border-t border-renascer/10 py-1.5 text-sm">
+              <span>{p.nome}</span>
+              <span className="font-semibold text-renascer">{p.total}</span>
+            </div>
+          ))}
+          {d.clientesPorProfissional.length === 0 && (
+            <p className="text-sm text-renascer-ink/50">Nenhuma profissional cadastrada ainda.</p>
+          )}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
