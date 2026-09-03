@@ -305,11 +305,12 @@ function Clientes() {
                   <td>{c.profissionalAtual?.user?.nome || "-"}</td>
                 </tr>,
               ];
-              if (expandido === c.id) {
+                            if (expandido === c.id) {
                 linhas.push(
                   <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                    <td colSpan={3} className="py-2">
+                    <td colSpan={3} className="py-2 space-y-3">
                       <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
+                      <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
                     </td>
                   </tr>
                 );
@@ -319,6 +320,67 @@ function Clientes() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Contato de notificação (e-mail/telefone + data de renovação) e, quando permitido,
+// exclusão do login — a atendente só pode excluir CLIENTES (nunca outros papéis).
+function NotificacaoECliente({ cliente, rotaBase, onExcluido, podeExcluir }) {
+  const [notifEmail, setNotifEmail] = useState(cliente.notifEmail || "");
+  const [notifTelefone, setNotifTelefone] = useState(cliente.notifTelefone || "");
+  const [renovarEm, setRenovarEm] = useState(cliente.renovarEm ? new Date(cliente.renovarEm).toISOString().slice(0, 10) : "");
+  const [msg, setMsg] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+
+  async function salvar() {
+    setMsg("");
+    try {
+      await api.put(`${rotaBase}/clientes/${cliente.id}/notificacao`, {
+        notifEmail: notifEmail || null,
+        notifTelefone: notifTelefone || null,
+        renovarEm: renovarEm || null,
+      });
+      setMsg("Salvo! O sistema vai usar esses dados pra mandar os avisos automáticos.");
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    }
+  }
+
+  async function excluir() {
+    if (!window.confirm(`Excluir o login de ${cliente.user.nome}? Isso apaga sessões, mensagens e pacotes dele. Não tem como desfazer.`)) return;
+    setExcluindo(true);
+    setMsg("");
+    try {
+      await api.delete(`${rotaBase}/clientes/${cliente.id}`);
+      onExcluido?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao excluir cliente.");
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-2">
+      <p className="text-xs text-renascer-ink/50">
+        Contato pra avisos automáticos (sessão/renovação) — pode ser diferente do login — e a data prevista de renovação.
+      </p>
+      <div className="grid sm:grid-cols-3 gap-2">
+        <input className="input" placeholder="E-mail para notificação" value={notifEmail} onChange={(e) => setNotifEmail(e.target.value)} />
+        <input className="input" placeholder="Telefone para notificação" value={notifTelefone} onChange={(e) => setNotifTelefone(e.target.value)} />
+        <input type="date" className="input" value={renovarEm} onChange={(e) => setRenovarEm(e.target.value)} />
+      </div>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <button className="btn-secondary text-sm" onClick={salvar}>
+          Salvar
+        </button>
+        {podeExcluir && (
+          <button className="text-red-600 text-sm underline" onClick={excluir} disabled={excluindo}>
+            {excluindo ? "Excluindo..." : "Excluir login deste cliente"}
+          </button>
+        )}
+      </div>
+      {msg && <p className="text-sm">{msg}</p>}
     </div>
   );
 }
