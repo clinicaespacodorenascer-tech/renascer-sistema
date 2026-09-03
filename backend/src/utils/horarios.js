@@ -1,7 +1,7 @@
 // Calcula, a partir da disponibilidade semanal que a profissional liberou (dia + faixa de
 // horário), quais horários exatos estão livres numa data específica — descontando o que já
 // está ocupado na agenda dela. É essa lista que a atendente vê pra marcar exatamente o que o
-// cliente quer, e é a mesma base que, no futuro, vai alimentar a escolha de horário do cliente.
+// cliente quer, e é a mesma base que alimenta a escolha de horário do cliente ao reagendar.
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 const DURACAO_MINUTOS = { MIN30: 30, MIN50: 50 };
@@ -63,4 +63,19 @@ function horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao }) {
   return [...new Set(livres)].sort();
 }
 
-module.exports = { diaSemanaDeData, horariosLivres, gerarSlots, DURACAO_MINUTOS };
+// Diz se um horário específico (início + duração) colide com algum agendamento já existente
+// naquele dia — mesma matemática de sobreposição do horariosLivres, mas pra checar um único
+// horário direto (útil quando já se sabe o horário e só precisa confirmar que não bate em nada,
+// como ao mover uma sessão pra outro dia da semana mantendo o mesmo horário).
+function haConflito({ horaInicio, duracao, agendamentosDoDia }) {
+  const duracaoMinutos = DURACAO_MINUTOS[duracao] || 50;
+  const inicioNovo = paraMinutos(horaInicio);
+  const fimNovo = inicioNovo + duracaoMinutos;
+  return agendamentosDoDia.some((ag) => {
+    const inicio = paraMinutos(ag.horaInicio);
+    const fim = inicio + (DURACAO_MINUTOS[ag.duracao] || 50);
+    return inicioNovo < fim && inicio < fimNovo;
+  });
+}
+
+module.exports = { diaSemanaDeData, horariosLivres, haConflito, gerarSlots, DURACAO_MINUTOS };
