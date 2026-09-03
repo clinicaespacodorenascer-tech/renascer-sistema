@@ -148,7 +148,7 @@ function AbaPainel() {
           <p className="text-sm text-renascer-ink/60">Sessões restantes</p>
           <p className="text-2xl font-bold text-renascer">{painel.sessoesRestantes}</p>
         </div>
-                <div className="card">
+        <div className="card">
           <p className="text-sm text-renascer-ink/60">Próxima sessão</p>
           <p className="font-semibold">
             {painel.proximaSessao ? new Date(painel.proximaSessao.data).toLocaleString("pt-BR") : "Nenhuma agendada"}
@@ -240,7 +240,7 @@ function AbaAgenda() {
         </div>
       </div>
 
-            <ReagendarSessao sessoes={sessoes || []} onReagendado={carregar} />
+      <ReagendarSessao sessoes={sessoes || []} onReagendado={carregar} />
 
       <div className="card">
         <h2 className="font-semibold mb-2">Quer trocar de profissional?</h2>
@@ -256,29 +256,49 @@ function AbaAgenda() {
   );
 }
 
-const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
-
+// O cliente nunca digita um horário livremente — ele só pode escolher entre os horários que a
+// agenda real da profissional permite naquele dia (já descontando o que está ocupado e já
+// considerando se a sessão é de 30 ou 50min). Isso evita virar bagunça de horários batendo um
+// em cima do outro; o servidor revalida tudo de novo antes de confirmar (ver /cliente/agenda/:id/reagendar).
 function ReagendarSessao({ sessoes, onReagendado }) {
   const [id, setId] = useState("");
   const [data, setData] = useState("");
-  const [horaInicio, setHoraInicio] = useState("");
+  const [horarios, setHorarios] = useState(null);
+  const [horaEscolhida, setHoraEscolhida] = useState("");
+  const [buscando, setBuscando] = useState(false);
   const [msg, setMsg] = useState("");
 
   const elegiveis = (sessoes || []).filter((s) => s.status !== "REALIZADO" && s.status !== "CANCELADO");
 
+  async function buscarHorarios() {
+    if (!id || !data) return;
+    setMsg("");
+    setHoraEscolhida("");
+    setBuscando(true);
+    try {
+      const { data: resp } = await api.get(`/cliente/agenda/${id}/horarios`, { params: { data } });
+      setHorarios(resp);
+    } catch (e) {
+      setHorarios(null);
+      setMsg(e?.response?.data?.erro || "Erro ao buscar horários livres.");
+    } finally {
+      setBuscando(false);
+    }
+  }
+
   async function reagendar() {
-    if (!id || !data || !horaInicio) {
-      setMsg("Escolha a sessão, a nova data e o novo horário.");
+    if (!id || !data || !horaEscolhida) {
+      setMsg("Escolha a sessão, a nova data e um horário disponível.");
       return;
     }
     setMsg("");
     try {
-      const diaSemana = DIAS_SEMANA_JS[new Date(`${data}T00:00:00`).getDay()];
-      await api.post(`/cliente/agenda/${id}/reagendar`, { data, diaSemana, horaInicio });
+      await api.post(`/cliente/agenda/${id}/reagendar`, { data, horaInicio: horaEscolhida });
       setMsg("Sessão reagendada com sucesso!");
       setId("");
       setData("");
-      setHoraInicio("");
+      setHorarios(null);
+      setHoraEscolhida("");
       onReagendado?.();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao reagendar.");
@@ -289,17 +309,28 @@ function ReagendarSessao({ sessoes, onReagendado }) {
     <div className="card">
       <h2 className="font-semibold mb-2">Reagendar uma sessão existente</h2>
       <p className="text-xs text-renascer-ink/50 mb-3">
-        Escolha qual sessão marcada você quer mudar, depois a nova data e o novo horário. Só é possível reagendar com pelo
-        menos 24h de antecedência da sessão original.
+        Escolha qual sessão marcada você quer mudar e a nova data — só aparecem os horários realmente livres na agenda
+        da sua profissional (já considerando se a sessão é de 30 ou 50 minutos). Só é possível reagendar com pelo menos
+        24h de antecedência da sessão original.
       </p>
       <div className="space-y-2">
         <div>
           <label className="text-sm text-renascer-ink/60 block mb-1">Qual sessão você quer reagendar?</label>
-          <select className="input" value={id} onChange={(e) => setId(e.target.value)}>
+          <select
+            className="input"
+            value={id}
+            onChange={(e) => {
+              setId(e.target.value);
+              setHorarios(null);
+              setHoraEscolhida("");
+              setMsg("");
+            }}
+          >
             <option value="">Escolha a sessão marcada</option>
             {elegiveis.map((s) => (
               <option key={s.id} value={s.id}>
-                {new Date(s.data).toLocaleDateString("pt-BR")} às {s.horaInicio} — {s.profissional?.user?.nome}
+                {new Date(s.data).toLocaleDateString("pt-BR")} às {s.horaInicio} — {s.profissional?.user?.nome} · sessão de{" "}
+                {s.duracao === "MIN30" ? "30min" : "50min"}
               </option>
             ))}
           </select>
@@ -307,18 +338,41 @@ function ReagendarSessao({ sessoes, onReagendado }) {
             <p className="text-xs text-renascer-ink/40 mt-1">Você não tem sessões marcadas pra reagendar.</p>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
+        <div className="flex flex-wrap gap-2">
+          <div className="flex-1 min-w-[150px]">
             <label className="text-sm text-renascer-ink/60 block mb-1">Para qual data você quer mudar?</label>
-            <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+            <input type="date" className="input w-full" value={data} onChange={(e) => setData(e.target.value)} />
           </div>
-          <div>
-            <label className="text-sm text-renascer-ink/60 block mb-1">Para qual horário? (ex: 14:00)</label>
-            <input className="input" placeholder="14:00" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
-          </div>
+          <button className="btn-secondary whitespace-nowrap self-end" onClick={buscarHorarios} disabled={!id || !data || buscando}>
+            {buscando ? "Buscando..." : "Ver horários livres"}
+          </button>
         </div>
+
+        {horarios && (
+          <div>
+            <p className="text-xs text-renascer-ink/50 mb-1">
+              Horários livres em {horarios.diaSemana.toLowerCase()} pra uma sessão de {horarios.duracao === "MIN30" ? "30min" : "50min"}:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {horarios.livres.length === 0 && (
+                <p className="text-sm text-amber-700">Nenhum horário livre nesse dia. Escolha outra data.</p>
+              )}
+              {horarios.livres.map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setHoraEscolhida(h)}
+                  className={`text-sm px-3 py-1.5 rounded-full border ${
+                    horaEscolhida === h ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <button className="btn-secondary mt-2" onClick={reagendar}>
+      <button className="btn-secondary mt-3" onClick={reagendar} disabled={!horaEscolhida}>
         Reagendar
       </button>
       {msg && <p className="text-sm mt-2">{msg}</p>}
@@ -334,7 +388,7 @@ function TrocaProfissional() {
     api.get("/cliente/profissionais-disponiveis").then((r) => setLista(r.data));
   }, []);
 
-    async function escolher(id) {
+  async function escolher(id) {
     setMsg("");
     // Abre a aba já no clique (antes do await) — no celular, se abrir só depois da resposta
     // da API, o navegador entende como pop-up indesejado e bloqueia.
@@ -376,7 +430,7 @@ function AbaFinanceiro() {
     api.get("/cliente/planos").then((r) => setPlanos(r.data));
   }, []);
 
-    async function escolherPlano(duracao, totalSessoes) {
+  async function escolherPlano(duracao, totalSessoes) {
     // Abre a aba já no clique (antes do await) — no celular, se abrir só depois da resposta
     // da API, o navegador entende como pop-up indesejado e bloqueia.
     const novaAba = window.open("", "_blank");
@@ -424,7 +478,7 @@ function AbaFinanceiro() {
       </div>
 
       <div className="card">
-                <h2 className="font-semibold mb-3">Solicitar sessão extra</h2>
+        <h2 className="font-semibold mb-3">Solicitar sessão extra</h2>
         <div className="flex flex-wrap gap-2">
           <button className="btn-secondary" onClick={() => sessaoExtra("MIN30")}>
             Extra de 30min
@@ -485,7 +539,7 @@ function AbaChat() {
         ))}
         {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
       </div>
-            {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
       <div className="flex flex-wrap gap-2">
         <input
           className="input flex-1 min-w-[150px]"
