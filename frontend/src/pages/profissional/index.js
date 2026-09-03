@@ -5,6 +5,8 @@ import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
+import StatusCliente from "../../components/StatusCliente";
+import SituacaoCliente from "../../components/SituacaoCliente";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -285,7 +287,10 @@ function AbaAgenda() {
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", ag.id)}
                     className={`border border-renascer/10 rounded-lg p-2 bg-renascer-light/40 ${podeMover ? "cursor-move" : ""}`}
                   >
-                    <p className="text-sm font-medium">{ag.horaInicio} · {ag.cliente.user.nome}</p>
+                    <p className="text-sm font-medium flex items-center gap-1.5">
+                      <StatusCliente status={ag.statusCliente} />
+                      {ag.horaInicio} · {ag.cliente.user.nome}
+                    </p>
                     <span className={`badge mt-1 ${STATUS_COR[ag.status]}`}>{ag.status}</span>
                     {podeMover && (
                       <>
@@ -333,11 +338,17 @@ function AbaAgenda() {
 // ---------------- CLIENTES (lista + chat + relatórios) ----------------
 function AbaClientes() {
   const [clientes, setClientes] = useState([]);
-  const [selecionado, setSelecionado] = useState(null);
+  const [selecionadoId, setSelecionadoId] = useState(null);
 
+  async function carregar() {
+    const { data } = await api.get("/profissional/clientes");
+    setClientes(data);
+  }
   useEffect(() => {
-    api.get("/profissional/clientes").then((r) => setClientes(r.data));
+    carregar();
   }, []);
+
+  const selecionado = clientes.find((c) => c.id === selecionadoId) || null;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -348,12 +359,15 @@ function AbaClientes() {
           {clientes.map((c) => (
             <button
               key={c.id}
-              onClick={() => setSelecionado(c)}
+              onClick={() => setSelecionadoId(c.id)}
               className={`w-full text-left px-3 py-2 rounded-lg border ${
-                selecionado?.id === c.id ? "border-renascer bg-renascer-light" : "border-renascer/10"
+                selecionadoId === c.id ? "border-renascer bg-renascer-light" : "border-renascer/10"
               }`}
             >
-              <p className="font-medium">{c.user.nome}</p>
+              <p className="font-medium flex items-center gap-1.5">
+                <StatusCliente status={c.statusCliente} />
+                {c.user.nome}
+              </p>
               <p className="text-xs text-renascer-ink/50">
                 {c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes} sessões` : "sem pacote ativo"}
               </p>
@@ -363,17 +377,24 @@ function AbaClientes() {
         </div>
       </div>
       <div className="md:col-span-2">
-        {selecionado ? <DetalheCliente cliente={selecionado} /> : <p className="text-renascer-ink/50">Selecione um cliente.</p>}
+        {selecionado ? (
+          <DetalheCliente cliente={selecionado} onMudouSituacao={() => { carregar(); setSelecionadoId(null); }} />
+        ) : (
+          <p className="text-renascer-ink/50">Selecione um cliente.</p>
+        )}
       </div>
     </div>
   );
 }
 
-function DetalheCliente({ cliente }) {
+function DetalheCliente({ cliente, onMudouSituacao }) {
   const [sub, setSub] = useState("chat");
   return (
     <div className="card">
-      <h2 className="font-semibold text-lg">{cliente.user.nome}</h2>
+      <h2 className="font-semibold text-lg flex items-center gap-2">
+        <StatusCliente status={cliente.statusCliente} />
+        {cliente.user.nome}
+      </h2>
       <div className="flex gap-2 my-3 flex-wrap">
         {[
           ["chat", "Chat / recados"],
@@ -394,6 +415,7 @@ function DetalheCliente({ cliente }) {
       {sub === "relatorios" && <RelatoriosCliente clienteId={cliente.id} />}
       {sub === "pacote" && <NovoPacoteCliente clienteId={cliente.id} />}
       {sub === "notificacao" && <NotificacaoCliente clienteId={cliente.id} rotaBase="/profissional" />}
+      <SituacaoCliente clienteId={cliente.id} rotaBase="/profissional" onMudou={onMudouSituacao} />
     </div>
   );
 }
