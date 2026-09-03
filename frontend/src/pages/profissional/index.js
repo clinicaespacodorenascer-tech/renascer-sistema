@@ -221,6 +221,7 @@ function DetalheCliente({ cliente }) {
           ["chat", "Chat / recados"],
           ["relatorios", "Relatórios"],
           ["pacote", "Pacote / pagamento"],
+          ["notificacao", "Notificação"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -234,6 +235,61 @@ function DetalheCliente({ cliente }) {
       {sub === "chat" && <ChatCliente clienteId={cliente.id} />}
       {sub === "relatorios" && <RelatoriosCliente clienteId={cliente.id} />}
       {sub === "pacote" && <NovoPacoteCliente clienteId={cliente.id} />}
+      {sub === "notificacao" && <NotificacaoCliente clienteId={cliente.id} rotaBase="/profissional" />}
+    </div>
+  );
+}
+
+// ---------------- NOTIFICAÇÃO (contato p/ avisos automáticos + data de renovação) ----------------
+function NotificacaoCliente({ clienteId, rotaBase }) {
+  const [notifEmail, setNotifEmail] = useState("");
+  const [notifTelefone, setNotifTelefone] = useState("");
+  const [renovarEm, setRenovarEm] = useState("");
+  const [carregado, setCarregado] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    setCarregado(false);
+    api.get(`${rotaBase}/clientes/${clienteId}`).then((r) => {
+      setNotifEmail(r.data.notifEmail || "");
+      setNotifTelefone(r.data.notifTelefone || "");
+      setRenovarEm(r.data.renovarEm ? new Date(r.data.renovarEm).toISOString().slice(0, 10) : "");
+      setCarregado(true);
+    });
+  }, [clienteId, rotaBase]);
+
+  async function salvar() {
+    setMsg("");
+    try {
+      await api.put(`${rotaBase}/clientes/${clienteId}/notificacao`, {
+        notifEmail: notifEmail || null,
+        notifTelefone: notifTelefone || null,
+        renovarEm: renovarEm || null,
+      });
+      setMsg("Salvo! O sistema vai usar esses dados pra mandar os avisos automáticos.");
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    }
+  }
+
+  if (!carregado) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-renascer-ink/50">
+        Cadastre um e-mail (e/ou telefone) pra receber os lembretes automáticos de sessão e de renovação — pode ser diferente do
+        login do cliente. Também dá pra marcar a data prevista de renovação, pra avisarmos com antecedência.
+      </p>
+      <input className="input" placeholder="E-mail para notificação" value={notifEmail} onChange={(e) => setNotifEmail(e.target.value)} />
+      <input className="input" placeholder="Telefone para notificação" value={notifTelefone} onChange={(e) => setNotifTelefone(e.target.value)} />
+      <div>
+        <label className="text-sm text-renascer-ink/60 block mb-1">Data prevista de renovação</label>
+        <input type="date" className="input" value={renovarEm} onChange={(e) => setRenovarEm(e.target.value)} />
+      </div>
+      <button className="btn-primary" onClick={salvar}>
+        Salvar
+      </button>
+      {msg && <p className="text-sm mt-1">{msg}</p>}
     </div>
   );
 }
