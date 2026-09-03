@@ -3,10 +3,12 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
-const { valorDoPlano } = require("../utils/financeiro");
+const { valorDoPlano, calcularRepasse } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { calcularMetricasCliente } = require("../utils/metricas");
+const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
+
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
@@ -33,10 +35,15 @@ router.post("/clientes", async (req, res) => {
         create: {
           profissionalAtualId: profissionalAtualId || null,
           cadastradoPorId: atendenteId,
+          whatsappCadastro: telefone || null,
         },
       },
     },
     include: { cliente: true },
+  });
+
+  await prisma.historicoCliente.create({
+    data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
   });
 
   res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente });
@@ -44,13 +51,91 @@ router.post("/clientes", async (req, res) => {
 
 router.get("/clientes", async (req, res) => {
   const clientes = await prisma.cliente.findMany({
+    where: { situacao: "ATIVO" },
     include: {
       user: { select: { nome: true, email: true, telefone: true } },
       profissionalAtual: { include: { user: { select: { nome: true } } } },
+      pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
     orderBy: { criadoEm: "desc" },
   });
-  res.json(clientes);
+  res.json(
+    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
+  );
+});
+
+// A atendente também pode registrar o andamento da relação com o cliente (mesma ação da
+// profissional): "ATIVO", "RENOVOU" ou "EXCLUIR" (não renovou — vai pra fila de reativação).
+router.put("/clientes/:id/situacao", async (req, res) => {
+  const { acao } = req.body; // "ATIVO" | "RENOVOU" | "EXCLUIR"
+  const cliente = await prisma.cliente.findUnique({
+    where: { id: req.params.id },
+    include: { user: true, profissionalAtual: { include: { user: true } }, pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 } },
+  });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado." });
+
+  const pacote = cliente.pacotes[0];
+  const pacoteResumo = pacote ? `${pacote.duracao === "MIN30" ? "30min" : "50min"} - ${pacote.totalSessoes} sessão(ões)` : null;
+  const base = {
+    clienteId: cliente.id,
+    nomeCliente: cliente.user.nome,
+    whatsapp: cliente.whatsappCadastro || cliente.user.telefone,
+    pacoteResumo,
+    profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+  };
+
+  if (acao === "RENOVOU") {
+    await prisma.historicoCliente.create({ data: { ...base, tipo: "RENOVOU" } });
+    await prisma.pacote.updateMany({ where: { clienteId: cliente.id }, data: { avisoPopupNivel: null } });
+  } else if (acao === "EXCLUIR") {
+    await prisma.historicoCliente.create({ data: { ...base, tipo: "EXCLUIDO", motivo: "Não renovou — removido pela recepção." } });
+    await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
+  } else {
+    await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
+  }
+
+  res.json({ ok: true });
+});
+
+// Fila de reativação: clientes que alguma profissional (ou a própria recepção) marcou como
+// "não renovou e saiu" — ficam aqui até alguém vincular de novo com uma profissional.
+router.get("/clientes-reativar", async (req, res) => {
+  const clientes = await prisma.cliente.findMany({
+    where: { situacao: "EXCLUIDO", profissionalAtualId: null },
+    include: { user: { select: { nome: true } }, historico: { orderBy: { criadoEm: "desc" }, take: 1 } },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json(
+    clientes.map((c) => ({
+      id: c.id,
+      nome: c.user.nome,
+      whatsapp: c.whatsappCadastro,
+      pacoteResumo: c.historico[0]?.pacoteResumo || null,
+      excluidoEm: c.historico[0]?.criadoEm || null,
+    }))
+  );
+});
+
+// Reativa: vincula o cliente de novo com uma profissional e ele volta a aparecer na lista normal dela.
+router.put("/clientes/:id/reativar", async (req, res) => {
+  const { profissionalId } = req.body;
+  if (!profissionalId) return res.status(400).json({ erro: "Escolha a profissional que vai atender de novo." });
+
+  const cliente = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { situacao: "ATIVO", profissionalAtualId: profissionalId },
+    include: { user: true, profissionalAtual: { include: { user: true } } },
+  });
+  await prisma.historicoCliente.create({
+    data: {
+      clienteId: cliente.id,
+      tipo: "REATIVADO",
+      nomeCliente: cliente.user.nome,
+      whatsapp: cliente.whatsappCadastro,
+      profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+    },
+  });
+  res.json({ ok: true });
 });
 
 // ---------- Métricas de retenção de um cliente (tempo de casa, renovações) ----------
@@ -59,6 +144,7 @@ router.get("/clientes/:id/metricas", async (req, res) => {
   if (!metricas) return res.status(404).json({ erro: "Cliente não encontrado." });
   res.json(metricas);
 });
+
 router.put("/clientes/:id/vincular-profissional", async (req, res) => {
   const { profissionalId } = req.body;
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: { profissionalAtualId: profissionalId } });
@@ -188,16 +274,20 @@ router.post("/agendamentos", async (req, res) => {
   res.json(agendamento);
 });
 
-// Registrar o pacote pago (a atendente também fecha o cadastro/pagamento inicial do cliente)
+// Registrar o pacote pago (a atendente também fecha o cadastro/pagamento inicial do cliente).
+// Aqui é onde ela anexa o comprovante de contratação/pagamento/renovação — ele fica guardado
+// no cadastro do cliente pra poder ser visto depois, e já contabiliza automaticamente
+// quanto vai pra profissional e quanto fica pra Renascer (aparece no painel do Dono no mesmo dia).
 router.post("/clientes/:id/pacotes", async (req, res) => {
-  const { duracao, totalSessoes, valorTotal } = req.body;
+  const { duracao, totalSessoes, valorTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
   const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id } });
   if (!cliente?.profissionalAtualId) {
     return res.status(400).json({ erro: "Vincule o cliente a uma profissional antes de registrar o pacote." });
   }
+  const profissional = await prisma.profissional.findUnique({ where: { id: cliente.profissionalAtualId } });
 
   const valorOficial = valorDoPlano(duracao, totalSessoes);
-  const valorFinal = valorTotal ?? valorOficial;
+  const valorFinal = Number(valorTotal ?? valorOficial);
   if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
 
   await prisma.pacote.updateMany({
@@ -209,13 +299,49 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     data: { clienteId: cliente.id, profissionalId: cliente.profissionalAtualId, duracao, totalSessoes, valorTotal: valorFinal, status: "ATIVO" },
   });
 
+  const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, profissional.percentualRepasse);
+  const transacao = await prisma.transacaoFinanceira.create({
+    data: {
+      profissionalId: cliente.profissionalAtualId,
+      clienteId: cliente.id,
+      tipo: tipo || "PACOTE_NOVO",
+      valorTotal: valorFinal,
+      valorProfissional,
+      valorRenascer,
+      comprovanteBase64: imagemBase64 || null,
+      comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
+      observacao: observacao || null,
+    },
+  });
+
   await notificar(cliente.userId, {
     titulo: "Novo pacote liberado",
     mensagem: `Seu pacote de ${totalSessoes} sessão(ões) foi confirmado. Já pode agendar seus horários!`,
     tipo: "sistema",
   });
 
-  res.json(pacote);
+  res.json({ pacote, transacao });
+});
+
+// Histórico de pagamentos do cliente (contratações, renovações) com os comprovantes
+// anexados — fica guardado pra poder ver depois. Não devolve a imagem em si (pesado),
+// só se tem comprovante; a imagem é buscada à parte em /comum/transacoes/:id/comprovante.
+router.get("/clientes/:id/transacoes", async (req, res) => {
+  const transacoes = await prisma.transacaoFinanceira.findMany({
+    where: { clienteId: req.params.id },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorProfissional: true,
+      valorRenascer: true,
+      data: true,
+      comprovanteMimeType: true,
+      profissional: { select: { user: { select: { nome: true } } } },
+    },
+    orderBy: { data: "desc" },
+  });
+  res.json(transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })));
 });
 
 // ---------- Ferramentas básicas: agenda geral (somente leitura) ----------
