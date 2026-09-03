@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
+const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
 
@@ -60,6 +61,31 @@ router.get("/clientes/:id/metricas", async (req, res) => {
   const metricas = await calcularMetricasCliente(req.params.id);
   if (!metricas) return res.status(404).json({ erro: "Cliente não encontrado." });
   res.json(metricas);
+});
+
+// ---------- Contato de notificação (e-mail/telefone) + data prevista de renovação ----------
+router.put("/clientes/:id/notificacao", async (req, res) => {
+  const { notifEmail, notifTelefone, renovarEm } = req.body;
+  const dados = {
+    ...(notifEmail !== undefined && { notifEmail: notifEmail || null }),
+    ...(notifTelefone !== undefined && { notifTelefone: notifTelefone || null }),
+  };
+  if (renovarEm !== undefined) {
+    dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
+    dados.renovarEmAvisoEnviado = false;
+  }
+  const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
+  res.json(cliente);
+});
+
+// Excluir login de cliente direto pela aba Clientes (mesma exclusão em cascata da atendente)
+router.delete("/clientes/:id", async (req, res) => {
+  try {
+    await excluirCliente(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ erro: e.message || "Erro ao excluir cliente." });
+  }
 });
 // ---------- Financeiro consolidado ----------
 router.get("/financeiro", async (req, res) => {
@@ -141,6 +167,40 @@ router.put("/usuarios/:id/status", async (req, res) => {
   const { ativo } = req.body;
   await prisma.user.update({ where: { id: req.params.id }, data: { ativo } });
   res.json({ ok: true });
+});
+
+// Editar dados de qualquer login (nome, e-mail, telefone, senha) — só o dono pode.
+router.put("/usuarios/:id", async (req, res) => {
+  const { nome, email, telefone, novaSenha } = req.body;
+  const dados = {};
+  if (nome !== undefined) dados.nome = nome;
+  if (email !== undefined) dados.email = email.toLowerCase().trim();
+  if (telefone !== undefined) dados.telefone = telefone;
+  if (novaSenha) dados.senha = await bcrypt.hash(novaSenha, 10);
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: dados,
+      select: { id: true, nome: true, email: true, telefone: true, role: true, ativo: true },
+    });
+    res.json(user);
+  } catch (e) {
+    res.status(400).json({ erro: "Não foi possível atualizar (verifique se o e-mail já não está em uso)." });
+  }
+});
+
+// Excluir qualquer login (cliente, profissional, atendente ou outro dono) — hierarquia máxima.
+router.delete("/usuarios/:id", async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ erro: "Você não pode excluir o seu próprio login." });
+  }
+  try {
+    await excluirUsuarioPorId(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ erro: e.message || "Erro ao excluir usuário." });
+  }
 });
 
 // ---------- Suporte escalado à gerência (visão dos donos) ----------
