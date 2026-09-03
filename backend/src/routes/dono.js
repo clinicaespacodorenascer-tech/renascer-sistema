@@ -4,6 +4,7 @@ const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
+
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
 
@@ -21,10 +22,44 @@ router.get("/dashboard", async (req, res) => {
 
   const hoje = new Date();
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const transacoesMes = await prisma.transacaoFinanceira.aggregate({
-    where: { data: { gte: inicioMes } },
-    _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
-  });
+  const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
+
+  const [transacoesMes, transacoesHoje] = await Promise.all([
+    prisma.transacaoFinanceira.aggregate({
+      where: { data: { gte: inicioMes } },
+      _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
+    }),
+    // Tudo que foi anexado/registrado hoje (contratação, renovação, pacote) — seja pela
+    // atendente ou pela própria profissional. Essa lista muda sozinha de um dia pro outro,
+    // porque só olha pra data de hoje: não precisa "zerar" nada, amanhã ela já começa vazia.
+    prisma.transacaoFinanceira.findMany({
+      where: { data: { gte: inicioHoje, lt: inicioAmanha } },
+      select: {
+        valorTotal: true,
+        valorProfissional: true,
+        valorRenascer: true,
+        profissional: { select: { user: { select: { nome: true } } } },
+      },
+    }),
+  ]);
+
+  const porProfissionalHoje = {};
+  for (const t of transacoesHoje) {
+    const nome = t.profissional.user.nome;
+    porProfissionalHoje[nome] = porProfissionalHoje[nome] || { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 };
+    porProfissionalHoje[nome].totalRecebido += t.valorTotal;
+    porProfissionalHoje[nome].valorProfissional += t.valorProfissional;
+    porProfissionalHoje[nome].valorRenascer += t.valorRenascer;
+  }
+  const hojeTotais = transacoesHoje.reduce(
+    (acc, t) => ({
+      totalRecebido: acc.totalRecebido + t.valorTotal,
+      valorProfissional: acc.valorProfissional + t.valorProfissional,
+      valorRenascer: acc.valorRenascer + t.valorRenascer,
+    }),
+    { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 }
+  );
 
   res.json({
     totalProfissionais,
@@ -33,6 +68,9 @@ router.get("/dashboard", async (req, res) => {
     faturamentoMes: transacoesMes._sum.valorTotal || 0,
     repasseProfissionaisMes: transacoesMes._sum.valorProfissional || 0,
     receitaRenascerMes: transacoesMes._sum.valorRenascer || 0,
+    // "A receber hoje": tudo que foi registrado/anexado hoje, e quanto disso fica pra Renascer.
+    hoje: hojeTotais,
+    porProfissionalHoje,
     // Quantos clientes cada profissional tem hoje — soma tudo, seja cliente cadastrado
     // pela recepção ou pela própria profissional na aba dela.
     clientesPorProfissional: profissionais.map((p) => ({ nome: p.user.nome, total: p._count.clientes })),
@@ -70,7 +108,28 @@ router.get("/clientes/:id/metricas", async (req, res) => {
   res.json(metricas);
 });
 
+// Histórico de pagamentos do cliente (contratações, renovações) com os comprovantes
+// anexados — o dono pode ver de qualquer cliente, de qualquer profissional.
+router.get("/clientes/:id/transacoes", async (req, res) => {
+  const transacoes = await prisma.transacaoFinanceira.findMany({
+    where: { clienteId: req.params.id },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorProfissional: true,
+      valorRenascer: true,
+      data: true,
+      comprovanteMimeType: true,
+      profissional: { select: { user: { select: { nome: true } } } },
+    },
+    orderBy: { data: "desc" },
+  });
+  res.json(transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })));
+});
+
 // ---------- Contato de notificação (e-mail/telefone) + data prevista de renovação ----------
+// O dono também pode cadastrar isso pra qualquer cliente (mesma função que atendente/profissional têm).
 router.put("/clientes/:id/notificacao", async (req, res) => {
   const { notifEmail, notifTelefone, renovarEm } = req.body;
   const dados = {
@@ -94,6 +153,7 @@ router.delete("/clientes/:id", async (req, res) => {
     res.status(400).json({ erro: e.message || "Erro ao excluir cliente." });
   }
 });
+
 // ---------- Financeiro consolidado ----------
 router.get("/financeiro", async (req, res) => {
   const { mes, ano } = req.query;
@@ -105,9 +165,16 @@ router.get("/financeiro", async (req, res) => {
 
   const transacoes = await prisma.transacaoFinanceira.findMany({
     where: { data: { gte: inicio, lt: fim } },
-    include: {
-      profissional: { include: { user: { select: { nome: true } } } },
-      cliente: { include: { user: { select: { nome: true } } } },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorProfissional: true,
+      valorRenascer: true,
+      data: true,
+      comprovanteMimeType: true,
+      profissional: { select: { user: { select: { nome: true } } } },
+      cliente: { select: { user: { select: { nome: true } } } },
     },
     orderBy: { data: "desc" },
   });
@@ -121,7 +188,12 @@ router.get("/financeiro", async (req, res) => {
     porProfissional[nome].valorRenascer += t.valorRenascer;
   }
 
-  res.json({ transacoes, porProfissional, mes: m + 1, ano: a });
+  res.json({
+    transacoes: transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })),
+    porProfissional,
+    mes: m + 1,
+    ano: a,
+  });
 });
 
 // ---------- Gestão de usuários (criar login de profissional/atendente/dono) ----------
