@@ -75,13 +75,14 @@ function ClientesParaReativar({ rotaBase }) {
       </p>
       <div className="space-y-2">
         {lista.map((c) => {
-          const linkReativar =
-            "https://wa.me/" +
-            c.whatsapp.replace(/\D/g, "") +
-            "?text=" +
-            encodeURIComponent(
-              "Olá, " + c.nome + "! Aqui é do Espaço do Renascer. Sentimos sua falta, quer voltar a agendar suas sessões?"
-            );
+          const linkReativar = c.whatsapp
+            ? "https://wa.me/" +
+              c.whatsapp.replace(/\D/g, "") +
+              "?text=" +
+              encodeURIComponent(
+                "Olá, " + c.nome + "! Aqui é do Espaço do Renascer. Sentimos sua falta, quer voltar a agendar suas sessões?"
+              )
+            : null;
           return (
           <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
             <div>
