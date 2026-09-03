@@ -203,8 +203,12 @@ function AbaAgenda() {
   const [sessoes, setSessoes] = useState(null);
   const [mostrarTroca, setMostrarTroca] = useState(false);
 
+  async function carregar() {
+    const { data } = await api.get("/cliente/agenda");
+    setSessoes(data);
+  }
   useEffect(() => {
-    api.get("/cliente/agenda").then((r) => setSessoes(r.data));
+    carregar();
   }, []);
 
   return (
@@ -236,7 +240,7 @@ function AbaAgenda() {
         </div>
       </div>
 
-      <ReagendarSessao />
+            <ReagendarSessao sessoes={sessoes || []} onReagendado={carregar} />
 
       <div className="card">
         <h2 className="font-semibold mb-2">Quer trocar de profissional?</h2>
@@ -252,18 +256,30 @@ function AbaAgenda() {
   );
 }
 
-function ReagendarSessao() {
+const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+
+function ReagendarSessao({ sessoes, onReagendado }) {
   const [id, setId] = useState("");
   const [data, setData] = useState("");
-  const [diaSemana, setDiaSemana] = useState("SEGUNDA");
   const [horaInicio, setHoraInicio] = useState("");
   const [msg, setMsg] = useState("");
 
+  const elegiveis = (sessoes || []).filter((s) => s.status !== "REALIZADO" && s.status !== "CANCELADO");
+
   async function reagendar() {
+    if (!id || !data || !horaInicio) {
+      setMsg("Escolha a sessão, a nova data e o novo horário.");
+      return;
+    }
     setMsg("");
     try {
+      const diaSemana = DIAS_SEMANA_JS[new Date(`${data}T00:00:00`).getDay()];
       await api.post(`/cliente/agenda/${id}/reagendar`, { data, diaSemana, horaInicio });
       setMsg("Sessão reagendada com sucesso!");
+      setId("");
+      setData("");
+      setHoraInicio("");
+      onReagendado?.();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao reagendar.");
     }
@@ -272,18 +288,35 @@ function ReagendarSessao() {
   return (
     <div className="card">
       <h2 className="font-semibold mb-2">Reagendar uma sessão existente</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">Só é possível reagendar com pelo menos 24h de antecedência da sessão original.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-        <input className="input" placeholder="ID da sessão" value={id} onChange={(e) => setId(e.target.value)} />
-        <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
-        <select className="input" value={diaSemana} onChange={(e) => setDiaSemana(e.target.value)}>
-          {["SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO", "DOMINGO"].map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-        <input className="input" placeholder="Nova hora" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Escolha qual sessão marcada você quer mudar, depois a nova data e o novo horário. Só é possível reagendar com pelo
+        menos 24h de antecedência da sessão original.
+      </p>
+      <div className="space-y-2">
+        <div>
+          <label className="text-sm text-renascer-ink/60 block mb-1">Qual sessão você quer reagendar?</label>
+          <select className="input" value={id} onChange={(e) => setId(e.target.value)}>
+            <option value="">Escolha a sessão marcada</option>
+            {elegiveis.map((s) => (
+              <option key={s.id} value={s.id}>
+                {new Date(s.data).toLocaleDateString("pt-BR")} às {s.horaInicio} — {s.profissional?.user?.nome}
+              </option>
+            ))}
+          </select>
+          {elegiveis.length === 0 && (
+            <p className="text-xs text-renascer-ink/40 mt-1">Você não tem sessões marcadas pra reagendar.</p>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="text-sm text-renascer-ink/60 block mb-1">Para qual data você quer mudar?</label>
+            <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm text-renascer-ink/60 block mb-1">Para qual horário? (ex: 14:00)</label>
+            <input className="input" placeholder="14:00" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+          </div>
+        </div>
       </div>
       <button className="btn-secondary mt-2" onClick={reagendar}>
         Reagendar
@@ -301,12 +334,17 @@ function TrocaProfissional() {
     api.get("/cliente/profissionais-disponiveis").then((r) => setLista(r.data));
   }, []);
 
-  async function escolher(id) {
+    async function escolher(id) {
     setMsg("");
+    // Abre a aba já no clique (antes do await) — no celular, se abrir só depois da resposta
+    // da API, o navegador entende como pop-up indesejado e bloqueia.
+    const novaAba = window.open("", "_blank");
     try {
       const { data } = await api.post("/cliente/trocar-profissional", { novoProfissionalId: id });
-      window.open(data.linkWhatsapp, "_blank");
+      if (novaAba) novaAba.location = data.linkWhatsapp;
+      else window.location.href = data.linkWhatsapp;
     } catch (e) {
+      if (novaAba) novaAba.close();
       setMsg(e?.response?.data?.erro || "Erro ao trocar de profissional.");
     }
   }
@@ -338,14 +376,30 @@ function AbaFinanceiro() {
     api.get("/cliente/planos").then((r) => setPlanos(r.data));
   }, []);
 
-  async function escolherPlano(duracao, totalSessoes) {
-    const { data } = await api.post("/cliente/renovar-ou-trocar-plano", { duracao, totalSessoes });
-    window.open(data.linkWhatsapp, "_blank");
+    async function escolherPlano(duracao, totalSessoes) {
+    // Abre a aba já no clique (antes do await) — no celular, se abrir só depois da resposta
+    // da API, o navegador entende como pop-up indesejado e bloqueia.
+    const novaAba = window.open("", "_blank");
+    try {
+      const { data } = await api.post("/cliente/renovar-ou-trocar-plano", { duracao, totalSessoes });
+      if (novaAba) novaAba.location = data.linkWhatsapp;
+      else window.location.href = data.linkWhatsapp;
+    } catch (e) {
+      if (novaAba) novaAba.close();
+      alert(e?.response?.data?.erro || "Não foi possível processar. Tente de novo.");
+    }
   }
 
   async function sessaoExtra(duracao) {
-    const { data } = await api.post("/cliente/sessao-extra", { duracao });
-    window.open(data.linkWhatsapp, "_blank");
+    const novaAba = window.open("", "_blank");
+    try {
+      const { data } = await api.post("/cliente/sessao-extra", { duracao });
+      if (novaAba) novaAba.location = data.linkWhatsapp;
+      else window.location.href = data.linkWhatsapp;
+    } catch (e) {
+      if (novaAba) novaAba.close();
+      alert(e?.response?.data?.erro || "Não foi possível processar. Tente de novo.");
+    }
   }
 
   if (!planos) return <p>Carregando planos...</p>;
