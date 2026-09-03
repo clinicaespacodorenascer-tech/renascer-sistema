@@ -271,6 +271,19 @@ router.post("/agendamentos", async (req, res) => {
     data: { profissionalId, clienteId, pacoteId: pacote.id, data: new Date(data), diaSemana, horaInicio, duracao: duracao || "MIN50" },
   });
 
+  // Avisa a profissional que uma nova sessão foi marcada pra ela
+  const [profissionalAgendada, clienteAgendado] = await Promise.all([
+    prisma.profissional.findUnique({ where: { id: profissionalId }, select: { userId: true } }),
+    prisma.cliente.findUnique({ where: { id: clienteId }, include: { user: true } }),
+  ]);
+  if (profissionalAgendada) {
+    await notificar(profissionalAgendada.userId, {
+      titulo: "Nova sessão agendada",
+      mensagem: `${clienteAgendado?.user?.nome || "Um cliente"} tem uma sessão marcada para ${new Date(data).toLocaleDateString("pt-BR")} às ${horaInicio}.`,
+      tipo: "sistema",
+    });
+  }
+
   res.json(agendamento);
 });
 
@@ -280,7 +293,7 @@ router.post("/agendamentos", async (req, res) => {
 // quanto vai pra profissional e quanto fica pra Renascer (aparece no painel do Dono no mesmo dia).
 router.post("/clientes/:id/pacotes", async (req, res) => {
   const { duracao, totalSessoes, valorTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
-  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id } });
+  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, include: { user: true } });
   if (!cliente?.profissionalAtualId) {
     return res.status(400).json({ erro: "Vincule o cliente a uma profissional antes de registrar o pacote." });
   }
@@ -318,6 +331,13 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     titulo: "Novo pacote liberado",
     mensagem: `Seu pacote de ${totalSessoes} sessão(ões) foi confirmado. Já pode agendar seus horários!`,
     tipo: "sistema",
+  });
+
+  // Avisa a profissional quanto ela tem a receber desse pagamento (repasse)
+  await notificar(profissional.userId, {
+    titulo: "Novo repasse a receber",
+    mensagem: `Pagamento registrado para ${cliente.user?.nome || "seu cliente"}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
+    tipo: "financeiro",
   });
 
   res.json({ pacote, transacao });
