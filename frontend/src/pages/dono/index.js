@@ -618,7 +618,8 @@ function SuporteEscalado() {
           </div>
         </div>
       ))}
-      {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
+           ))}
+{tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
     </div>
   );
 }
