@@ -7,6 +7,7 @@ const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const { haConflito } = require("../utils/horarios");
+const { calcularStatusCliente } = require("../utils/statusCliente");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -81,8 +82,15 @@ router.get("/agenda", async (req, res) => {
     orderBy: { data: "asc" },
   });
 
+  // statusCliente vira a bolinha pulsante (verde/amarelo/vermelho) em cima do nome do
+  // cliente, direto no card da agenda.
+  const comStatus = agendamentos.map((ag) => ({
+    ...ag,
+    statusCliente: calcularStatusCliente({ pacote: ag.pacote, renovarEm: ag.cliente.renovarEm }),
+  }));
+
   const colunas = { SEGUNDA: [], TERCA: [], QUARTA: [], QUINTA: [], SEXTA: [], SABADO: [], DOMINGO: [] };
-  for (const ag of agendamentos) colunas[ag.diaSemana].push(ag);
+  for (const ag of comStatus) colunas[ag.diaSemana].push(ag);
   res.json(colunas);
 });
 
@@ -118,8 +126,17 @@ router.put("/agenda/:id/status", async (req, res) => {
       });
     }
 
-    if (pacote.sessoesUsadas >= pacote.totalSessoes) {
-      await prisma.pacote.update({ where: { id: pacote.id }, data: { status: "AGUARDANDO_RENOVACAO" } });
+    // Semáforo automático do cliente + pop-up premium de renovação pro cliente ver no painel
+    // dele: fica amarelo (e mostra o primeiro aviso) na penúltima sessão do pacote, e vermelho
+    // (aviso mais urgente) quando termina todas as sessões sem renovar.
+    const restantes = pacote.totalSessoes - pacote.sessoesUsadas;
+    if (restantes <= 0) {
+      await prisma.pacote.update({
+        where: { id: pacote.id },
+        data: { status: "AGUARDANDO_RENOVACAO", avisoPopupNivel: "VERMELHO", popupVisualizadoEm: null },
+      });
+    } else if (pacote.totalSessoes > 1 && restantes === 1) {
+      await prisma.pacote.update({ where: { id: pacote.id }, data: { avisoPopupNivel: "AMARELO", popupVisualizadoEm: null } });
     }
   }
 
@@ -127,8 +144,7 @@ router.put("/agenda/:id/status", async (req, res) => {
 });
 
 // Move a sessão pra outro dia da mesma semana (drag-and-drop na Agenda), mantendo o
-// mesmo horário. Bloqueia se já existir outra sessão dela que se sobreponha nesse
-// horário (considerando a duração real de cada sessão) no dia de destino.
+// mesmo horário. Bloqueia se já existir outra sessão dela nesse horário no dia de destino.
 router.put("/agenda/:id/mover", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { novoDiaSemana } = req.body;
@@ -408,13 +424,16 @@ router.post("/clientes", async (req, res) => {
       senha: hash,
       role: "CLIENTE",
       cliente: {
-        create: { profissionalAtualId: profissionalId },
+        create: { profissionalAtualId: profissionalId, whatsappCadastro: telefone || null },
       },
     },
     include: { cliente: true },
   });
 
   const clienteId = user.cliente.id;
+  await prisma.historicoCliente.create({
+    data: { clienteId, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, profissionalNome: req.user.nome },
+  });
   let pacote = null;
   let agendamento = null;
   let avisoAgenda = null;
@@ -470,7 +489,45 @@ router.get("/clientes", async (req, res) => {
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
   });
-  res.json(clientes);
+  res.json(
+    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
+  );
+});
+
+// A profissional registra o andamento da relação com o cliente: "ATIVO" (segue normal),
+// "RENOVOU" (confirma que ele renovou — fica registrado no histórico) ou "EXCLUIR" (não
+// renovou — ele some da lista dela e vai pra fila de reativação do dono/atendente, sem apagar
+// o cadastro dele do sistema).
+router.put("/clientes/:id/situacao", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const { acao } = req.body; // "ATIVO" | "RENOVOU" | "EXCLUIR"
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: req.params.id, profissionalAtualId: profissionalId },
+    include: { user: true, pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 } },
+  });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado ou não é seu." });
+
+  const pacote = cliente.pacotes[0];
+  const pacoteResumo = pacote ? `${pacote.duracao === "MIN30" ? "30min" : "50min"} - ${pacote.totalSessoes} sessão(ões)` : null;
+  const base = {
+    clienteId: cliente.id,
+    nomeCliente: cliente.user.nome,
+    whatsapp: cliente.whatsappCadastro || cliente.user.telefone,
+    pacoteResumo,
+    profissionalNome: req.user.nome,
+  };
+
+  if (acao === "RENOVOU") {
+    await prisma.historicoCliente.create({ data: { ...base, tipo: "RENOVOU" } });
+    await prisma.pacote.updateMany({ where: { clienteId: cliente.id }, data: { avisoPopupNivel: null } });
+  } else if (acao === "EXCLUIR") {
+    await prisma.historicoCliente.create({ data: { ...base, tipo: "EXCLUIDO", motivo: "Não renovou — removido pela profissional." } });
+    await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
+  } else {
+    await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
+  }
+
+  res.json({ ok: true });
 });
 
 router.get("/clientes/:id", async (req, res) => {
