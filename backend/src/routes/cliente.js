@@ -82,6 +82,15 @@ router.get("/painel", exigirContrato, async (req, res) => {
   res.json({ cliente, pacoteAtivo, sessoesRestantes, proximaSessao, pendencias });
 });
 
+// Marca que o cliente já viu o pop-up de renovação daquele pacote (some até o próximo nível).
+router.put("/pacote/:id/popup-visto", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const pacote = await prisma.pacote.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!pacote) return res.status(404).json({ erro: "Pacote não encontrado." });
+  await prisma.pacote.update({ where: { id: pacote.id }, data: { popupVisualizadoEm: new Date() } });
+  res.json({ ok: true });
+});
+
 // ---------- 10. Sessões restantes (detalhado) ----------
 router.get("/sessoes-restantes", exigirContrato, async (req, res) => {
   const clienteId = await getClienteId(req);
