@@ -342,10 +342,23 @@ router.post("/financeiro/comprovante", async (req, res) => {
 // ---------- 5. Clientes do profissional ----------
 
 // Cadastrar direto um cliente que a profissional já atendia antes (sem precisar da
-// recepção cadastrar um por um). Já entra vinculado a ela mesma.
+// recepção cadastrar um por um). Já entra vinculado a ela mesma. Se ela informar o
+// pacote (duração/sessões/quantas já faltam) e o dia+hora fixos já combinados com o
+// cliente, o sistema já cria o pacote e joga a sessão certinha na Agenda.
 router.post("/clientes", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
-  const { nome, email, telefone, senhaProvisoria } = req.body;
+  const {
+    nome,
+    email,
+    telefone,
+    senhaProvisoria,
+    duracao,
+    totalSessoes,
+    sessoesRestantes,
+    valorTotal,
+    diaSemanaFixo,
+    horaFixa,
+  } = req.body;
   if (!nome || !email) {
     return res.status(400).json({ erro: "Informe nome e e-mail do cliente." });
   }
@@ -370,7 +383,51 @@ router.post("/clientes", async (req, res) => {
     include: { cliente: true },
   });
 
-  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente });
+  const clienteId = user.cliente.id;
+  let pacote = null;
+  let agendamento = null;
+  let avisoAgenda = null;
+
+  // Pacote atual do cliente (se ela já informou quantas sessões ele tem/tinha)
+  if (duracao && totalSessoes) {
+    const total = Number(totalSessoes);
+    const usadas =
+      sessoesRestantes !== undefined && sessoesRestantes !== "" ? Math.max(0, total - Number(sessoesRestantes)) : 0;
+    const valorFinal = valorTotal ? Number(valorTotal) : valorDoPlano(duracao, total) || 0;
+    pacote = await prisma.pacote.create({
+      data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: usadas, valorTotal: valorFinal, status: "ATIVO" },
+    });
+  }
+
+  // Dia e horário fixo já combinado com o cliente — cria a próxima sessão direto na Agenda
+  if (diaSemanaFixo && horaFixa) {
+    const indiceAlvo = DIAS_SEMANA_JS.indexOf(diaSemanaFixo);
+    const hoje = new Date();
+    const diffDias = (indiceAlvo - hoje.getDay() + 7) % 7;
+    const dataSessao = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + diffDias);
+
+    const conflito = await prisma.agendamento.findFirst({
+      where: { profissionalId, data: dataSessao, horaInicio: horaFixa, status: { in: ["AGENDADO", "CONFIRMADO"] } },
+    });
+
+    if (conflito) {
+      avisoAgenda = "Já existe outra sessão marcada nesse mesmo dia e horário — não criei a sessão fixa automaticamente. Adicione manualmente na Agenda.";
+    } else {
+      agendamento = await prisma.agendamento.create({
+        data: {
+          profissionalId,
+          clienteId,
+          pacoteId: pacote?.id || null,
+          data: dataSessao,
+          diaSemana: diaSemanaFixo,
+          horaInicio: horaFixa,
+          duracao: duracao || "MIN50",
+        },
+      });
+    }
+  }
+
+  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente, pacote, agendamento, avisoAgenda });
 });
 
 router.get("/clientes", async (req, res) => {
