@@ -3,6 +3,14 @@ import Link from "next/link";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
+import { verComprovante } from "../../lib/comprovante";
+
+const TIPO_LABEL = {
+  PACOTE_NOVO: "Contratação nova",
+  RENOVACAO: "Renovação",
+  SESSAO_EXTRA: "Sessão extra",
+  OUTRO: "Outro",
+};
 
 const DIAS = [
   ["SEGUNDA", "Segunda"],
@@ -580,16 +588,20 @@ function RelatoriosCliente({ clienteId }) {
 // ---------------- FINANCEIRO ----------------
 function AbaFinanceiro() {
   const [resumo, setResumo] = useState(null);
+  const [clientes, setClientes] = useState([]);
   const [valorCalc, setValorCalc] = useState("");
   const [repasse, setRepasse] = useState(null);
+  const [tipo, setTipo] = useState("RENOVACAO");
+  const [clienteId, setClienteId] = useState("");
   const [arquivo, setArquivo] = useState(null);
   const [valorManual, setValorManual] = useState("");
   const [processando, setProcessando] = useState(false);
   const [resultado, setResultado] = useState(null);
 
   async function carregar() {
-    const { data } = await api.get("/profissional/financeiro/resumo");
-    setResumo(data);
+    const [r, c] = await Promise.all([api.get("/profissional/financeiro/resumo"), api.get("/profissional/clientes")]);
+    setResumo(r.data);
+    setClientes(c.data);
   }
   useEffect(() => {
     carregar();
@@ -614,6 +626,8 @@ function AbaFinanceiro() {
     try {
       const imagemBase64 = arquivo ? await lerArquivo(arquivo) : null;
       const { data } = await api.post("/profissional/financeiro/comprovante", {
+        clienteId: clienteId || undefined,
+        tipoManual: tipo,
         imagemBase64,
         mimeType: arquivo?.type,
         valorManual: valorManual || undefined,
@@ -647,7 +661,7 @@ function AbaFinanceiro() {
       </div>
 
       <div className="card">
-                <h3 className="font-semibold mb-3">Calculadora rápida de repasse</h3>
+        <h3 className="font-semibold mb-3">Calculadora rápida de repasse</h3>
         <div className="flex flex-wrap gap-2">
           <input className="input flex-1 min-w-[150px]" placeholder="Valor total recebido (ex: 170)" value={valorCalc} onChange={(e) => setValorCalc(e.target.value)} />
           <button className="btn-secondary" onClick={calcular}>
@@ -662,10 +676,28 @@ function AbaFinanceiro() {
       </div>
 
       <div className="card">
-        <h3 className="font-semibold mb-3">Anexar comprovante de pagamento</h3>
+        <h3 className="font-semibold mb-1">Anexar renovação ou pagamento</h3>
         <p className="text-xs text-renascer-ink/50 mb-3">
-          A IA tenta reconhecer o valor e o tipo de transação automaticamente. Se não conseguir, você confirma o valor manualmente.
+          Escolha o cliente, coloque o valor e anexe o comprovante — o comprovante fica guardado pra poder ver depois, e o
+          sistema já calcula sozinho quanto você vai receber (seu repasse). A IA tenta reconhecer o valor automaticamente
+          pela imagem; se não conseguir, você confirma manualmente.
         </p>
+        <div className="grid sm:grid-cols-2 gap-2 mb-2">
+          <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+            <option value="">Cliente (opcional)</option>
+            {clientes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.user.nome}
+              </option>
+            ))}
+          </select>
+          <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            <option value="RENOVACAO">Renovação</option>
+            <option value="PACOTE_NOVO">Contratação nova</option>
+            <option value="SESSAO_EXTRA">Sessão extra</option>
+            <option value="OUTRO">Outro</option>
+          </select>
+        </div>
         <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} className="mb-2" />
         <input
           className="input mb-2"
@@ -679,7 +711,7 @@ function AbaFinanceiro() {
         {resultado?.erro && <p className="text-red-600 text-sm mt-2">{resultado.erro}</p>}
         {resultado?.transacao && (
           <p className="text-emerald-600 text-sm mt-2">
-            Registrado: R$ {resultado.transacao.valorTotal} (seu repasse R$ {resultado.transacao.valorProfissional})
+            Registrado: R$ {resultado.transacao.valorTotal} (você vai receber R$ {resultado.transacao.valorProfissional})
             {resultado.transacao.reconhecidoPorIA ? " — reconhecido automaticamente pela IA." : " — valor manual."}
           </p>
         )}
@@ -695,6 +727,7 @@ function AbaFinanceiro() {
               <th>Tipo</th>
               <th>Total</th>
               <th>Seu repasse</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -702,9 +735,18 @@ function AbaFinanceiro() {
               <tr key={t.id} className="border-t border-renascer/10">
                 <td className="py-1">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
                 <td>{t.cliente?.user?.nome || "-"}</td>
-                <td>{t.tipo}</td>
+                <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
                 <td>R$ {t.valorTotal.toFixed(2)}</td>
                 <td>R$ {t.valorProfissional.toFixed(2)}</td>
+                <td className="text-right">
+                  {t.temComprovante ? (
+                    <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
+                      Ver comprovante
+                    </button>
+                  ) : (
+                    <span className="text-renascer-ink/30 text-xs">sem comprovante</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
