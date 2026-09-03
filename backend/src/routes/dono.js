@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
+const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 
 const router = express.Router();
@@ -98,7 +99,55 @@ router.get("/clientes", async (req, res) => {
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
   });
-  res.json(clientes);
+  res.json(
+    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
+  );
+});
+
+// ---------- Fila de reativação (clientes que não renovaram e foram removidos da lista de
+// alguma profissional) — o dono também consegue reativar direto por aqui, igual a atendente.
+router.get("/clientes-reativar", async (req, res) => {
+  const clientes = await prisma.cliente.findMany({
+    where: { situacao: "EXCLUIDO", profissionalAtualId: null },
+    include: { user: { select: { nome: true } }, historico: { orderBy: { criadoEm: "desc" }, take: 1 } },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json(
+    clientes.map((c) => ({
+      id: c.id,
+      nome: c.user.nome,
+      whatsapp: c.whatsappCadastro,
+      pacoteResumo: c.historico[0]?.pacoteResumo || null,
+      excluidoEm: c.historico[0]?.criadoEm || null,
+    }))
+  );
+});
+
+router.put("/clientes/:id/reativar", async (req, res) => {
+  const { profissionalId } = req.body;
+  if (!profissionalId) return res.status(400).json({ erro: "Escolha a profissional que vai atender de novo." });
+
+  const cliente = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { situacao: "ATIVO", profissionalAtualId: profissionalId },
+    include: { user: true, profissionalAtual: { include: { user: true } } },
+  });
+  await prisma.historicoCliente.create({
+    data: {
+      clienteId: cliente.id,
+      tipo: "REATIVADO",
+      nomeCliente: cliente.user.nome,
+      whatsapp: cliente.whatsappCadastro,
+      profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+    },
+  });
+  res.json({ ok: true });
+});
+
+// ---------- Histórico completo de clientes (entrou/renovou/saiu/reativado) — só o dono vê. ----------
+router.get("/historico-clientes", async (req, res) => {
+  const historico = await prisma.historicoCliente.findMany({ orderBy: { criadoEm: "desc" }, take: 300 });
+  res.json(historico);
 });
 
 // ---------- Métricas de retenção de um cliente (tempo de casa, renovações) ----------
