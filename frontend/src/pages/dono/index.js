@@ -74,7 +74,15 @@ function ClientesParaReativar({ rotaBase }) {
         deixou no cadastro e, se ele topar voltar, vincula de novo com uma profissional aqui mesmo.
       </p>
       <div className="space-y-2">
-        {lista.map((c) => (
+        {lista.map((c) => {
+          const linkReativar =
+            "https://wa.me/" +
+            c.whatsapp.replace(/\D/g, "") +
+            "?text=" +
+            encodeURIComponent(
+              "Olá, " + c.nome + "! Aqui é do Espaço do Renascer. Sentimos sua falta, quer voltar a agendar suas sessões?"
+            );
+          return (
           <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="font-medium">{c.nome}</p>
@@ -87,9 +95,7 @@ function ClientesParaReativar({ rotaBase }) {
               {c.whatsapp && (
                 
                   className="btn-secondary text-sm"
-                  href={`https://wa.me/${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-                    `Olá, ${c.nome}! Aqui é do Espaço do Renascer. Sentimos sua falta — quer voltar a agendar suas sessões?`
-                  )}`}
+                  href={linkReativar}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -113,7 +119,8 @@ function ClientesParaReativar({ rotaBase }) {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
         {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Ninguém na fila de reativação agora.</p>}
       </div>
     </div>
