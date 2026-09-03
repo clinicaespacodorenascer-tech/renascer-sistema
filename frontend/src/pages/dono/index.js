@@ -93,7 +93,7 @@ function ClientesParaReativar({ rotaBase }) {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {c.whatsapp && (
+              {linkReativar && (
                 <button className="btn-secondary text-sm" onClick={() => window.open(linkReativar, "_blank")}>
                   💬 Chamar no WhatsApp
                 </button>
