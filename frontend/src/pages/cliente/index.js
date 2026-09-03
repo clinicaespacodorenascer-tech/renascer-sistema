@@ -424,8 +424,8 @@ function AbaFinanceiro() {
       </div>
 
       <div className="card">
-        <h2 className="font-semibold mb-3">Solicitar sessão extra</h2>
-        <div className="flex gap-2">
+                <h2 className="font-semibold mb-3">Solicitar sessão extra</h2>
+        <div className="flex flex-wrap gap-2">
           <button className="btn-secondary" onClick={() => sessaoExtra("MIN30")}>
             Extra de 30min
           </button>
@@ -485,10 +485,10 @@ function AbaChat() {
         ))}
         {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
       </div>
-      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
-      <div className="flex gap-2">
+            {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+      <div className="flex flex-wrap gap-2">
         <input
-          className="input"
+          className="input flex-1 min-w-[150px]"
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && enviar()}
