@@ -366,6 +366,26 @@ router.get("/clientes/:id", async (req, res) => {
   res.json(cliente);
 });
 
+// Contato de notificação (e-mail/telefone) + data prevista de renovação — a profissional
+// também pode cadastrar isso pros seus próprios clientes, pra receber/mandar aviso automático.
+router.put("/clientes/:id/notificacao", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const cliente = await prisma.cliente.findFirst({ where: { id: req.params.id, profissionalAtualId: profissionalId } });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado ou não é seu." });
+
+  const { notifEmail, notifTelefone, renovarEm } = req.body;
+  const dados = {
+    ...(notifEmail !== undefined && { notifEmail: notifEmail || null }),
+    ...(notifTelefone !== undefined && { notifTelefone: notifTelefone || null }),
+  };
+  if (renovarEm !== undefined) {
+    dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
+    dados.renovarEmAvisoEnviado = false;
+  }
+  const atualizado = await prisma.cliente.update({ where: { id: cliente.id }, data: dados });
+  res.json(atualizado);
+});
+
 // Registrar o pacote depois que o pagamento foi confirmado (Pix/cartão via WhatsApp, fase 1).
 // Isso é o que efetivamente libera sessões pro cliente agendar no app.
 router.post("/clientes/:id/pacotes", async (req, res) => {
