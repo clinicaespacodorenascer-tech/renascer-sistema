@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
+import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
+
+const TIPO_LABEL = {
+  PACOTE_NOVO: "Contratação nova",
+  RENOVACAO: "Renovação",
+  SESSAO_EXTRA: "Sessão extra",
+  OUTRO: "Outro",
+};
 
 export default function AreaAtendente() {
   const { user, carregando } = useAuth("ATENDENTE");
@@ -139,7 +147,7 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
           </option>
         ))}
       </select>
-            <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         <input type="date" className="input flex-1 min-w-[150px]" value={data} onChange={(e) => setData(e.target.value)} />
         <select className="input !w-40" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
           <option value="MIN30">30 minutos</option>
@@ -173,17 +181,24 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
       {msg && <p className="text-sm">{msg}</p>}
 
       <details className="text-sm mt-2">
-        <summary className="cursor-pointer text-renascer">O cliente ainda não tem pacote pago com essa profissional?</summary>
-        <RegistrarPacote clienteId={clienteId} onRegistrado={() => setMsg("Pacote registrado! Agora já pode escolher o horário.")} />
+        <summary className="cursor-pointer text-renascer">Registrar contratação, pagamento ou renovação</summary>
+        <RegistrarPacote clienteId={clienteId} onRegistrado={() => setMsg("Pagamento registrado! Agora já pode escolher o horário.")} />
       </details>
     </div>
   );
 }
 
+// Registro de contratação/pagamento/renovação — aqui a atendente anexa o comprovante,
+// que fica guardado no cadastro do cliente pra poder ser visto depois. O sistema já
+// calcula e contabiliza automaticamente quanto vai pra profissional e quanto fica pra
+// Renascer (aparece na hora no painel "a receber hoje" do Dono).
 function RegistrarPacote({ clienteId, onRegistrado }) {
+  const [tipo, setTipo] = useState("PACOTE_NOVO");
   const [duracao, setDuracao] = useState("MIN50");
   const [totalSessoes, setTotalSessoes] = useState(4);
   const [valorTotal, setValorTotal] = useState("");
+  const [arquivo, setArquivo] = useState(null);
+  const [enviando, setEnviando] = useState(false);
   const [msg, setMsg] = useState("");
 
   async function registrar() {
@@ -191,38 +206,66 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
       setMsg("Escolha o cliente acima primeiro.");
       return;
     }
+    setEnviando(true);
+    setMsg("");
     try {
-      await api.post(`/atendente/clientes/${clienteId}/pacotes`, {
+      const imagemBase64 = arquivo ? await lerArquivoBase64(arquivo) : null;
+      const { data } = await api.post(`/atendente/clientes/${clienteId}/pacotes`, {
         duracao,
         totalSessoes: Number(totalSessoes),
         valorTotal: valorTotal ? Number(valorTotal) : undefined,
+        tipo,
+        imagemBase64,
+        mimeType: arquivo?.type,
       });
-      setMsg("Pacote registrado com sucesso!");
+      setMsg(
+        `Registrado! Repasse pra profissional: R$ ${data.transacao.valorProfissional.toFixed(2)} · Fica com a Renascer: R$ ${data.transacao.valorRenascer.toFixed(2)}` +
+          (arquivo ? " · Comprovante anexado e guardado." : "")
+      );
+      setArquivo(null);
+      setValorTotal("");
       onRegistrado?.();
     } catch (e) {
-      setMsg(e?.response?.data?.erro || "Erro ao registrar pacote.");
+      setMsg(e?.response?.data?.erro || "Erro ao registrar pagamento.");
+    } finally {
+      setEnviando(false);
     }
   }
 
   return (
-    <div className="flex flex-wrap gap-2 mt-2 items-center">
-      <select className="input !w-auto" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
-        <option value="MIN30">30 minutos</option>
-        <option value="MIN50">50 minutos</option>
-      </select>
-      <select className="input !w-auto" value={totalSessoes} onChange={(e) => setTotalSessoes(e.target.value)}>
-        <option value={1}>1 sessão</option>
-        <option value={2}>2 sessões</option>
-        <option value={4}>4 sessões</option>
-      </select>
-      <input className="input !w-32" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
-      <button className="btn-secondary" onClick={registrar}>
-        Registrar pacote
+    <div className="space-y-2 mt-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <select className="input !w-auto" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          <option value="PACOTE_NOVO">Contratação nova</option>
+          <option value="RENOVACAO">Renovação</option>
+          <option value="SESSAO_EXTRA">Sessão extra</option>
+          <option value="OUTRO">Outro</option>
+        </select>
+        <select className="input !w-auto" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+          <option value="MIN30">30 minutos</option>
+          <option value="MIN50">50 minutos</option>
+        </select>
+        <select className="input !w-auto" value={totalSessoes} onChange={(e) => setTotalSessoes(e.target.value)}>
+          <option value={1}>1 sessão</option>
+          <option value={2}>2 sessões</option>
+          <option value={4}>4 sessões</option>
+        </select>
+        <input className="input !w-32" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
+      </div>
+      <div>
+        <label className="text-xs text-renascer-ink/50 block mb-1">
+          Anexar comprovante do pagamento (fica guardado no cadastro do cliente pra poder ver depois)
+        </label>
+        <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
+      </div>
+      <button className="btn-secondary" onClick={registrar} disabled={enviando}>
+        {enviando ? "Registrando..." : "Registrar pagamento"}
       </button>
       {msg && <p className="text-sm w-full">{msg}</p>}
     </div>
   );
 }
+
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
@@ -305,12 +348,13 @@ function Clientes() {
                   <td>{c.profissionalAtual?.user?.nome || "-"}</td>
                 </tr>,
               ];
-                            if (expandido === c.id) {
+              if (expandido === c.id) {
                 linhas.push(
                   <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
                     <td colSpan={3} className="py-2 space-y-3">
                       <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
                       <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
+                      <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
                     </td>
                   </tr>
                 );
@@ -381,6 +425,43 @@ function NotificacaoECliente({ cliente, rotaBase, onExcluido, podeExcluir }) {
         )}
       </div>
       {msg && <p className="text-sm">{msg}</p>}
+    </div>
+  );
+}
+
+// Histórico de pagamentos do cliente (contratações, renovações, sessões extra) — os
+// comprovantes anexados ficam guardados aqui pra sempre poder ver de novo.
+function HistoricoPagamentos({ clienteId, rotaBase }) {
+  const [lista, setLista] = useState([]);
+  const [carregado, setCarregado] = useState(false);
+
+  useEffect(() => {
+    setCarregado(false);
+    api.get(`${rotaBase}/clientes/${clienteId}/transacoes`).then((r) => {
+      setLista(r.data);
+      setCarregado(true);
+    });
+  }, [clienteId, rotaBase]);
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-1">
+      <p className="text-xs font-medium text-renascer-ink/60">Pagamentos registrados</p>
+      {!carregado && <p className="text-xs text-renascer-ink/40">Carregando...</p>}
+      {carregado && lista.length === 0 && <p className="text-xs text-renascer-ink/40">Nenhum pagamento registrado ainda.</p>}
+      {lista.map((t) => (
+        <div key={t.id} className="flex items-center justify-between flex-wrap gap-1 text-xs border-t border-renascer/10 pt-1">
+          <span>
+            {new Date(t.data).toLocaleDateString("pt-BR")} · {TIPO_LABEL[t.tipo] || t.tipo} · R$ {t.valorTotal.toFixed(2)}
+          </span>
+          {t.temComprovante ? (
+            <button className="text-renascer underline" onClick={() => verComprovante(t.id)}>
+              Ver comprovante
+            </button>
+          ) : (
+            <span className="text-renascer-ink/30">sem comprovante</span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
