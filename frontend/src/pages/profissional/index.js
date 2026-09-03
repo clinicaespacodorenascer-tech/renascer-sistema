@@ -64,9 +64,21 @@ export default function AreaProfissional() {
 }
 
 // ---------------- CADASTRAR CLIENTE ANTIGO (sem depender da recepção) ----------------
+const FORM_CADASTRO_VAZIO = {
+  nome: "",
+  email: "",
+  telefone: "",
+  duracao: "MIN50",
+  totalSessoes: 4,
+  sessoesRestantes: "4",
+  valorTotal: "",
+  diaSemanaFixo: "",
+  horaFixa: "",
+};
+
 function AbaCadastrarCliente() {
   const [total, setTotal] = useState(null);
-  const [form, setForm] = useState({ nome: "", email: "", telefone: "" });
+  const [form, setForm] = useState(FORM_CADASTRO_VAZIO);
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
 
@@ -82,9 +94,19 @@ function AbaCadastrarCliente() {
     setMsg("");
     setResultado(null);
     try {
-      const { data } = await api.post("/profissional/clientes", form);
+      const { data } = await api.post("/profissional/clientes", {
+        nome: form.nome,
+        email: form.email,
+        telefone: form.telefone,
+        duracao: form.duracao,
+        totalSessoes: Number(form.totalSessoes),
+        sessoesRestantes: form.sessoesRestantes !== "" ? Number(form.sessoesRestantes) : undefined,
+        valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
+        diaSemanaFixo: form.diaSemanaFixo || undefined,
+        horaFixa: form.horaFixa || undefined,
+      });
       setResultado(data);
-      setForm({ nome: "", email: "", telefone: "" });
+      setForm(FORM_CADASTRO_VAZIO);
       carregarTotal();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
@@ -101,9 +123,10 @@ function AbaCadastrarCliente() {
       <div className="card">
         <h2 className="font-semibold mb-1">Cadastrar cliente que você já atende</h2>
         <p className="text-xs text-renascer-ink/50 mb-3">
-          Use isso pra colocar no sistema os clientes que você já atendia antes, sem precisar pedir pra recepção cadastrar
-          um por um. Já entra vinculado a você. Depois é só ir em "Clientes" → "Pacote / pagamento" pra liberar as sessões dele.
+          Use isso pra colocar no sistema os clientes que você já atendia antes, já com o pacote e o dia/horário fixo que
+          vocês combinaram. Se preencher o dia e o horário, a sessão já entra direto na sua Agenda.
         </p>
+
         <div className="grid sm:grid-cols-2 gap-2">
           <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -114,15 +137,72 @@ function AbaCadastrarCliente() {
             onChange={(e) => setForm({ ...form, telefone: e.target.value })}
           />
         </div>
-        <button className="btn-primary mt-3" onClick={cadastrar}>
+
+        <div className="border-t border-renascer/10 mt-4 pt-4">
+          <p className="text-sm font-medium mb-2">Pacote atual (opcional)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
+              <option value="MIN30">30 minutos</option>
+              <option value="MIN50">50 minutos</option>
+            </select>
+            <select className="input" value={form.totalSessoes} onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}>
+              <option value={1}>Pacote de 1</option>
+              <option value={2}>Pacote de 2</option>
+              <option value={4}>Pacote de 4</option>
+            </select>
+            <input
+              type="number"
+              min="0"
+              className="input"
+              placeholder="Sessões que faltam"
+              value={form.sessoesRestantes}
+              onChange={(e) => setForm({ ...form, sessoesRestantes: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Valor pago (opcional)"
+              value={form.valorTotal}
+              onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
+            />
+          </div>
+          <p className="text-xs text-renascer-ink/40 mt-1">
+            Deixe "Sessões que faltam" igual ao total do pacote se ele está no início.
+          </p>
+        </div>
+
+        <div className="border-t border-renascer/10 mt-4 pt-4">
+          <p className="text-sm font-medium mb-2">Dia e horário fixo já combinado (opcional)</p>
+          <div className="grid grid-cols-2 gap-2">
+            <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
+              <option value="">Sem dia fixo</option>
+              {DIAS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <input
+              className="input"
+              placeholder="Horário (ex: 14:00)"
+              value={form.horaFixa}
+              onChange={(e) => setForm({ ...form, horaFixa: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <button className="btn-primary mt-4" onClick={cadastrar}>
           Cadastrar cliente
         </button>
         {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
         {resultado && (
-          <p className="text-emerald-600 text-sm mt-2">
-            Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
-            um canal seguro)
-          </p>
+          <div className="text-sm mt-2 space-y-1">
+            <p className="text-emerald-600">
+              Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
+              um canal seguro)
+            </p>
+            {resultado.agendamento && <p className="text-emerald-600">Sessão fixa já criada direto na sua Agenda ✅</p>}
+            {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
+          </div>
         )}
       </div>
     </div>
@@ -451,13 +531,13 @@ function ChatCliente({ clienteId }) {
         ))}
         {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
       </div>
-      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
-      <div className="flex gap-2">
-        <select className="input !w-auto" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+      <div className="flex flex-wrap gap-2">
+        <select className="input !w-full sm:!w-56" value={tipo} onChange={(e) => setTipo(e.target.value)}>
           <option value="mensagem">Mensagem</option>
           <option value="recado_diario">Recado do dia (imprevisto / o que vai trabalhar)</option>
         </select>
-        <input className="input" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva..." />
+        <input className="input flex-1 min-w-0" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva..." />
         <button className="btn-primary" onClick={enviar}>
           Enviar
         </button>
@@ -567,9 +647,9 @@ function AbaFinanceiro() {
       </div>
 
       <div className="card">
-        <h3 className="font-semibold mb-3">Calculadora rápida de repasse</h3>
-        <div className="flex gap-2">
-          <input className="input" placeholder="Valor total recebido (ex: 170)" value={valorCalc} onChange={(e) => setValorCalc(e.target.value)} />
+                <h3 className="font-semibold mb-3">Calculadora rápida de repasse</h3>
+        <div className="flex flex-wrap gap-2">
+          <input className="input flex-1 min-w-[150px]" placeholder="Valor total recebido (ex: 170)" value={valorCalc} onChange={(e) => setValorCalc(e.target.value)} />
           <button className="btn-secondary" onClick={calcular}>
             Calcular
           </button>
