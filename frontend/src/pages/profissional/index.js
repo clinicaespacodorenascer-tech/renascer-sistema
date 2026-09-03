@@ -64,6 +64,8 @@ export default function AreaProfissional() {
 // ---------------- AGENDA (estilo Trello por dia) ----------------
 function AbaAgenda() {
   const [colunas, setColunas] = useState(null);
+  const [colunaSobre, setColunaSobre] = useState(null);
+  const [erro, setErro] = useState("");
 
   async function carregar() {
     const { data } = await api.get("/profissional/agenda");
@@ -78,41 +80,91 @@ function AbaAgenda() {
     carregar();
   }
 
+  async function moverSessao(id, novoDiaSemana) {
+    setErro("");
+    try {
+      await api.put(`/profissional/agenda/${id}/mover`, { novoDiaSemana });
+      carregar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível mover a sessão.");
+    }
+  }
+
   if (!colunas) return <p>Carregando agenda...</p>;
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-4">Sua semana</h2>
+      <h2 className="text-xl font-semibold mb-1">Sua semana</h2>
+      <p className="text-xs text-renascer-ink/50 mb-3">
+        Arraste o card de uma sessão pra outro dia (no computador) ou use o menu "Mover para..." (no celular) — o horário continua o mesmo.
+      </p>
+      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-3">{erro}</p>}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
         {DIAS.map(([chave, label]) => (
-          <div key={chave} className="card !p-3 min-h-[200px]">
+          <div
+            key={chave}
+            className={`card !p-3 min-h-[200px] ${colunaSobre === chave ? "ring-2 ring-renascer" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setColunaSobre(chave);
+            }}
+            onDragLeave={() => setColunaSobre((atual) => (atual === chave ? null : atual))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setColunaSobre(null);
+              const id = e.dataTransfer.getData("text/plain");
+              if (id) moverSessao(id, chave);
+            }}
+          >
             <h3 className="font-semibold text-renascer mb-3 text-sm">{label}</h3>
             <div className="space-y-2">
               {colunas[chave]?.length === 0 && <p className="text-xs text-renascer-ink/40">Sem sessões</p>}
-              {colunas[chave]?.map((ag) => (
-                <div key={ag.id} className="border border-renascer/10 rounded-lg p-2 bg-renascer-light/40">
-                  <p className="text-sm font-medium">{ag.horaInicio} · {ag.cliente.user.nome}</p>
-                  <span className={`badge mt-1 ${STATUS_COR[ag.status]}`}>{ag.status}</span>
-                  {ag.status !== "REALIZADO" && ag.status !== "CANCELADO" && (
-                    <>
-                      <Link
-                        href={`/profissional/videochamada/${ag.id}`}
-                        className="block text-xs text-renascer underline mt-2"
-                      >
-                        🎥 Entrar na videochamada
-                      </Link>
-                      <div className="flex gap-1 mt-1">
-                        <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
-                          Realizada
-                        </button>
-                        <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
-                          Cancelar
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+              {colunas[chave]?.map((ag) => {
+                const podeMover = ag.status !== "REALIZADO" && ag.status !== "CANCELADO";
+                return (
+                  <div
+                    key={ag.id}
+                    draggable={podeMover}
+                    onDragStart={(e) => e.dataTransfer.setData("text/plain", ag.id)}
+                    className={`border border-renascer/10 rounded-lg p-2 bg-renascer-light/40 ${podeMover ? "cursor-move" : ""}`}
+                  >
+                    <p className="text-sm font-medium">{ag.horaInicio} · {ag.cliente.user.nome}</p>
+                    <span className={`badge mt-1 ${STATUS_COR[ag.status]}`}>{ag.status}</span>
+                    {podeMover && (
+                      <>
+                        <select
+                          className="input !text-xs !py-1 !w-full mt-1"
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) moverSessao(ag.id, e.target.value);
+                          }}
+                        >
+                          <option value="">Mover para...</option>
+                          {DIAS.filter(([d]) => d !== chave).map(([d, l]) => (
+                            <option key={d} value={d}>
+                              {l}
+                            </option>
+                          ))}
+                        </select>
+                        <Link
+                          href={`/profissional/videochamada/${ag.id}`}
+                          className="block text-xs text-renascer underline mt-2"
+                        >
+                          🎥 Entrar na videochamada
+                        </Link>
+                        <div className="flex gap-1 mt-1">
+                          <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
+                            Realizada
+                          </button>
+                          <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
