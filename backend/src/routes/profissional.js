@@ -59,12 +59,15 @@ router.put("/perfil", async (req, res) => {
   res.json(prof);
 });
 
+// Cada item é um horário EXATO que ela atende naquele dia (ex: {diaSemana: "SEGUNDA", horaInicio:
+// "08:30"}) — não uma faixa. É a partir dessa lista exata que a atendente, o cliente e ela mesma
+// enxergam os horários realmente livres (ver utils/horarios.js).
 router.put("/disponibilidades", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
-  const { disponibilidades } = req.body; // [{diaSemana, horaInicio, horaFim}]
+  const { disponibilidades } = req.body; // [{diaSemana, horaInicio}]
   await prisma.disponibilidade.deleteMany({ where: { profissionalId } });
   await prisma.disponibilidade.createMany({
-    data: disponibilidades.map((d) => ({ ...d, profissionalId })),
+    data: disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
   });
   res.json({ ok: true });
 });
