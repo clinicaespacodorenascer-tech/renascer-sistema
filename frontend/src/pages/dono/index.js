@@ -118,11 +118,12 @@ function Clientes() {
                 <td>{c.pacotes[0]?.status || "-"}</td>
               </tr>,
             ];
-            if (expandido === c.id) {
+                        if (expandido === c.id) {
               linhas.push(
                 <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                  <td colSpan={4} className="py-2">
+                  <td colSpan={4} className="py-2 space-y-3">
                     <MetricasCliente clienteId={c.id} rotaBase="/dono" />
+                    <NotificacaoECliente cliente={c} onExcluido={carregar} />
                   </td>
                 </tr>
               );
@@ -131,6 +132,65 @@ function Clientes() {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Contato de notificação (e-mail/telefone + data de renovação) e exclusão do login —
+// o dono pode excluir qualquer cliente diretamente por aqui.
+function NotificacaoECliente({ cliente, onExcluido }) {
+  const [notifEmail, setNotifEmail] = useState(cliente.notifEmail || "");
+  const [notifTelefone, setNotifTelefone] = useState(cliente.notifTelefone || "");
+  const [renovarEm, setRenovarEm] = useState(cliente.renovarEm ? new Date(cliente.renovarEm).toISOString().slice(0, 10) : "");
+  const [msg, setMsg] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+
+  async function salvar() {
+    setMsg("");
+    try {
+      await api.put(`/dono/clientes/${cliente.id}/notificacao`, {
+        notifEmail: notifEmail || null,
+        notifTelefone: notifTelefone || null,
+        renovarEm: renovarEm || null,
+      });
+      setMsg("Salvo! O sistema vai usar esses dados pra mandar os avisos automáticos.");
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    }
+  }
+
+  async function excluir() {
+    if (!window.confirm(`Excluir o login de ${cliente.user.nome}? Isso apaga sessões, mensagens e pacotes dele. Não tem como desfazer.`)) return;
+    setExcluindo(true);
+    setMsg("");
+    try {
+      await api.delete(`/dono/clientes/${cliente.id}`);
+      onExcluido?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao excluir cliente.");
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-2">
+      <p className="text-xs text-renascer-ink/50">
+        Contato pra avisos automáticos (sessão/renovação) — pode ser diferente do login — e a data prevista de renovação.
+      </p>
+      <div className="grid sm:grid-cols-3 gap-2">
+        <input className="input" placeholder="E-mail para notificação" value={notifEmail} onChange={(e) => setNotifEmail(e.target.value)} />
+        <input className="input" placeholder="Telefone para notificação" value={notifTelefone} onChange={(e) => setNotifTelefone(e.target.value)} />
+        <input type="date" className="input" value={renovarEm} onChange={(e) => setRenovarEm(e.target.value)} />
+      </div>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <button className="btn-secondary text-sm" onClick={salvar}>
+          Salvar
+        </button>
+        <button className="text-red-600 text-sm underline" onClick={excluir} disabled={excluindo}>
+          {excluindo ? "Excluindo..." : "Excluir login deste cliente"}
+        </button>
+      </div>
+      {msg && <p className="text-sm">{msg}</p>}
     </div>
   );
 }
@@ -203,6 +263,7 @@ function Usuarios() {
   const [lista, setLista] = useState([]);
   const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL" });
   const [msg, setMsg] = useState("");
+  const [editando, setEditando] = useState(null);
 
   async function carregar() {
     const { data } = await api.get("/dono/usuarios");
@@ -221,6 +282,16 @@ function Usuarios() {
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao criar usuário.");
+    }
+  }
+
+  async function excluir(u) {
+    if (!window.confirm(`Excluir o login de ${u.nome} (${u.role})? Isso apaga tudo ligado a esse login. Não tem como desfazer.`)) return;
+    try {
+      await api.delete(`/dono/usuarios/${u.id}`);
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Erro ao excluir usuário.");
     }
   }
 
@@ -245,8 +316,11 @@ function Usuarios() {
         {msg && <p className="text-sm mt-2">{msg}</p>}
       </div>
 
-      <div className="card overflow-x-auto">
+            <div className="card overflow-x-auto">
         <h2 className="font-semibold mb-2">Todos os usuários</h2>
+        <p className="text-xs text-renascer-ink/50 mb-2">
+          Como dono, você pode editar ou excluir qualquer login (cliente, profissional, atendente ou outro dono).
+        </p>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-renascer-ink/50">
@@ -254,20 +328,76 @@ function Usuarios() {
               <th>E-mail</th>
               <th>Papel</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {lista.map((u) => (
-              <tr key={u.id} className="border-t border-renascer/10">
-                <td className="py-1">{u.nome}</td>
-                <td>{u.email}</td>
-                <td>{u.role}</td>
-                <td>{u.ativo ? "Ativo" : "Inativo"}</td>
-              </tr>
-            ))}
+            {lista.flatMap((u) => {
+              const linhas = [
+                <tr key={u.id} className="border-t border-renascer/10">
+                  <td className="py-1">{u.nome}</td>
+                  <td>{u.email}</td>
+                  <td>{u.role}</td>
+                  <td>{u.ativo ? "Ativo" : "Inativo"}</td>
+                  <td className="text-right whitespace-nowrap">
+                    <button className="text-renascer text-xs underline mr-3" onClick={() => setEditando(editando === u.id ? null : u.id)}>
+                      {editando === u.id ? "Fechar" : "Editar"}
+                    </button>
+                    <button className="text-red-600 text-xs underline" onClick={() => excluir(u)}>
+                      Excluir
+                    </button>
+                  </td>
+                </tr>,
+              ];
+              if (editando === u.id) {
+                linhas.push(
+                  <tr key={`${u.id}-editar`} className="border-t border-renascer/10 bg-renascer-light/20">
+                    <td colSpan={5} className="py-2">
+                      <EditarUsuario usuario={u} onSalvo={() => { setEditando(null); carregar(); }} />
+                    </td>
+                  </tr>
+                );
+              }
+              return linhas;
+            })}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function EditarUsuario({ usuario, onSalvo }) {
+  const [nome, setNome] = useState(usuario.nome);
+  const [email, setEmail] = useState(usuario.email);
+  const [telefone, setTelefone] = useState(usuario.telefone || "");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function salvar() {
+    setMsg("");
+    try {
+      await api.put(`/dono/usuarios/${usuario.id}`, { nome, email, telefone, novaSenha: novaSenha || undefined });
+      setMsg("Salvo!");
+      setNovaSenha("");
+      onSalvo?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    }
+  }
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-2">
+      <div className="grid sm:grid-cols-2 gap-2">
+        <input className="input" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+        <input className="input" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="input" placeholder="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+        <input className="input" placeholder="Nova senha (deixe em branco pra não trocar)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+      </div>
+      <button className="btn-primary text-sm" onClick={salvar}>
+        Salvar alterações
+      </button>
+      {msg && <p className="text-sm">{msg}</p>}
     </div>
   );
 }
