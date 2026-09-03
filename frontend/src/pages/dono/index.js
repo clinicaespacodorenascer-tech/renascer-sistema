@@ -471,9 +471,9 @@ function SuporteEscalado() {
               </p>
             ))}
           </div>
-          <div className="flex gap-2">
+                   <div className="flex flex-wrap gap-2">
             <input
-              className="input"
+              className="input flex-1 min-w-[150px]"
               placeholder="Responder..."
               value={resposta[t.id] || ""}
               onChange={(e) => setResposta({ ...resposta, [t.id]: e.target.value })}
