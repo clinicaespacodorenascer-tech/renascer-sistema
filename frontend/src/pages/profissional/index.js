@@ -42,9 +42,10 @@ export default function AreaProfissional() {
 
   if (carregando) return null;
 
-  const ABAS = [
+    const ABAS = [
     { id: "agenda", label: "Agenda" },
     { id: "clientes", label: "Clientes" },
+    { id: "cadastrar", label: "Cadastrar cliente" },
     { id: "financeiro", label: "Financeiro" },
     { id: "notificacoes", label: "Avisos" },
     { id: "config", label: "Disponibilidade" },
@@ -54,10 +55,77 @@ export default function AreaProfissional() {
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "agenda" && <AbaAgenda />}
       {aba === "clientes" && <AbaClientes />}
+      {aba === "cadastrar" && <AbaCadastrarCliente />}
       {aba === "financeiro" && <AbaFinanceiro />}
       {aba === "notificacoes" && <AbaNotificacoes />}
       {aba === "config" && <AbaConfig />}
     </Layout>
+  );
+}
+
+// ---------------- CADASTRAR CLIENTE ANTIGO (sem depender da recepção) ----------------
+function AbaCadastrarCliente() {
+  const [total, setTotal] = useState(null);
+  const [form, setForm] = useState({ nome: "", email: "", telefone: "" });
+  const [resultado, setResultado] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  async function carregarTotal() {
+    const { data } = await api.get("/profissional/clientes");
+    setTotal(data.length);
+  }
+  useEffect(() => {
+    carregarTotal();
+  }, []);
+
+  async function cadastrar() {
+    setMsg("");
+    setResultado(null);
+    try {
+      const { data } = await api.post("/profissional/clientes", form);
+      setResultado(data);
+      setForm({ nome: "", email: "", telefone: "" });
+      carregarTotal();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <p className="text-sm text-renascer-ink/60">Seus clientes no Espaço do Renascer</p>
+        <p className="text-3xl font-bold text-renascer">{total === null ? "..." : total}</p>
+      </div>
+
+      <div className="card">
+        <h2 className="font-semibold mb-1">Cadastrar cliente que você já atende</h2>
+        <p className="text-xs text-renascer-ink/50 mb-3">
+          Use isso pra colocar no sistema os clientes que você já atendia antes, sem precisar pedir pra recepção cadastrar
+          um por um. Já entra vinculado a você. Depois é só ir em "Clientes" → "Pacote / pagamento" pra liberar as sessões dele.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-2">
+          <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+          <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input
+            className="input sm:col-span-2"
+            placeholder="Telefone"
+            value={form.telefone}
+            onChange={(e) => setForm({ ...form, telefone: e.target.value })}
+          />
+        </div>
+        <button className="btn-primary mt-3" onClick={cadastrar}>
+          Cadastrar cliente
+        </button>
+        {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
+        {resultado && (
+          <p className="text-emerald-600 text-sm mt-2">
+            Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
+            um canal seguro)
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -184,8 +252,9 @@ function AbaClientes() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="card md:col-span-1">
-        <h2 className="font-semibold mb-3">Meus clientes</h2>
+            <div className="card md:col-span-1">
+        <h2 className="font-semibold mb-1">Meus clientes</h2>
+        <p className="text-xs text-renascer-ink/50 mb-3">Você tem {clientes.length} cliente(s) no Espaço do Renascer.</p>
         <div className="space-y-2">
           {clientes.map((c) => (
             <button
