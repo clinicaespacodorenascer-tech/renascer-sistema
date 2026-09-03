@@ -93,14 +93,9 @@ function ClientesParaReativar({ rotaBase }) {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {c.whatsapp && (
-                
-                  className="btn-secondary text-sm"
-                  href={linkReativar}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <button className="btn-secondary text-sm" onClick={() => window.open(linkReativar, "_blank")}>
                   💬 Chamar no WhatsApp
-                </a>
+                </button>
               )}
               <select
                 className="input !w-auto !py-1.5 text-sm"
