@@ -159,8 +159,8 @@ model Disponibilidade {
   profissionalId String
   profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
   diaSemana      DiaSemana
-  horaInicio     String       // "08:00"
-  horaFim        String       // "12:00"
+  horaInicio     String       // horário exato que ela atende nesse dia, ex: "08:30"
+  horaFim        String?      // legado (não usado mais pra gerar horários — cada linha é um horário exato, não uma faixa)
   ativo          Boolean      @default(true)
 
   @@map("disponibilidades")
