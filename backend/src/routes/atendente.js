@@ -154,6 +154,8 @@ router.put("/clientes/:id/situacao", async (req, res) => {
   } else if (acao === "EXCLUIR") {
     await prisma.historicoCliente.create({ data: { ...base, tipo: "EXCLUIDO", motivo: "Não renovou — removido pela recepção." } });
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
+    // Libera qualquer horário fixo que esse cliente tivesse — volta a aparecer livre pra outros.
+    await prisma.disponibilidade.updateMany({ where: { ocupadoPorClienteId: cliente.id }, data: { ocupadoPorClienteId: null, ocupadoEm: null } });
   } else {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
   }
@@ -248,7 +250,10 @@ router.get("/profissionais", async (req, res) => {
   const profissionais = await prisma.profissional.findMany({
     include: {
       user: { select: { nome: true, ativo: true, fotoUrl: true } },
-      disponibilidades: { where: { ativo: true } },
+      disponibilidades: {
+        where: { ativo: true },
+        include: { ocupadoPorCliente: { select: { user: { select: { nome: true } } } } },
+      },
     },
   });
   res.json(profissionais);
@@ -264,22 +269,53 @@ router.put("/profissionais/:id/disponibilidades", async (req, res) => {
   const existe = await prisma.profissional.findUnique({ where: { id: profissionalId } });
   if (!existe) return res.status(404).json({ erro: "Profissional não encontrada." });
 
-  await prisma.disponibilidade.deleteMany({ where: { profissionalId } });
-  await prisma.disponibilidade.createMany({
-    data: (disponibilidades || []).map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
-  });
+  const atuais = await prisma.disponibilidade.findMany({ where: { profissionalId } });
+  const chave = (d) => `${d.diaSemana}|${d.horaInicio}`;
+  const novasChaves = new Set((disponibilidades || []).map(chave));
+
+  // Nunca apaga um horário que já é fixo de um cliente por engano — se ele sumiu da lista nova,
+  // barra e avisa quem é o cliente, em vez de tirar o horário fixo dele sem querer.
+  const presoOcupado = atuais.find((d) => d.ocupadoPorClienteId && !novasChaves.has(chave(d)));
+  if (presoOcupado) {
+    const cliente = await prisma.cliente.findUnique({ where: { id: presoOcupado.ocupadoPorClienteId }, include: { user: true } });
+    return res.status(400).json({
+      erro: `O horário ${presoOcupado.diaSemana} ${presoOcupado.horaInicio} já é fixo do cliente ${cliente?.user?.nome || "cadastrado"} e não pode ser removido por aqui. Agende um novo horário pra ele primeiro (isso libera este automaticamente).`,
+    });
+  }
+
+  const chavesAtuais = new Set(atuais.map(chave));
+  const remover = atuais.filter((d) => !novasChaves.has(chave(d)));
+  const adicionar = (disponibilidades || []).filter((d) => !chavesAtuais.has(chave(d)));
+
+  if (remover.length > 0) {
+    await prisma.disponibilidade.deleteMany({ where: { id: { in: remover.map((d) => d.id) } } });
+  }
+  if (adicionar.length > 0) {
+    await prisma.disponibilidade.createMany({
+      data: adicionar.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
+    });
+  }
   res.json({ ok: true });
 });
 
 // Horários livres de uma profissional numa data específica, já descontando o que está ocupado —
 // é essa lista que a atendente usa pra marcar exatamente o horário que o cliente quer.
 router.get("/profissionais/:id/horarios", async (req, res) => {
-  const { data, duracao } = req.query;
+  const { data, duracao, clienteId } = req.query;
   if (!data) return res.status(400).json({ erro: "Informe a data (YYYY-MM-DD)." });
 
   const diaSemana = diaSemanaDeData(data);
   const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
-    prisma.disponibilidade.findMany({ where: { profissionalId: req.params.id, diaSemana, ativo: true } }),
+    prisma.disponibilidade.findMany({
+      where: {
+        profissionalId: req.params.id,
+        diaSemana,
+        ativo: true,
+        // Um horário que já é fixo de outro cliente não aparece como livre — a não ser que seja
+        // livre mesmo (ninguém ocupando) ou já seja fixo desse MESMO cliente (ela reagendando).
+        OR: [{ ocupadoPorClienteId: null }, { ocupadoPorClienteId: clienteId || "__nenhum__" }],
+      },
+    }),
     prisma.agendamento.findMany({
       where: {
         profissionalId: req.params.id,
@@ -334,6 +370,22 @@ router.post("/agendamentos", async (req, res) => {
   const agendamento = await prisma.agendamento.create({
     data: { profissionalId, clienteId, pacoteId: pacote.id, data: new Date(data), diaSemana, horaInicio, duracao: duracao || "MIN50" },
   });
+
+  // Esse dia+horário passa a ser o horário FIXO desse cliente com essa profissional — toda
+  // semana esse mesmo horário já é dele, e some da lista de livres pra qualquer outro cliente.
+  // Se ele já tinha outro horário fixo com ela, libera o antigo (o fixo dele é sempre o mais
+  // recente que foi agendado).
+  const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
+  if (slotFixo) {
+    await prisma.disponibilidade.updateMany({
+      where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+      data: { ocupadoPorClienteId: null, ocupadoEm: null },
+    });
+    await prisma.disponibilidade.update({
+      where: { id: slotFixo.id },
+      data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+    });
+  }
 
   // Avisa a profissional que uma nova sessão foi marcada pra ela
   const [profissionalAgendada, clienteAgendado] = await Promise.all([
