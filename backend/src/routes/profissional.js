@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
-const { calcularRepasse, valorDoPlano } = require("../utils/financeiro");
+const { calcularRepasse, valorDoPlano, transacaoDuplicada } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
@@ -317,6 +317,9 @@ router.get("/financeiro/resumo", async (req, res) => {
       data: true,
       reconhecidoPorIA: true,
       comprovanteMimeType: true,
+      recebidoPor: true,
+      repassado: true,
+      repassadoEm: true,
       cliente: { select: { id: true, user: { select: { nome: true } } } },
     },
     orderBy: { data: "desc" },
@@ -326,11 +329,21 @@ router.get("/financeiro/resumo", async (req, res) => {
   const totalProfissional = transacoes.reduce((s, t) => s + t.valorProfissional, 0);
   const totalRenascer = transacoes.reduce((s, t) => s + t.valorRenascer, 0);
 
+  // Quanto ela recebeu direto do cliente (sem passar pela clínica) e ainda não repassou pra
+  // Renascer — considera TODAS as pendências (não só as do mês filtrado), pra ela nunca perder
+  // de vista o que ainda deve.
+  const pendentesRepasse = await prisma.transacaoFinanceira.findMany({
+    where: { profissionalId, recebidoPor: "PROFISSIONAL", repassado: false },
+    select: { valorRenascer: true },
+  });
+  const totalPendenteRepassar = pendentesRepasse.reduce((s, t) => s + t.valorRenascer, 0);
+
   res.json({
     transacoes: transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })),
     totalRecebido,
     totalProfissional,
     totalRenascer,
+    totalPendenteRepassar,
     mes: m + 1,
     ano: a,
   });
@@ -366,6 +379,17 @@ router.post("/financeiro/comprovante", async (req, res) => {
     return res.status(400).json({ erro: "Não consegui identificar o valor. Informe manualmente.", reconhecido });
   }
 
+  if (clienteId) {
+    const duplicada = await transacaoDuplicada(prisma, clienteId, valorFinal);
+    if (duplicada) {
+      return res.status(400).json({
+        erro: "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.",
+        duplicado: true,
+        transacaoExistente: duplicada,
+      });
+    }
+  }
+
   const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, prof.percentualRepasse);
 
   const transacao = await prisma.transacaoFinanceira.create({
@@ -376,6 +400,7 @@ router.post("/financeiro/comprovante", async (req, res) => {
       valorTotal: valorFinal,
       valorProfissional,
       valorRenascer,
+      recebidoPor: "PROFISSIONAL",
       comprovanteBase64: imagemBase64 || null,
       comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
       reconhecidoPorIA: !!reconhecido.valor,
@@ -384,6 +409,24 @@ router.post("/financeiro/comprovante", async (req, res) => {
   });
 
   res.json({ transacao, reconhecido });
+});
+
+// A profissional marca que já repassou pra Renascer o que devia de uma transação que ela mesma
+// recebeu direto do cliente (recebidoPor = PROFISSIONAL). Isso zera a pendência dessa transação
+// — o dono também pode fazer isso pelo lado dele, na aba Repasses.
+router.put("/financeiro/:id/repassar", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const transacao = await prisma.transacaoFinanceira.findFirst({
+    where: { id: req.params.id, profissionalId, recebidoPor: "PROFISSIONAL" },
+  });
+  if (!transacao) return res.status(404).json({ erro: "Transação não encontrada." });
+  if (transacao.repassado) return res.json(transacao);
+
+  const atualizada = await prisma.transacaoFinanceira.update({
+    where: { id: transacao.id },
+    data: { repassado: true, repassadoEm: new Date(), repassadoObs: "Marcado pela própria profissional." },
+  });
+  res.json(atualizada);
 });
 
 // ---------- 5. Clientes do profissional ----------
@@ -435,10 +478,13 @@ router.post("/clientes", async (req, res) => {
     data: { clienteId, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, profissionalNome: req.user.nome },
   });
   let pacote = null;
+  let transacao = null;
+  let avisoFinanceiro = null;
   let agendamento = null;
   let avisoAgenda = null;
 
-  // Pacote atual do cliente (se ela já informou quantas sessões ele tem/tinha)
+  // Pacote atual do cliente (se ela já informou quantas sessões ele tem/tinha). Se ela também
+  // informou um valor, isso já conta no financeiro (ela mesma recebeu o pagamento direto).
   if (duracao && totalSessoes) {
     const total = Number(totalSessoes);
     const usadas =
@@ -447,6 +493,27 @@ router.post("/clientes", async (req, res) => {
     pacote = await prisma.pacote.create({
       data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: usadas, valorTotal: valorFinal, status: "ATIVO" },
     });
+
+    if (valorFinal) {
+      const duplicada = await transacaoDuplicada(prisma, clienteId, valorFinal);
+      if (duplicada) {
+        avisoFinanceiro = "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.";
+      } else {
+        const prof = await prisma.profissional.findUnique({ where: { id: profissionalId } });
+        const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, prof.percentualRepasse);
+        transacao = await prisma.transacaoFinanceira.create({
+          data: {
+            profissionalId,
+            clienteId,
+            tipo: "PACOTE_NOVO",
+            valorTotal: valorFinal,
+            valorProfissional,
+            valorRenascer,
+            recebidoPor: "PROFISSIONAL",
+          },
+        });
+      }
+    }
   }
 
   // Dia e horário fixo já combinado com o cliente — cria a próxima sessão direto na Agenda
@@ -477,7 +544,17 @@ router.post("/clientes", async (req, res) => {
     }
   }
 
-  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente, pacote, agendamento, avisoAgenda });
+  res.json({
+    id: user.id,
+    email: user.email,
+    senhaProvisoria: senha,
+    cliente: user.cliente,
+    pacote,
+    transacao,
+    avisoFinanceiro,
+    agendamento,
+    avisoAgenda,
+  });
 });
 
 router.get("/clientes", async (req, res) => {
@@ -574,8 +651,17 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
 
   const { duracao, totalSessoes, valorTotal } = req.body;
   const valorOficial = valorDoPlano(duracao, totalSessoes);
-  const valorFinal = valorTotal ?? valorOficial;
+  const valorFinal = Number(valorTotal ?? valorOficial);
   if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
+
+  const duplicada = await transacaoDuplicada(prisma, cliente.id, valorFinal);
+  if (duplicada) {
+    return res.status(400).json({
+      erro: "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.",
+      duplicado: true,
+      transacaoExistente: duplicada,
+    });
+  }
 
   // Encerra qualquer pacote anterior pendurado antes de abrir um novo
   await prisma.pacote.updateMany({
@@ -587,13 +673,29 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     data: { clienteId: cliente.id, profissionalId, duracao, totalSessoes, valorTotal: valorFinal, status: "ATIVO" },
   });
 
+  // Ela mesma recebeu esse pagamento direto do cliente (Pix/cartão pelo WhatsApp) — já conta
+  // no financeiro, com a parte da Renascer pendente de repasse.
+  const prof = await prisma.profissional.findUnique({ where: { id: profissionalId } });
+  const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, prof.percentualRepasse);
+  const transacao = await prisma.transacaoFinanceira.create({
+    data: {
+      profissionalId,
+      clienteId: cliente.id,
+      tipo: "RENOVACAO",
+      valorTotal: valorFinal,
+      valorProfissional,
+      valorRenascer,
+      recebidoPor: "PROFISSIONAL",
+    },
+  });
+
   await notificar(cliente.userId, {
     titulo: "Novo pacote liberado",
     mensagem: `Seu pacote de ${totalSessoes} sessão(ões) foi confirmado. Já pode agendar seus horários!`,
     tipo: "sistema",
   });
 
-  res.json(pacote);
+  res.json({ ...pacote, transacao });
 });
 
 // ---------- 6. Relatórios do cliente (com opção de publicar) ----------
