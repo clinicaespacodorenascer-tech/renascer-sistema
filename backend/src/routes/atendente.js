@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
-const { valorDoPlano, calcularRepasse } = require("../utils/financeiro");
+const { valorDoPlano, calcularRepasse, transacaoDuplicada } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
@@ -13,8 +13,24 @@ const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
 // ---------- Cadastro de novos clientes ----------
+// A atendente pode, no mesmo cadastro, já lançar o valor do pacote/sessões (ou de uma
+// renovação) — isso já cria o pacote e a transação financeira, contando na hora no painel do
+// Dono. Tudo isso é opcional: se ela não informar duração+sessões nem valor, só cria o login.
 router.post("/clientes", async (req, res) => {
-  const { nome, email, telefone, senhaProvisoria, profissionalAtualId } = req.body;
+  const {
+    nome,
+    email,
+    telefone,
+    senhaProvisoria,
+    profissionalAtualId,
+    duracao,
+    totalSessoes,
+    valorTotal,
+    tipo,
+    imagemBase64,
+    mimeType,
+    observacao,
+  } = req.body;
 
   const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
@@ -46,7 +62,55 @@ router.post("/clientes", async (req, res) => {
     data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
   });
 
-  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente });
+  let pacote = null;
+  let transacao = null;
+  let avisoFinanceiro = null;
+
+  const valorOficial = duracao && totalSessoes ? valorDoPlano(duracao, Number(totalSessoes)) : null;
+  const valorFinal = valorTotal ? Number(valorTotal) : valorOficial;
+
+  if (profissionalAtualId && valorFinal) {
+    const duplicada = await transacaoDuplicada(prisma, user.cliente.id, valorFinal);
+    if (duplicada) {
+      avisoFinanceiro = "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.";
+    } else {
+      const profissional = await prisma.profissional.findUnique({ where: { id: profissionalAtualId } });
+      pacote = await prisma.pacote.create({
+        data: {
+          clienteId: user.cliente.id,
+          profissionalId: profissionalAtualId,
+          duracao: duracao || "MIN50",
+          totalSessoes: totalSessoes ? Number(totalSessoes) : 1,
+          valorTotal: valorFinal,
+          status: "ATIVO",
+        },
+      });
+
+      const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, profissional.percentualRepasse);
+      transacao = await prisma.transacaoFinanceira.create({
+        data: {
+          profissionalId: profissionalAtualId,
+          clienteId: user.cliente.id,
+          tipo: tipo || "PACOTE_NOVO",
+          valorTotal: valorFinal,
+          valorProfissional,
+          valorRenascer,
+          recebidoPor: "CLINICA",
+          comprovanteBase64: imagemBase64 || null,
+          comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
+          observacao: observacao || null,
+        },
+      });
+
+      await notificar(profissional.userId, {
+        titulo: "Novo repasse a receber",
+        mensagem: `Pagamento registrado para ${nome}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
+        tipo: "financeiro",
+      });
+    }
+  }
+
+  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente, pacote, transacao, avisoFinanceiro });
 });
 
 router.get("/clientes", async (req, res) => {
@@ -303,6 +367,15 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
   const valorFinal = Number(valorTotal ?? valorOficial);
   if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
 
+  const duplicada = await transacaoDuplicada(prisma, cliente.id, valorFinal);
+  if (duplicada) {
+    return res.status(400).json({
+      erro: "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.",
+      duplicado: true,
+      transacaoExistente: duplicada,
+    });
+  }
+
   await prisma.pacote.updateMany({
     where: { clienteId: cliente.id, status: { in: ["ATIVO", "AGUARDANDO_RENOVACAO"] } },
     data: { status: "ENCERRADO", encerradoEm: new Date() },
@@ -321,6 +394,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
       valorTotal: valorFinal,
       valorProfissional,
       valorRenascer,
+      recebidoPor: "CLINICA",
       comprovanteBase64: imagemBase64 || null,
       comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
       observacao: observacao || null,
