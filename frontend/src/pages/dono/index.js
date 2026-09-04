@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
-import { verComprovante } from "../../lib/comprovante";
+import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
 import StatusCliente from "../../components/StatusCliente";
 
 const TIPO_LABEL = {
@@ -357,6 +357,7 @@ function Clientes() {
                 <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
                   <td colSpan={4} className="py-2 space-y-3">
                     <MetricasCliente clienteId={c.id} rotaBase="/dono" />
+                    <ContratoCliente clienteId={c.id} />
                     <NotificacaoECliente cliente={c} onExcluido={carregar} />
                     <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
                   </td>
@@ -367,6 +368,72 @@ function Clientes() {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Contrato assinado do cliente — nome/CPF informados, data do aceite e as fotos (documento e
+// rosto) que ele anexou na hora de aceitar. Fica aqui pra conferência/auditoria do dono, direto
+// na ficha do cliente, sem precisar procurar em outro lugar.
+function ContratoCliente({ clienteId }) {
+  const [contrato, setContrato] = useState(undefined);
+
+  useEffect(() => {
+    setContrato(undefined);
+    api.get(`/dono/clientes/${clienteId}/contrato`).then((r) => setContrato(r.data));
+  }, [clienteId]);
+
+  if (contrato === undefined) {
+    return <div className="bg-white border border-renascer/10 rounded-lg p-3 text-sm text-renascer-ink/50">Carregando contrato...</div>;
+  }
+
+  if (!contrato) {
+    return (
+      <div className="bg-white border border-renascer/10 rounded-lg p-3 text-sm text-amber-700">
+        Esse cliente ainda não aceitou o contrato (nenhum registro encontrado).
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-2">
+      <p className="text-xs font-medium text-renascer-ink/60">Contrato aceito</p>
+      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <p>
+          <span className="text-renascer-ink/50">Nome informado:</span> {contrato.nomeCompleto}
+        </p>
+        <p>
+          <span className="text-renascer-ink/50">CPF:</span> {contrato.cpf}
+        </p>
+        <p className="sm:col-span-2">
+          <span className="text-renascer-ink/50">Aceito em:</span>{" "}
+          {contrato.aceitoEm ? new Date(contrato.aceitoEm).toLocaleString("pt-BR") : "-"}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-3 pt-1">
+        <button
+          type="button"
+          className="flex flex-col items-center gap-1"
+          onClick={() => abrirImagem(contrato.fotoDocumentoUrl, `Documento — ${contrato.nomeCompleto}`)}
+          title="Ver em tamanho grande"
+        >
+          <img src={contrato.fotoDocumentoUrl} alt="Foto do documento" className="w-20 h-20 object-cover rounded-lg border border-renascer/20" />
+          <span className="text-xs text-renascer underline">Foto do documento</span>
+        </button>
+        {contrato.fotoRostoUrl ? (
+          <button
+            type="button"
+            className="flex flex-col items-center gap-1"
+            onClick={() => abrirImagem(contrato.fotoRostoUrl, `Rosto — ${contrato.nomeCompleto}`)}
+            title="Ver em tamanho grande"
+          >
+            <img src={contrato.fotoRostoUrl} alt="Foto do rosto" className="w-20 h-20 object-cover rounded-lg border border-renascer/20" />
+            <span className="text-xs text-renascer underline">Foto do rosto</span>
+          </button>
+        ) : (
+          <p className="text-xs text-renascer-ink/40 self-center">Sem foto do rosto (era opcional).</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -653,12 +720,19 @@ function RepassesProfissionais() {
         </div>
       )}
 
-      {profissionais.map(([nome, info]) => (
+      {profissionais.map(([nome, info]) => {
+        const aguardandoConfirmacao = info.transacoes.filter((t) => t.repasseSolicitadoEm).length;
+        return (
         <div key={nome} className="card">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="font-semibold">{nome}</p>
-              <p className="text-xs text-renascer-ink/50">{info.transacoes.length} pagamento(s) pendente(s)</p>
+              <p className="text-xs text-renascer-ink/50">
+                {info.transacoes.length} pagamento(s) pendente(s)
+                {aguardandoConfirmacao > 0 && (
+                  <span className="text-amber-700"> · {aguardandoConfirmacao} com comprovante aguardando sua confirmação</span>
+                )}
+              </p>
             </div>
             <p className="text-xl font-bold text-amber-700">R$ {info.totalPendente.toFixed(2)}</p>
           </div>
@@ -680,22 +754,49 @@ function RepassesProfissionais() {
           {msg[nome] && <p className="text-sm mt-2">{msg[nome]}</p>}
 
           {aberto === nome && (
-            <div className="mt-3 space-y-1">
+            <div className="mt-3 space-y-2">
               {info.transacoes.map((t) => (
                 <div key={t.id} className="flex items-center justify-between flex-wrap gap-2 text-sm border-t border-renascer/10 pt-2">
-                  <span>
-                    {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} · {TIPO_LABEL[t.tipo] || t.tipo} · você
-                    recebe R$ {t.valorRenascer.toFixed(2)}
-                  </span>
-                  <button className="text-renascer text-xs underline" onClick={() => marcar(t.id)}>
-                    Marcar como recebido
-                  </button>
+                  <div>
+                    <p>
+                      {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} · {TIPO_LABEL[t.tipo] || t.tipo} · você
+                      recebe R$ {t.valorRenascer.toFixed(2)}
+                    </p>
+                    {t.repasseSolicitadoEm ? (
+                      <p className="text-xs mt-0.5">
+                        <span className="badge bg-amber-100 text-amber-700">Comprovante enviado — aguardando você</span>
+                        {t.repasseValorInformado != null && (
+                          <span className={t.bateComEsperado ? "text-emerald-700 ml-1" : "text-red-600 ml-1"}>
+                            {t.bateComEsperado
+                              ? `Valor bate certinho: R$ ${t.repasseValorInformado.toFixed(2)}`
+                              : `Atenção: valor no comprovante é R$ ${t.repasseValorInformado.toFixed(2)} (esperado R$ ${t.valorRenascer.toFixed(2)})`}
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-renascer-ink/40 mt-0.5">Ainda não enviou comprovante desse repasse.</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {t.temComprovanteRepasse && (
+                      <button className="text-renascer text-xs underline" onClick={() => verComprovanteRepasse(t.id)}>
+                        Ver comprovante
+                      </button>
+                    )}
+                    <button
+                      className={`text-xs underline ${t.repasseSolicitadoEm ? "text-emerald-700" : "text-renascer"}`}
+                      onClick={() => marcar(t.id)}
+                    >
+                      {t.repasseSolicitadoEm ? "Confirmar repasse" : "Marcar como recebido (sem comprovante)"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
