@@ -2,33 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 
-html, body {
+html,
+body {
   overflow-x: hidden;
   max-width: 100vw;
 }
 
 body {
-  @apply bg-renascer-light text-renascer-ink;
+  @apply text-renascer-ink;
+  background: radial-gradient(1200px 600px at 105% -10%, rgba(198, 161, 91, 0.10), transparent 60%),
+    radial-gradient(1000px 550px at -10% 0%, rgba(0, 80, 150, 0.07), transparent 55%), #f5f8fb;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: theme("fontFamily.display");
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: rgba(0, 80, 150, 0.18);
+}
+
+/* Scrollbar discreto e alinhado à identidade visual */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 80, 150, 0.25);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 80, 150, 0.4);
 }
 
 .btn-primary {
-  @apply bg-renascer text-white rounded-xl px-5 py-3 font-medium shadow-premium hover:bg-renascer-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  @apply relative bg-renascer-gradient text-white rounded-xl px-5 py-3 font-semibold tracking-wide shadow-lift transition-all duration-200 hover:shadow-glow hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none;
 }
 
 .btn-secondary {
-  @apply bg-white text-renascer border border-renascer/30 rounded-xl px-5 py-3 font-medium hover:bg-renascer-light transition-colors;
+  @apply bg-white/80 backdrop-blur text-renascer border border-renascer/20 rounded-xl px-5 py-3 font-medium transition-all duration-200 hover:border-renascer/40 hover:bg-white hover:shadow-soft;
 }
 
 .card {
-  @apply bg-white rounded-2xl shadow-premium p-5 border border-renascer/10;
+  @apply bg-white/90 backdrop-blur rounded-2xl shadow-soft p-5 border border-renascer-ink/[0.06] transition-shadow duration-200;
 }
 
 .input {
-  @apply w-full rounded-xl border border-renascer/20 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-renascer/40 bg-white;
+  @apply w-full rounded-xl border border-renascer-ink/15 px-4 py-3 bg-white transition-shadow focus:outline-none focus:ring-2 focus:ring-renascer/30 focus:border-renascer/40;
 }
 
 .badge {
-  @apply inline-block text-xs font-semibold px-3 py-1 rounded-full;
+  @apply inline-block text-xs font-semibold px-3 py-1 rounded-full tracking-wide;
+}
+
+.badge-gold {
+  @apply inline-block text-xs font-semibold px-3 py-1 rounded-full bg-gold-light text-gold-dark tracking-wide;
 }
