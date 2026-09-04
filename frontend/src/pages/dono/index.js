@@ -24,6 +24,7 @@ export default function AreaDono() {
     { id: "reativar", label: "Reativar clientes" },
     { id: "historico", label: "Histórico" },
     { id: "financeiro", label: "Financeiro" },
+    { id: "repasses", label: "Repasses" },
     { id: "usuarios", label: "Usuários" },
     { id: "suporte", label: "Suporte escalado" },
   ];
@@ -36,6 +37,7 @@ export default function AreaDono() {
       {aba === "reativar" && <ClientesParaReativar rotaBase="/dono" />}
       {aba === "historico" && <HistoricoClientes />}
       {aba === "financeiro" && <Financeiro />}
+      {aba === "repasses" && <RepassesProfissionais />}
       {aba === "usuarios" && <Usuarios />}
       {aba === "suporte" && <SuporteEscalado />}
     </Layout>
@@ -237,6 +239,17 @@ function Dashboard() {
         )}
         {profissionaisHoje.length === 0 && <p className="text-xs text-renascer-ink/40">Nada registrado hoje ainda.</p>}
       </div>
+
+      {d.totalPendenteRepasseProfissionais > 0 && (
+        <div className="card !border-amber-300 bg-amber-50">
+          <h3 className="font-semibold mb-1">Repasses pendentes das profissionais</h3>
+          <p className="text-xs text-renascer-ink/50 mb-2">
+            Dinheiro que as profissionais receberam direto dos clientes e ainda não te repassaram. Veja o detalhe na aba
+            "Repasses".
+          </p>
+          <p className="text-2xl font-bold text-amber-700">R$ {d.totalPendenteRepasseProfissionais.toFixed(2)}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cartoes.map(([label, valor]) => (
@@ -533,6 +546,7 @@ function Financeiro() {
               <th>Cliente</th>
               <th>Tipo</th>
               <th>Total</th>
+              <th>Recebido por</th>
               <th></th>
             </tr>
           </thead>
@@ -544,6 +558,17 @@ function Financeiro() {
                 <td>{t.cliente?.user?.nome || "-"}</td>
                 <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
                 <td>R$ {t.valorTotal.toFixed(2)}</td>
+                <td>
+                  {t.recebidoPor === "PROFISSIONAL" ? (
+                    t.repassado ? (
+                      <span className="badge bg-emerald-100 text-emerald-700">Profissional (repassado)</span>
+                    ) : (
+                      <span className="badge bg-amber-100 text-amber-700">Profissional (pendente)</span>
+                    )
+                  ) : (
+                    <span className="badge bg-renascer-light text-renascer">Clínica</span>
+                  )}
+                </td>
                 <td className="text-right">
                   {t.temComprovante ? (
                     <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
@@ -557,7 +582,7 @@ function Financeiro() {
             ))}
             {f.transacoes.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-2 text-renascer-ink/50">
+                <td colSpan={7} className="py-2 text-renascer-ink/50">
                   Nenhuma transação neste mês.
                 </td>
               </tr>
@@ -565,6 +590,112 @@ function Financeiro() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Dinheiro que as profissionais receberam direto dos clientes (fora da clínica) e ainda devem
+// repassar a parte da Renascer. Dá pra lançar um valor recebido (baixa as pendências mais
+// antigas dela automaticamente) ou marcar uma transação específica na mão.
+function RepassesProfissionais() {
+  const [dados, setDados] = useState(null);
+  const [aberto, setAberto] = useState(null);
+  const [valorLancar, setValorLancar] = useState({});
+  const [msg, setMsg] = useState({});
+
+  async function carregar() {
+    const { data } = await api.get("/dono/repasses-pendentes");
+    setDados(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function marcar(id) {
+    await api.put(`/dono/repasses/${id}/marcar`);
+    carregar();
+  }
+
+  async function lancar(nome, profissionalId) {
+    const valor = valorLancar[nome];
+    if (!valor) return;
+    try {
+      const { data } = await api.post(`/dono/repasses/${profissionalId}/lancar`, { valor: Number(valor) });
+      setMsg({
+        ...msg,
+        [nome]: data.aviso || `${data.marcadas} pagamento(s) marcado(s) como recebido(s) (R$ ${data.valorConsiderado.toFixed(2)}).`,
+      });
+      setValorLancar({ ...valorLancar, [nome]: "" });
+      carregar();
+    } catch (e) {
+      setMsg({ ...msg, [nome]: e?.response?.data?.erro || "Erro ao lançar recebimento." });
+    }
+  }
+
+  if (!dados) return <p>Carregando...</p>;
+
+  const profissionais = Object.entries(dados.porProfissional || {});
+
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <h2 className="font-semibold mb-1">Repasses das profissionais</h2>
+        <p className="text-xs text-renascer-ink/50">
+          Quando uma profissional recebe o pagamento direto do cliente (fora da clínica), ela fica devendo pra Renascer a
+          parte que é sua. Aqui você lança quanto recebeu de cada uma — ou marca um pagamento específico como recebido —
+          e a pendência baixa sozinha.
+        </p>
+      </div>
+
+      {profissionais.length === 0 && (
+        <div className="card">
+          <p className="text-sm text-renascer-ink/50">Nenhuma pendência de repasse no momento — tudo em dia.</p>
+        </div>
+      )}
+
+      {profissionais.map(([nome, info]) => (
+        <div key={nome} className="card">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <p className="font-semibold">{nome}</p>
+              <p className="text-xs text-renascer-ink/50">{info.transacoes.length} pagamento(s) pendente(s)</p>
+            </div>
+            <p className="text-xl font-bold text-amber-700">R$ {info.totalPendente.toFixed(2)}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-renascer/10 pt-3">
+            <input
+              className="input !w-auto flex-1 min-w-[150px]"
+              placeholder="Valor que você recebeu dela"
+              value={valorLancar[nome] || ""}
+              onChange={(e) => setValorLancar({ ...valorLancar, [nome]: e.target.value })}
+            />
+            <button className="btn-primary text-sm" onClick={() => lancar(nome, info.profissionalId)}>
+              Lançar recebimento
+            </button>
+            <button className="btn-secondary text-sm" onClick={() => setAberto(aberto === nome ? null : nome)}>
+              {aberto === nome ? "Fechar lista" : "Ver pagamentos"}
+            </button>
+          </div>
+          {msg[nome] && <p className="text-sm mt-2">{msg[nome]}</p>}
+
+          {aberto === nome && (
+            <div className="mt-3 space-y-1">
+              {info.transacoes.map((t) => (
+                <div key={t.id} className="flex items-center justify-between flex-wrap gap-2 text-sm border-t border-renascer/10 pt-2">
+                  <span>
+                    {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} · {TIPO_LABEL[t.tipo] || t.tipo} · você
+                    recebe R$ {t.valorRenascer.toFixed(2)}
+                  </span>
+                  <button className="text-renascer text-xs underline" onClick={() => marcar(t.id)}>
+                    Marcar como recebido
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
