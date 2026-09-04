@@ -799,3 +799,195 @@ function AbaFinanceiro() {
                         Marcar repasse feito (R$ {t.valorRenascer.toFixed(2)})
                       </button>
                     )
+                  ) : (
+                    <span className="text-renascer-ink/30 text-xs">recebido pela clínica</span>
+                  )}
+                </td>
+                <td className="text-right">
+                  {t.temComprovante ? (
+                    <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
+                      Ver comprovante
+                    </button>
+                  ) : (
+                    <span className="text-renascer-ink/30 text-xs">sem comprovante</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {resumo?.transacoes?.length === 0 && <p className="text-sm text-renascer-ink/50 mt-2">Nenhuma transação neste mês.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- NOTIFICAÇÕES ----------------
+function AbaNotificacoes() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    api.get("/comum/notificacoes").then((r) => setLista(r.data));
+  }, []);
+  return (
+    <div className="card">
+      <h2 className="font-semibold mb-3">Avisos de renovação e sistema</h2>
+      <p className="text-sm text-renascer-ink/50 mb-3">
+        Você recebe um aviso automático aqui sempre que um cliente estiver na 2ª ou 3ª sessão de um pacote de 4, ou faltando a última sessão de um pacote menor.
+      </p>
+      <div className="space-y-2">
+        {lista.map((n) => (
+          <div key={n.id} className={`border rounded-lg p-3 ${n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"}`}>
+            <p className="font-medium text-sm">{n.titulo}</p>
+            <p className="text-sm text-renascer-ink/60">{n.mensagem}</p>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum aviso por enquanto.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- CONFIGURAÇÃO / PERFIL + DISPONIBILIDADE ----------------
+function AbaConfig() {
+  const [perfil, setPerfil] = useState(null);
+  const [disponibilidades, setDisponibilidades] = useState([]);
+
+  async function carregarPerfil() {
+    const r = await api.get("/profissional/perfil");
+    setPerfil(r.data);
+    setDisponibilidades(r.data.disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio })));
+  }
+  useEffect(() => {
+    carregarPerfil();
+  }, []);
+
+  if (!perfil) return <p>Carregando...</p>;
+
+  return (
+    <div className="space-y-4">
+      <PerfilCompleto perfil={perfil} onAtualizado={carregarPerfil} />
+      <DisponibilidadeSemanal
+        disponibilidades={disponibilidades}
+        setDisponibilidades={setDisponibilidades}
+        salvar={(disp) => api.put("/profissional/disponibilidades", { disponibilidades: disp })}
+      />
+    </div>
+  );
+}
+
+function PerfilCompleto({ perfil, onAtualizado }) {
+  const [nome, setNome] = useState(perfil.user.nome || "");
+  const [titulo, setTitulo] = useState(perfil.titulo || "");
+  const [registro, setRegistro] = useState(perfil.registro || "");
+  const [idade, setIdade] = useState(perfil.idade || "");
+  const [bio, setBio] = useState(perfil.bio || "");
+  const [abordagens, setAbordagens] = useState(perfil.abordagens || "");
+  const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
+  const [especialidades, setEspecialidades] = useState(perfil.especialidades || []);
+  const [foto, setFoto] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function alternarCategoria(cat) {
+    setEspecialidades((atual) => (atual.includes(cat) ? atual.filter((c) => c !== cat) : [...atual, cat]));
+  }
+
+  function lerArquivo(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setMsg("");
+    try {
+      const fotoBase64 = foto ? await lerArquivo(foto) : undefined;
+      await api.put("/profissional/perfil", {
+        nome,
+        titulo,
+        registro,
+        idade: idade || null,
+        bio,
+        abordagens,
+        especialidades,
+        linkMeet,
+        ...(fotoBase64 && { fotoBase64 }),
+      });
+      setMsg("Perfil atualizado! A atendente já vê essas informações pra te encaixar certinho.");
+      setFoto(null);
+      onAtualizado();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar perfil.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Seu perfil (o que a atendente e o time vê de você)</h2>
+      <div className="flex items-center gap-4">
+        <img
+          src={foto ? URL.createObjectURL(foto) : perfil.user.fotoUrl || "https://via.placeholder.com/80?text=Foto"}
+          alt="Foto de perfil"
+          className="w-20 h-20 rounded-full object-cover border border-renascer/20"
+        />
+        <div>
+          <label className="text-sm text-renascer-ink/60 block mb-1">Trocar foto</label>
+          <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files[0])} />
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-2">
+        <input className="input" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+        <input className="input" placeholder="Idade" type="number" value={idade} onChange={(e) => setIdade(e.target.value)} />
+        <input className="input" placeholder="Categoria (ex: Psicóloga Clínica, Psicanalista)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+        <input className="input" placeholder="Registro / CRP (se tiver)" value={registro} onChange={(e) => setRegistro(e.target.value)} />
+        <input className="input sm:col-span-2" placeholder="Abordagem (ex: TCC, Psicanálise)" value={abordagens} onChange={(e) => setAbordagens(e.target.value)} />
+      </div>
+
+      <div>
+        <p className="text-sm text-renascer-ink/60 mb-1">O que você atende</p>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIAS_SUGERIDAS.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => alternarCategoria(cat)}
+              className={`text-sm px-3 py-1.5 rounded-full border ${
+                especialidades.includes(cat) ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <textarea className="input" rows={3} placeholder="Bio curta" value={bio} onChange={(e) => setBio(e.target.value)} />
+
+      <div>
+        <label className="text-sm text-renascer-ink/60 block mb-1">
+          Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
+        </label>
+        <input
+          className="input"
+          placeholder="https://meet.google.com/xxx-xxxx-xxx"
+          value={linkMeet}
+          onChange={(e) => setLinkMeet(e.target.value)}
+        />
+        <p className="text-xs text-renascer-ink/50 mt-1">
+          Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
+        </p>
+      </div>
+
+      <button className="btn-primary" onClick={salvar} disabled={salvando}>
+        {salvando ? "Salvando..." : "Salvar perfil"}
+      </button>
+      {msg && <p className="text-sm">{msg}</p>}
+    </div>
+  );
+}
