@@ -61,4 +61,23 @@ router.get("/transacoes/:id/comprovante", async (req, res) => {
   res.json({ base64: transacao.comprovanteBase64, mimeType: transacao.comprovanteMimeType || "image/jpeg" });
 });
 
+// Ver o comprovante do REPASSE (diferente do comprovante do pagamento do cliente acima) — a
+// profissional anexa quando manda a parte da Renascer pra clínica, e o dono confere aqui antes
+// de confirmar. Mesma regra de permissão do comprovante normal.
+router.get("/transacoes/:id/repasse-comprovante", async (req, res) => {
+  if (req.user.role === "CLIENTE") {
+    return res.status(403).json({ erro: "Você não tem permissão para ver isso." });
+  }
+
+  const transacao = await prisma.transacaoFinanceira.findUnique({ where: { id: req.params.id } });
+  if (!transacao || !transacao.repasseComprovanteBase64) {
+    return res.status(404).json({ erro: "Nenhum comprovante de repasse anexado nessa transação." });
+  }
+  if (req.user.role === "PROFISSIONAL" && transacao.profissionalId !== req.user.profissional.id) {
+    return res.status(403).json({ erro: "Você não tem permissão para ver esse comprovante." });
+  }
+
+  res.json({ base64: transacao.repasseComprovanteBase64, mimeType: transacao.repasseComprovanteMimeType || "image/jpeg" });
+});
+
 module.exports = router;
