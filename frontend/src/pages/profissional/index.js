@@ -79,6 +79,7 @@ const FORM_CADASTRO_VAZIO = {
   nome: "",
   email: "",
   telefone: "",
+  senhaProvisoria: "",
   duracao: "MIN50",
   totalSessoes: 4,
   sessoesRestantes: "4",
@@ -109,6 +110,7 @@ function AbaCadastrarCliente() {
         nome: form.nome,
         email: form.email,
         telefone: form.telefone,
+        senhaProvisoria: form.senhaProvisoria || undefined,
         duracao: form.duracao,
         totalSessoes: Number(form.totalSessoes),
         sessoesRestantes: form.sessoesRestantes !== "" ? Number(form.sessoesRestantes) : undefined,
@@ -142,10 +144,16 @@ function AbaCadastrarCliente() {
           <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input
-            className="input sm:col-span-2"
+            className="input"
             placeholder="Telefone"
             value={form.telefone}
             onChange={(e) => setForm({ ...form, telefone: e.target.value })}
+          />
+          <input
+            className="input"
+            placeholder="Senha do login (opcional, senão é gerada uma)"
+            value={form.senhaProvisoria}
+            onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })}
           />
         </div>
 
