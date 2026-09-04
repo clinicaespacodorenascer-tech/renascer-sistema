@@ -190,6 +190,14 @@ model Disponibilidade {
   horaFim        String?      // legado (não usado mais pra gerar horários — cada linha é um horário exato, não uma faixa)
   ativo          Boolean      @default(true)
 
+  // Quando um cliente fica com esse dia+horário fixo (recorrente, toda semana), ele some da
+  // lista de horários livres pra qualquer outro cliente — continua reservado só pra ele até
+  // sair (não renovou) ou até a atendente/profissional agendar um novo horário fixo pra ele,
+  // que libera este automaticamente.
+  ocupadoPorClienteId String?
+  ocupadoPorCliente   Cliente?  @relation("ClienteHorarioFixo", fields: [ocupadoPorClienteId], references: [id])
+  ocupadoEm           DateTime?
+
   @@map("disponibilidades")
 }
 
@@ -233,6 +241,7 @@ model Cliente {
   tickets        TicketSuporte[]
   mensagens      MensagemInterna[] @relation("MensagensDoCliente")
   historico      HistoricoCliente[]
+  horariosFixos  Disponibilidade[] @relation("ClienteHorarioFixo")
 
   criadoEm       DateTime @default(now())
 
