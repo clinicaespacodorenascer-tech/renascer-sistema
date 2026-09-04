@@ -1,374 +1,533 @@
 const express = require("express");
-const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
-const { calcularMetricasCliente } = require("../utils/metricas");
-const { calcularStatusCliente } = require("../utils/statusCliente");
-const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
+const { valorDoPlano } = require("../utils/financeiro");
+const { notificar } = require("../utils/notificar");
+const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
+const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 
 const router = express.Router();
-router.use(autenticar, permitir("DONO"));
+router.use(autenticar, permitir("CLIENTE"));
 
-// ---------- Visão geral ----------
-router.get("/dashboard", async (req, res) => {
-  const [totalProfissionais, totalClientes, pacotesAtivos, profissionais] = await Promise.all([
-    prisma.profissional.count(),
-    prisma.cliente.count(),
-    prisma.pacote.count({ where: { status: "ATIVO" } }),
-    prisma.profissional.findMany({
-      include: { user: { select: { nome: true } }, _count: { select: { clientes: true } } },
-      orderBy: { criadoEm: "asc" },
-    }),
-  ]);
+const WHATSAPP_RENASCER = process.env.WHATSAPP_RENASCER || "5575983203429";
+const LINK_EBOOK_HOTMART = process.env.LINK_EBOOK_HOTMART || "https://pay.hotmart.com/SEU-PRODUTO-AQUI";
 
-  const hoje = new Date();
-  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-  const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
+async function getClienteId(req) {
+  return req.user.cliente.id;
+}
 
-  const [transacoesMes, transacoesHoje] = await Promise.all([
-    prisma.transacaoFinanceira.aggregate({
-      where: { data: { gte: inicioMes } },
-      _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
-    }),
-    // Tudo que foi anexado/registrado hoje (contratação, renovação, pacote) — seja pela
-    // atendente ou pela própria profissional. Essa lista muda sozinha de um dia pro outro,
-    // porque só olha pra data de hoje: não precisa "zerar" nada, amanhã ela já começa vazia.
-    prisma.transacaoFinanceira.findMany({
-      where: { data: { gte: inicioHoje, lt: inicioAmanha } },
-      select: {
-        valorTotal: true,
-        valorProfissional: true,
-        valorRenascer: true,
-        profissional: { select: { user: { select: { nome: true } } } },
-      },
-    }),
-  ]);
-
-  const porProfissionalHoje = {};
-  for (const t of transacoesHoje) {
-    const nome = t.profissional.user.nome;
-    porProfissionalHoje[nome] = porProfissionalHoje[nome] || { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 };
-    porProfissionalHoje[nome].totalRecebido += t.valorTotal;
-    porProfissionalHoje[nome].valorProfissional += t.valorProfissional;
-    porProfissionalHoje[nome].valorRenascer += t.valorRenascer;
-  }
-  const hojeTotais = transacoesHoje.reduce(
-    (acc, t) => ({
-      totalRecebido: acc.totalRecebido + t.valorTotal,
-      valorProfissional: acc.valorProfissional + t.valorProfissional,
-      valorRenascer: acc.valorRenascer + t.valorRenascer,
-    }),
-    { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 }
-  );
-
+// ---------- 16. Contrato — obrigatório antes de liberar o resto do app ----------
+router.get("/contrato", async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const contrato = await prisma.contrato.findUnique({ where: { clienteId } });
   res.json({
-    totalProfissionais,
-    totalClientes,
-    pacotesAtivos,
-    faturamentoMes: transacoesMes._sum.valorTotal || 0,
-    repasseProfissionaisMes: transacoesMes._sum.valorProfissional || 0,
-    receitaRenascerMes: transacoesMes._sum.valorRenascer || 0,
-    // "A receber hoje": tudo que foi registrado/anexado hoje, e quanto disso fica pra Renascer.
-    hoje: hojeTotais,
-    porProfissionalHoje,
-    // Quantos clientes cada profissional tem hoje — soma tudo, seja cliente cadastrado
-    // pela recepção ou pela própria profissional na aba dela.
-    clientesPorProfissional: profissionais.map((p) => ({ nome: p.user.nome, total: p._count.clientes })),
+    aceito: !!contrato?.aceitoEm,
+    contrato,
+    textoContrato: TEXTO_CONTRATO,
   });
 });
 
-// ---------- Todos os profissionais e seus clientes (mapa cliente -> profissional) ----------
-router.get("/profissionais", async (req, res) => {
-  const profissionais = await prisma.profissional.findMany({
-    include: {
-      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true } },
-      clientes: { include: { user: { select: { nome: true } } } },
-      disponibilidades: true,
-      _count: { select: { clientes: true, agendamentos: true } },
-    },
+router.post("/contrato/aceitar", async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { nomeCompleto, cpf, fotoDocumentoUrl, fotoRostoUrl } = req.body;
+  if (!nomeCompleto || !cpf || !fotoDocumentoUrl) {
+    return res.status(400).json({ erro: "Nome, CPF e foto do documento são obrigatórios." });
+  }
+  const contrato = await prisma.contrato.upsert({
+    where: { clienteId },
+    update: { nomeCompleto, cpf, fotoDocumentoUrl, fotoRostoUrl, aceitoEm: new Date(), ip: req.ip },
+    create: { clienteId, nomeCompleto, cpf, fotoDocumentoUrl, fotoRostoUrl, aceitoEm: new Date(), ip: req.ip },
   });
-  res.json(profissionais);
+  // Salva o CPF também no login (User) — assim o cliente já pode entrar no sistema usando o
+  // CPF, além do e-mail e do telefone.
+  await prisma.cliente.update({ where: { id: clienteId }, data: { cpf, user: { update: { cpf } } } });
+  res.json(contrato);
 });
 
-router.get("/clientes", async (req, res) => {
-  const clientes = await prisma.cliente.findMany({
+// Middleware que bloqueia o resto do app se o contrato não foi aceito
+async function exigirContrato(req, res, next) {
+  const clienteId = await getClienteId(req);
+  const contrato = await prisma.contrato.findUnique({ where: { clienteId } });
+  if (!contrato?.aceitoEm) {
+    return res.status(412).json({ erro: "Você precisa aceitar o contrato antes de continuar.", bloqueadoPorContrato: true });
+  }
+  next();
+}
+
+// ---------- Home / painel do cliente ----------
+router.get("/painel", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({
+    where: { id: clienteId },
     include: {
-      user: { select: { nome: true, email: true, telefone: true, ativo: true } },
-      profissionalAtual: { include: { user: { select: { nome: true } } } },
+      profissionalAtual: { include: { user: { select: { nome: true, fotoUrl: true } } } },
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
   });
-  res.json(
-    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
-  );
+
+  const pacoteAtivo = cliente.pacotes[0] || null;
+  const sessoesRestantes = pacoteAtivo ? pacoteAtivo.totalSessoes - pacoteAtivo.sessoesUsadas : 0;
+
+  const proximaSessao = await prisma.agendamento.findFirst({
+    where: { clienteId, status: { in: ["AGENDADO", "CONFIRMADO"] }, data: { gte: new Date() } },
+    orderBy: { data: "asc" },
+  });
+
+  const pendencias = [];
+  if (pacoteAtivo && sessoesRestantes <= 1) {
+    pendencias.push("Seu pacote está terminando. Renove pra não perder seu horário.");
+  }
+  if (pacoteAtivo?.status === "AGUARDANDO_RENOVACAO") {
+    pendencias.push("Seu pacote encerrou. Renove ou escolha um novo plano para continuar agendando.");
+  }
+
+  res.json({ cliente, pacoteAtivo, sessoesRestantes, proximaSessao, pendencias });
 });
 
-// ---------- Fila de reativação (clientes que não renovaram e foram removidos da lista de
-// alguma profissional) — o dono também consegue reativar direto por aqui, igual a atendente.
-router.get("/clientes-reativar", async (req, res) => {
-  const clientes = await prisma.cliente.findMany({
-    where: { situacao: "EXCLUIDO", profissionalAtualId: null },
-    include: { user: { select: { nome: true } }, historico: { orderBy: { criadoEm: "desc" }, take: 1 } },
-    orderBy: { criadoEm: "desc" },
-  });
-  res.json(
-    clientes.map((c) => ({
-      id: c.id,
-      nome: c.user.nome,
-      whatsapp: c.whatsappCadastro,
-      pacoteResumo: c.historico[0]?.pacoteResumo || null,
-      excluidoEm: c.historico[0]?.criadoEm || null,
-    }))
-  );
-});
-
-router.put("/clientes/:id/reativar", async (req, res) => {
-  const { profissionalId } = req.body;
-  if (!profissionalId) return res.status(400).json({ erro: "Escolha a profissional que vai atender de novo." });
-
-  const cliente = await prisma.cliente.update({
-    where: { id: req.params.id },
-    data: { situacao: "ATIVO", profissionalAtualId: profissionalId },
-    include: { user: true, profissionalAtual: { include: { user: true } } },
-  });
-  await prisma.historicoCliente.create({
-    data: {
-      clienteId: cliente.id,
-      tipo: "REATIVADO",
-      nomeCliente: cliente.user.nome,
-      whatsapp: cliente.whatsappCadastro,
-      profissionalNome: cliente.profissionalAtual?.user?.nome || null,
-    },
-  });
+// Marca que o cliente já viu o pop-up de renovação daquele pacote (some até o próximo nível).
+router.put("/pacote/:id/popup-visto", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const pacote = await prisma.pacote.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!pacote) return res.status(404).json({ erro: "Pacote não encontrado." });
+  await prisma.pacote.update({ where: { id: pacote.id }, data: { popupVisualizadoEm: new Date() } });
   res.json({ ok: true });
 });
 
-// ---------- Histórico completo de clientes (entrou/renovou/saiu/reativado) — só o dono vê. ----------
-router.get("/historico-clientes", async (req, res) => {
-  const historico = await prisma.historicoCliente.findMany({ orderBy: { criadoEm: "desc" }, take: 300 });
-  res.json(historico);
+// ---------- 10. Sessões restantes (detalhado) ----------
+router.get("/sessoes-restantes", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const pacote = await prisma.pacote.findFirst({ where: { clienteId, status: "ATIVO" }, orderBy: { iniciadoEm: "desc" } });
+  if (!pacote) return res.json({ restantes: 0, pacote: null });
+  res.json({ restantes: pacote.totalSessoes - pacote.sessoesUsadas, pacote });
 });
 
-// ---------- Métricas de retenção de um cliente (tempo de casa, renovações) ----------
-router.get("/clientes/:id/metricas", async (req, res) => {
-  const metricas = await calcularMetricasCliente(req.params.id);
-  if (!metricas) return res.status(404).json({ erro: "Cliente não encontrado." });
-  res.json(metricas);
-});
+// ---------- 1. Agendar com a profissional já vinculada ----------
+router.get("/agenda/disponibilidade", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+  if (!cliente.profissionalAtualId) return res.status(400).json({ erro: "Você ainda não tem uma profissional vinculada." });
 
-// Histórico de pagamentos do cliente (contratações, renovações) com os comprovantes
-// anexados — o dono pode ver de qualquer cliente, de qualquer profissional.
-router.get("/clientes/:id/transacoes", async (req, res) => {
-  const transacoes = await prisma.transacaoFinanceira.findMany({
-    where: { clienteId: req.params.id },
-    select: {
-      id: true,
-      tipo: true,
-      valorTotal: true,
-      valorProfissional: true,
-      valorRenascer: true,
-      data: true,
-      comprovanteMimeType: true,
-      profissional: { select: { user: { select: { nome: true } } } },
-    },
-    orderBy: { data: "desc" },
+  const disponibilidades = await prisma.disponibilidade.findMany({
+    where: { profissionalId: cliente.profissionalAtualId, ativo: true },
   });
-  res.json(transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })));
-});
-
-// ---------- Contato de notificação (e-mail/telefone) + data prevista de renovação ----------
-// O dono também pode cadastrar isso pra qualquer cliente (mesma função que atendente/profissional têm).
-router.put("/clientes/:id/notificacao", async (req, res) => {
-  const { notifEmail, notifTelefone, renovarEm } = req.body;
-  const dados = {
-    ...(notifEmail !== undefined && { notifEmail: notifEmail || null }),
-    ...(notifTelefone !== undefined && { notifTelefone: notifTelefone || null }),
-  };
-  if (renovarEm !== undefined) {
-    dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
-    dados.renovarEmAvisoEnviado = false;
-  }
-  const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
-  res.json(cliente);
-});
-
-// Excluir login de cliente direto pela aba Clientes (mesma exclusão em cascata da atendente)
-router.delete("/clientes/:id", async (req, res) => {
-  try {
-    await excluirCliente(req.params.id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ erro: e.message || "Erro ao excluir cliente." });
-  }
-});
-
-// ---------- Financeiro consolidado ----------
-router.get("/financeiro", async (req, res) => {
-  const { mes, ano } = req.query;
-  const hoje = new Date();
-  const m = mes ? Number(mes) - 1 : hoje.getMonth();
-  const a = ano ? Number(ano) : hoje.getFullYear();
-  const inicio = new Date(a, m, 1);
-  const fim = new Date(a, m + 1, 1);
-
-  const transacoes = await prisma.transacaoFinanceira.findMany({
-    where: { data: { gte: inicio, lt: fim } },
-    select: {
-      id: true,
-      tipo: true,
-      valorTotal: true,
-      valorProfissional: true,
-      valorRenascer: true,
-      data: true,
-      comprovanteMimeType: true,
-      profissional: { select: { user: { select: { nome: true } } } },
-      cliente: { select: { user: { select: { nome: true } } } },
-    },
-    orderBy: { data: "desc" },
+  const ocupados = await prisma.agendamento.findMany({
+    where: { profissionalId: cliente.profissionalAtualId, status: { in: ["AGENDADO", "CONFIRMADO"] } },
+    select: { data: true, diaSemana: true, horaInicio: true },
   });
+  res.json({ disponibilidades, ocupados });
+});
 
-  const porProfissional = {};
-  for (const t of transacoes) {
-    const nome = t.profissional.user.nome;
-    porProfissional[nome] = porProfissional[nome] || { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 };
-    porProfissional[nome].totalRecebido += t.valorTotal;
-    porProfissional[nome].valorProfissional += t.valorProfissional;
-    porProfissional[nome].valorRenascer += t.valorRenascer;
+// Fase atual (combinada com a Renascer): quem marca a sessão é a atendente, que já
+// desconta a agenda real da profissional (ver rota /atendente/agendamentos). O
+// agendamento direto pelo cliente fica pausado por enquanto para não gerar horário
+// duplicado ou fora da disponibilidade real — é só reativar esta rota quando a fase
+// de auto-agendamento do cliente for ligada.
+router.post("/agenda/agendar", exigirContrato, async (req, res) => {
+  res.status(400).json({
+    erro: "Agendamento direto pelo app ainda não está disponível. Fale com a recepção do Espaço do Renascer para marcar sua sessão.",
+  });
+});
+
+// Lista as sessões já marcadas do próprio cliente (passadas e futuras)
+router.get("/agenda", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamentos = await prisma.agendamento.findMany({
+    where: { clienteId },
+    include: { profissional: { include: { user: { select: { nome: true } } } } },
+    orderBy: { data: "asc" },
+  });
+  res.json(agendamentos);
+});
+
+// ---------- 2. Reagendar (regra de 24h de antecedência) ----------
+
+// Horários livres da profissional pra reagendar ESSA sessão específica — usa a duração exata
+// dela (30 ou 50min, a mesma regra usada pela atendente e pela profissional) e desconta o que
+// já está ocupado, sem contar a própria sessão que está sendo movida (senão ela bloquearia a
+// si mesma). É essa lista que decide o que aparece pro cliente escolher — ele nunca digita um
+// horário livremente, só pode clicar num horário que a agenda real da profissional permite.
+router.get("/agenda/:id/horarios", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const original = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!original) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const { data } = req.query;
+  if (!data) return res.status(400).json({ erro: "Informe a data (YYYY-MM-DD)." });
+
+  const diaSemana = diaSemanaDeData(data);
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({ where: { profissionalId: original.profissionalId, diaSemana, ativo: true } }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId: original.profissionalId,
+        id: { not: original.id },
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: original.duracao });
+  res.json({ diaSemana, duracao: original.duracao, livres });
+});
+
+router.post("/agenda/:id/reagendar", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const original = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!original) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const horasAteSessao = (original.data.getTime() - Date.now()) / 1000 / 60 / 60;
+  if (horasAteSessao < 24) {
+    return res.status(400).json({
+      erro: "Não é possível reagendar com menos de 24h de antecedência.",
+      podeReagendar: false,
+    });
   }
 
+  const { data, horaInicio } = req.body;
+  if (!data || !horaInicio) {
+    return res.status(400).json({ erro: "Escolha a nova data e o novo horário." });
+  }
+  const diaSemana = diaSemanaDeData(data);
+
+  // Revalida no servidor que esse horário está mesmo livre na agenda real da profissional —
+  // nunca confia só no que veio do app. Isso é o que garante que o cliente só consegue cair
+  // num horário que a profissional de fato disponibilizou, sem virar bagunça de horários
+  // batendo um em cima do outro.
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({ where: { profissionalId: original.profissionalId, diaSemana, ativo: true } }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId: original.profissionalId,
+        id: { not: original.id },
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: original.duracao });
+  if (!livres.includes(horaInicio)) {
+    return res.status(400).json({ erro: "Esse horário não está disponível na agenda da sua profissional. Escolha outro." });
+  }
+
+  await prisma.agendamento.update({ where: { id: original.id }, data: { status: "REAGENDADO" } });
+  const novo = await prisma.agendamento.create({
+    data: {
+      profissionalId: original.profissionalId,
+      clienteId,
+      pacoteId: original.pacoteId,
+      data: new Date(data),
+      diaSemana,
+      horaInicio,
+      duracao: original.duracao,
+      reagendadoDe: original.id,
+    },
+  });
+  res.json(novo);
+});
+
+// ---------- Trocar de profissional (precisa encerrar o pacote atual primeiro) ----------
+router.get("/profissionais-disponiveis", exigirContrato, async (req, res) => {
+  const profissionais = await prisma.profissional.findMany({
+    include: { user: { select: { nome: true, fotoUrl: true } }, disponibilidades: true },
+  });
+  res.json(profissionais.map((p) => ({
+    id: p.id,
+    nome: p.user.nome,
+    fotoUrl: p.user.fotoUrl,
+    titulo: p.titulo,
+    idade: p.idade,
+    especialidades: p.especialidades,
+    abordagens: p.abordagens,
+    disponibilidades: p.disponibilidades,
+  })));
+});
+
+router.post("/trocar-profissional", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { novoProfissionalId } = req.body;
+
+  const pacoteAtivo = await prisma.pacote.findFirst({ where: { clienteId, status: "ATIVO" } });
+  if (pacoteAtivo) {
+    return res.status(400).json({
+      erro: "Você precisa encerrar seu pacote atual antes de trocar de profissional.",
+      precisaEncerrarPacote: true,
+    });
+  }
+
+  await prisma.cliente.update({ where: { id: clienteId }, data: { profissionalAtualId: novoProfissionalId } });
+
+  // Pagamento do novo pacote é finalizado no WhatsApp, como no site
+  const profissional = await prisma.profissional.findUnique({ where: { id: novoProfissionalId }, include: { user: true } });
+  const mensagem = encodeURIComponent(
+    `Olá! Escolhi trocar de profissional no app e quero fechar um novo pacote com ${profissional.user.nome}. Pode me ajudar a finalizar o pagamento?`
+  );
+  res.json({ ok: true, linkWhatsapp: `https://wa.me/${WHATSAPP_RENASCER}?text=${mensagem}` });
+});
+
+// ---------- 3. Renovar pacote / 4. Trocar plano (planos oficiais do site) ----------
+router.get("/planos", (req, res) => {
   res.json({
-    transacoes: transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })),
-    porProfissional,
-    mes: m + 1,
-    ano: a,
+    MIN30: [
+      { totalSessoes: 1, valor: valorDoPlano("MIN30", 1) },
+      { totalSessoes: 2, valor: valorDoPlano("MIN30", 2) },
+      { totalSessoes: 4, valor: valorDoPlano("MIN30", 4) },
+    ],
+    MIN50: [
+      { totalSessoes: 1, valor: valorDoPlano("MIN50", 1) },
+      { totalSessoes: 2, valor: valorDoPlano("MIN50", 2) },
+      { totalSessoes: 4, valor: valorDoPlano("MIN50", 4) },
+    ],
   });
 });
 
-// ---------- Gestão de usuários (criar login de profissional/atendente/dono) ----------
-router.post("/usuarios", async (req, res) => {
-  const { nome, email, telefone, senha, role, dadosProfissional, profissionalAtualId } = req.body;
-  if (!["PROFISSIONAL", "ATENDENTE", "DONO", "CLIENTE"].includes(role)) {
-    return res.status(400).json({ erro: "Papel inválido." });
-  }
+router.post("/renovar-ou-trocar-plano", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId }, include: { profissionalAtual: { include: { user: true } } } });
+  const { duracao, totalSessoes } = req.body;
+  const valor = valorDoPlano(duracao, totalSessoes);
+  if (!valor) return res.status(400).json({ erro: "Plano inválido." });
 
-  const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
+  // Encerra pacote anterior (se ainda existir algum ativo) e cria intenção de novo pacote
+  await prisma.pacote.updateMany({ where: { clienteId, status: { in: ["ATIVO", "AGUARDANDO_RENOVACAO"] } }, data: { status: "ENCERRADO", encerradoEm: new Date() } });
 
-  const hash = await bcrypt.hash(senha, 10);
+  const mensagem = encodeURIComponent(
+    `Olá! Quero renovar/contratar um pacote de ${totalSessoes} sessão(ões) de ${duracao === "MIN30" ? "30 minutos" : "50 minutos"} (R$ ${valor}) com ${cliente.profissionalAtual?.user?.nome || "minha profissional"}. Pode confirmar o pagamento?`
+  );
+  res.json({ ok: true, valor, linkWhatsapp: `https://wa.me/${WHATSAPP_RENASCER}?text=${mensagem}` });
+});
 
-  const user = await prisma.user.create({
-    data: {
-      nome,
-      email: email.toLowerCase().trim(),
-      telefone,
-      senha: hash,
-      role,
-      ...(role === "PROFISSIONAL" && {
-        profissional: {
-          create: {
-            titulo: dadosProfissional?.titulo || "Profissional",
-            registro: dadosProfissional?.registro || null,
-            bio: dadosProfissional?.bio || null,
-            abordagens: dadosProfissional?.abordagens || null,
-            percentualRepasse: dadosProfissional?.percentualRepasse ?? 50,
-          },
-        },
-      }),
-      ...(role === "ATENDENTE" && { atendente: { create: {} } }),
-      ...(role === "DONO" && { dono: { create: {} } }),
-      ...(role === "CLIENTE" && {
-        cliente: {
-          create: {
-            profissionalAtualId: profissionalAtualId || null,
-            whatsappCadastro: telefone || null,
-          },
-        },
-      }),
-    },
-    include: { cliente: true },
+// Observação: a confirmação do pagamento e a criação do pacote em si são feitas pela
+// profissional (POST /api/profissional/clientes/:id/pacotes) depois que o pagamento cai
+// no WhatsApp — o cliente nunca cria o próprio pacote, por segurança (fase 2 automatiza
+// isso via webhook do gateway de pagamento).
+
+// ---------- 5. Sessão extra ----------
+router.post("/sessao-extra", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId }, include: { profissionalAtual: { include: { user: true } } } });
+  const { duracao } = req.body;
+  const valor = valorDoPlano(duracao, 1);
+  const mensagem = encodeURIComponent(
+    `Olá! Quero pagar por uma sessão extra de ${duracao === "MIN30" ? "30 minutos" : "50 minutos"} (R$ ${valor}) com ${cliente.profissionalAtual?.user?.nome || "minha profissional"}.`
+  );
+  res.json({ valor, linkWhatsapp: `https://wa.me/${WHATSAPP_RENASCER}?text=${mensagem}` });
+});
+
+// ---------- 6. E-book / cursos (Hotmart) ----------
+router.get("/materiais", (req, res) => {
+  res.json({
+    ebook: { titulo: "E-book Espaço do Renascer", linkHotmart: LINK_EBOOK_HOTMART, disponivel: true },
+    cursos: [],
+    videoAulas: [],
   });
-
-  if (role === "CLIENTE" && user.cliente) {
-    await prisma.historicoCliente.create({
-      data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
-    });
-  }
-
-  res.json({ id: user.id, email: user.email, role: user.role, cliente: user.cliente || undefined });
 });
 
-router.get("/usuarios", async (req, res) => {
-  const usuarios = await prisma.user.findMany({
-    select: { id: true, nome: true, email: true, role: true, ativo: true, criadoEm: true },
-    orderBy: { criadoEm: "desc" },
-  });
-  res.json(usuarios);
-});
-
-router.put("/usuarios/:id/status", async (req, res) => {
-  const { ativo } = req.body;
-  await prisma.user.update({ where: { id: req.params.id }, data: { ativo } });
-  res.json({ ok: true });
-});
-
-// Editar dados de qualquer login (nome, e-mail, telefone, senha) — só o dono pode.
-router.put("/usuarios/:id", async (req, res) => {
-  const { nome, email, telefone, novaSenha } = req.body;
-  const dados = {};
-  if (nome !== undefined) dados.nome = nome;
-  if (email !== undefined) dados.email = email.toLowerCase().trim();
-  if (telefone !== undefined) dados.telefone = telefone;
-  if (novaSenha) dados.senha = await bcrypt.hash(novaSenha, 10);
-
-  try {
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: dados,
-      select: { id: true, nome: true, email: true, telefone: true, role: true, ativo: true },
-    });
-    res.json(user);
-  } catch (e) {
-    res.status(400).json({ erro: "Não foi possível atualizar (verifique se o e-mail já não está em uso)." });
-  }
-});
-
-// Excluir qualquer login (cliente, profissional, atendente ou outro dono) — hierarquia máxima.
-router.delete("/usuarios/:id", async (req, res) => {
-  if (req.params.id === req.user.id) {
-    return res.status(400).json({ erro: "Você não pode excluir o seu próprio login." });
-  }
-  try {
-    await excluirUsuarioPorId(req.params.id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ erro: e.message || "Erro ao excluir usuário." });
-  }
-});
-
-// ---------- Suporte escalado à gerência (visão dos donos) ----------
-router.get("/suporte-gerencia", async (req, res) => {
+// ---------- 7. + 19. Suporte ----------
+router.get("/suporte", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
   const tickets = await prisma.ticketSuporte.findMany({
-    where: { escalonadoGerencia: true },
-    include: {
-      cliente: { include: { user: { select: { nome: true } }, profissionalAtual: { include: { user: { select: { nome: true } } } } } },
-      mensagens: { orderBy: { criadoEm: "asc" } },
-    },
+    where: { clienteId },
+    include: { mensagens: { orderBy: { criadoEm: "asc" } } },
     orderBy: { criadoEm: "desc" },
   });
   res.json(tickets);
 });
 
-router.post("/suporte-gerencia/:id/responder", async (req, res) => {
-  const { texto } = req.body;
-  const msg = await prisma.mensagem.create({ data: { remetenteId: req.user.id, ticketId: req.params.id, texto } });
-  await prisma.ticketSuporte.update({ where: { id: req.params.id }, data: { status: "EM_ANDAMENTO" } });
+router.post("/suporte", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { assunto, texto, escalonarGerencia } = req.body;
+  const ticket = await prisma.ticketSuporte.create({
+    data: {
+      clienteId,
+      assunto,
+      escalonadoGerencia: !!escalonarGerencia,
+      status: escalonarGerencia ? "ESCALADO_GERENCIA" : "ABERTO",
+      mensagens: { create: { remetenteId: req.user.id, texto } },
+    },
+    include: { mensagens: true },
+  });
+  res.json(ticket);
+});
+
+router.post("/suporte/:id/mensagens", exigirContrato, async (req, res) => {
+  const { texto, anexoUrl } = req.body;
+  const msg = await prisma.mensagem.create({ data: { remetenteId: req.user.id, ticketId: req.params.id, texto, anexoUrl } });
   res.json(msg);
 });
 
-router.put("/suporte-gerencia/:id/resolver", async (req, res) => {
-  await prisma.ticketSuporte.update({ where: { id: req.params.id }, data: { status: "RESOLVIDO" } });
-  res.json({ ok: true });
+// ---------- 8. Recado do dia (leitura) ----------
+router.get("/recados", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const recados = await prisma.recadoDiario.findMany({ where: { clienteId }, orderBy: { data: "desc" } });
+  res.json(recados);
 });
+
+// ---------- Chat com a profissional (histórico salvo, com bloqueio de telefone/WhatsApp) ----------
+router.get("/chat", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+  if (!cliente.profissionalAtualId) return res.json([]);
+
+  const mensagens = await prisma.mensagemInterna.findMany({
+    where: { profissionalId: cliente.profissionalAtualId, clienteId, tipo: { in: ["mensagem", "recado_diario"] } },
+    orderBy: { criadoEm: "asc" },
+  });
+  res.json(mensagens);
+});
+
+router.post("/chat", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { texto } = req.body;
+  if (!texto || !texto.trim()) return res.status(400).json({ erro: "Escreva uma mensagem." });
+  if (contemTelefone(texto)) {
+    return res.status(400).json({ erro: MENSAGEM_BLOQUEIO });
+  }
+
+  const cliente = await prisma.cliente.findUnique({
+    where: { id: clienteId },
+    include: { profissionalAtual: { include: { user: true } } },
+  });
+  if (!cliente.profissionalAtualId) {
+    return res.status(400).json({ erro: "Você ainda não tem uma profissional vinculada." });
+  }
+
+  const msg = await prisma.mensagemInterna.create({
+    data: { profissionalId: cliente.profissionalAtualId, clienteId, autor: "CLIENTE", texto, tipo: "mensagem" },
+  });
+
+  await notificar(cliente.profissionalAtual.user.id, {
+    titulo: "Nova mensagem do cliente",
+    mensagem: texto.slice(0, 120),
+    tipo: "sistema",
+  });
+
+  res.json(msg);
+});
+
+// ---------- 9. Diário de humor (opcional, todo dia) ----------
+router.post("/checkin", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const { humor, nota, tarefaFeita } = req.body;
+  const checkin = await prisma.checkinDiario.create({ data: { clienteId, humor, nota, tarefaFeita } });
+  res.json(checkin);
+});
+
+router.get("/checkins", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const checkins = await prisma.checkinDiario.findMany({ where: { clienteId }, orderBy: { data: "desc" }, take: 60 });
+  res.json(checkins);
+});
+
+// ---------- 12. Notificações (pendências, mensalidade, tarefas) ----------
+// Movido para /api/comum/notificacoes (rota compartilhada por qualquer papel autenticado)
+
+// ---------- 13. + 17. Tarefas ----------
+router.get("/tarefas", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const atribuidas = await prisma.tarefaCliente.findMany({
+    where: { clienteId },
+    include: { tarefa: true },
+    orderBy: { atribuidoEm: "desc" },
+  });
+  res.json(atribuidas);
+});
+
+router.put("/tarefas/:id/concluir", exigirContrato, async (req, res) => {
+  const atualizado = await prisma.tarefaCliente.update({
+    where: { id: req.params.id },
+    data: { concluida: true, concluidoEm: new Date() },
+  });
+  res.json(atualizado);
+});
+
+// Biblioteca geral de tarefas de apoio por tema (item 17) — livre pra consulta
+router.get("/biblioteca-tarefas", async (req, res) => {
+  const { tema } = req.query;
+  const tarefas = await prisma.tarefa.findMany({
+    where: { publica: true, ...(tema ? { tema } : {}) },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json({
+    aviso: "Estas tarefas são apenas de apoio ao seu desenvolvimento pessoal. Elas não substituem diagnóstico, tratamento ou orientação profissional — fale sempre com sua profissional sobre o que sentir.",
+    tarefas,
+  });
+});
+
+// ---------- 14. Relatório do profissional (quando publicado) ----------
+router.get("/relatorios", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const relatorios = await prisma.relatorioCliente.findMany({
+    where: { clienteId, visivelParaCliente: true },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json(relatorios);
+});
+
+// ---------- 15. Videochamada ----------
+router.post("/agenda/:id/iniciar-chamada", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  // update vazio: se a profissional (ou o próprio cliente) já entrou antes, mantém o
+  // horário original de início — não reseta a duração toda vez que alguém entra de novo
+  const chamada = await prisma.chamadaVideo.upsert({
+    where: { agendamentoId: agendamento.id },
+    update: {},
+    create: { agendamentoId: agendamento.id, iniciadaEm: new Date() },
+  });
+  // A sala é o link fixo do Google Meet cadastrado pela própria profissional no perfil dela
+  const profissional = await prisma.profissional.findUnique({ where: { id: agendamento.profissionalId }, select: { linkMeet: true } });
+  res.json({
+    ...chamada,
+    linkMeet: profissional?.linkMeet || null,
+    aviso: profissional?.linkMeet ? undefined : "Sua profissional ainda não cadastrou o link da videochamada. Entre em contato com a recepção do Espaço do Renascer.",
+  });
+});
+
+router.post("/agenda/:id/encerrar-chamada", exigirContrato, async (req, res) => {
+  const clienteId = await getClienteId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, clienteId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  const chamada = await prisma.chamadaVideo.findUnique({ where: { agendamentoId: agendamento.id } });
+  if (!chamada?.iniciadaEm) return res.status(400).json({ erro: "Chamada não foi iniciada." });
+  if (chamada.encerradaEm) return res.json(chamada);
+
+  const encerradaEm = new Date();
+  const duracaoMinutos = Math.round((encerradaEm.getTime() - chamada.iniciadaEm.getTime()) / 60000);
+  const atualizado = await prisma.chamadaVideo.update({
+    where: { agendamentoId: agendamento.id },
+    data: { encerradaEm, duracaoMinutos },
+  });
+  res.json(atualizado);
+});
+
+// ---------- 18. Dúvidas ----------
+router.get("/duvidas", (req, res) => {
+  res.json(FAQ_CLIENTE);
+});
+
+const FAQ_CLIENTE = [
+  { pergunta: "Como funciona o atendimento?", resposta: "Todo o atendimento do Espaço do Renascer é 100% online, feito por videochamada dentro do próprio aplicativo." },
+  { pergunta: "Posso trocar de profissional?", resposta: "Sim. Você precisa encerrar seu pacote atual e depois pode escolher uma nova profissional direto pelo app." },
+  { pergunta: "Até quando posso reagendar uma sessão?", resposta: "Reagendamentos precisam ser feitos com pelo menos 24h de antecedência da sessão marcada." },
+  { pergunta: "As tarefas de apoio substituem o acompanhamento profissional?", resposta: "Não. As tarefas são só um apoio ao seu desenvolvimento pessoal, nunca um diagnóstico ou substituto do acompanhamento com sua profissional." },
+  { pergunta: "Como faço uma reclamação sobre minha profissional?", resposta: "Na aba de Suporte, você pode abrir um chamado e marcar a opção de falar diretamente com a gerência." },
+];
+
+const TEXTO_CONTRATO = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE PSICOTERAPIA ONLINE — ESPAÇO DO RENASCER
+
+1. OBJETO: Prestação de serviços de psicoterapia/acompanhamento terapêutico, realizados exclusivamente de forma online, por profissionais parceiros do Espaço do Renascer.
+2. PACOTES E PAGAMENTO: O cliente contrata pacotes de sessões conforme os planos vigentes (30 ou 50 minutos), com pagamento antecipado via Pix ou cartão.
+3. VALIDADE DO PACOTE: Pacotes de 2 ou 4 sessões têm validade de 30 (trinta) dias corridos, contados a partir da data da contratação/pagamento, para que todas as sessões sejam utilizadas.
+4. REAGENDAMENTO: Reagendamentos devem ser solicitados com no mínimo 24 horas de antecedência da sessão marcada. Caso o reagendamento ou cancelamento seja feito com menos de 24h de antecedência, no mesmo dia ou em cima do horário já marcado, a sessão será considerada realizada e descontada normalmente do pacote.
+5. REEMBOLSO: Não são realizados reembolsos após 7 (sete) dias da contratação, conforme o prazo de arrependimento previsto no Código de Defesa do Consumidor (art. 49, Lei nº 8.078/1990).
+6. CONFIDENCIALIDADE: As informações trocadas durante o atendimento são sigilosas, respeitando o código de ética profissional aplicável.
+7. RESPONSABILIDADE: As tarefas de apoio disponibilizadas no aplicativo têm caráter exclusivamente educativo e de apoio, não configurando diagnóstico ou tratamento à distância fora das sessões.
+8. ACEITE: Ao preencher seus dados, anexar foto de documento e confirmar abaixo, o cliente declara ter lido e concordado com os termos acima.`;
 
 module.exports = router;
