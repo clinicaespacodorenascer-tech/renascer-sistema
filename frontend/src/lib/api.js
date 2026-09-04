@@ -23,6 +23,16 @@ export function pegarUsuario() {
   return raw ? JSON.parse(raw) : null;
 }
 
+// Atualiza só alguns campos do usuário salvo (ex: depois de trocar a foto de perfil), sem precisar
+// logar de novo — assim a próxima vez que a página carregar já vem com o dado novo.
+export function atualizarUsuarioLocal(patch) {
+  const atual = pegarUsuario();
+  if (!atual) return null;
+  const atualizado = { ...atual, ...patch };
+  localStorage.setItem("renascer_user", JSON.stringify(atualizado));
+  return atualizado;
+}
+
 export function sair() {
   localStorage.removeItem("renascer_token");
   localStorage.removeItem("renascer_user");
