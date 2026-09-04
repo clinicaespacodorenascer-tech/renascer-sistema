@@ -25,6 +25,22 @@ router.get("/notificacoes/nao-lidas/total", async (req, res) => {
   res.json({ total });
 });
 
+// Foto de perfil — qualquer papel logado (Cliente, Atendente, Dono ou Profissional) pode trocar
+// a própria foto por aqui. A Profissional já tinha esse campo dentro da tela de "Perfil"
+// completo dela (que também mexe em título, bio etc.); esse endpoint é só a foto, isolado, pra
+// funcionar igual pros outros três papéis, que não têm uma tela de perfil própria.
+router.put("/minha-foto", async (req, res) => {
+  const { fotoBase64 } = req.body;
+  if (!fotoBase64) return res.status(400).json({ erro: "Envie uma imagem." });
+
+  const user = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { fotoUrl: fotoBase64 }, // fase 2: subir pra storage real e salvar a URL
+    select: { id: true, nome: true, fotoUrl: true },
+  });
+  res.json(user);
+});
+
 // Ver o comprovante anexado numa transação financeira (contratação, renovação, pacote).
 // Fica guardado no banco pra sempre poder ser visto de novo depois.
 // Dono e atendente podem ver qualquer comprovante; a profissional só vê os das próprias
