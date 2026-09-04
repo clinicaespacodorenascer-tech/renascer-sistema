@@ -386,7 +386,7 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
-  const [form, setForm] = useState({ nome: "", email: "", telefone: "", profissionalAtualId: "" });
+  const [form, setForm] = useState({ nome: "", email: "", telefone: "", senhaProvisoria: "", profissionalAtualId: "" });
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
   const [expandido, setExpandido] = useState(null);
@@ -406,7 +406,7 @@ function Clientes() {
     try {
       const { data } = await api.post("/atendente/clientes", form);
       setResultado(data);
-      setForm({ nome: "", email: "", telefone: "", profissionalAtualId: "" });
+      setForm({ nome: "", email: "", telefone: "", senhaProvisoria: "", profissionalAtualId: "" });
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
@@ -421,6 +421,7 @@ function Clientes() {
           <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+          <input className="input" placeholder="Senha do login (opcional, senão é gerada uma)" value={form.senhaProvisoria} onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })} />
           <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
             <option value="">Vincular profissional (opcional)</option>
             {profissionais.map((p) => (
