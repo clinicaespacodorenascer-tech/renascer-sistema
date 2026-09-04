@@ -1,12 +1,59 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Logo from "./Logo";
-import { sair } from "../lib/api";
+import api, { sair, atualizarUsuarioLocal } from "../lib/api";
 
-function Avatar({ nome }) {
-  const inicial = (nome || "?").trim().charAt(0).toUpperCase();
+// Avatar que qualquer papel (Cliente, Atendente, Dono ou Profissional) pode clicar pra trocar a
+// própria foto — antes só a Profissional tinha isso, na tela de perfil dela. Aqui é a mesma foto
+// (mesmo campo fotoUrl do usuário), só que direto pelo cabeçalho, disponível pra todo mundo.
+function AvatarEditavel({ user }) {
+  const inputRef = useRef(null);
+  const [foto, setFoto] = useState(user?.fotoUrl || null);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const inicial = (user?.nome || "?").trim().charAt(0).toUpperCase();
+
+  async function trocarFoto(e) {
+    const arquivo = e.target.files[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    setErro("");
+    setEnviando(true);
+    try {
+      const fotoBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(arquivo);
+      });
+      const { data } = await api.put("/comum/minha-foto", { fotoBase64 });
+      setFoto(data.fotoUrl);
+      atualizarUsuarioLocal({ fotoUrl: data.fotoUrl });
+    } catch (err) {
+      setErro(err?.response?.data?.erro || "Não foi possível trocar a foto.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   return (
-    <span className="w-8 h-8 rounded-full bg-renascer-gradient text-white text-sm font-semibold flex items-center justify-center shrink-0 ring-2 ring-gold/40">
-      {inicial}
+    <span className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        title="Trocar foto de perfil"
+        className="w-8 h-8 rounded-full overflow-hidden bg-renascer-gradient text-white text-sm font-semibold flex items-center justify-center ring-2 ring-gold/40 hover:ring-gold transition-all"
+      >
+        {foto ? <img src={foto} alt="Sua foto" className="w-full h-full object-cover" /> : inicial}
+      </button>
+      <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gold text-white flex items-center justify-center text-[8px] ring-2 ring-white pointer-events-none">
+        {enviando ? "…" : "✎"}
+      </span>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={trocarFoto} />
+      {erro && (
+        <span className="absolute top-full mt-1 right-0 text-[10px] text-red-600 bg-white border border-red-200 rounded px-2 py-1 shadow-soft whitespace-nowrap z-10">
+          {erro}
+        </span>
+      )}
     </span>
   );
 }
@@ -43,7 +90,7 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
           <div className="flex items-center gap-3">
             {user && (
               <span className="hidden sm:flex items-center gap-2 text-sm text-renascer-ink/70 bg-renascer-light/70 border border-renascer/10 rounded-full pl-1.5 pr-3 py-1">
-                <Avatar nome={user.nome} />
+                <AvatarEditavel user={user} />
                 <span>
                   Olá, <strong className="text-renascer-ink">{user.nome}</strong>
                 </span>
@@ -92,7 +139,7 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
             </div>
             {user && (
               <div className="flex items-center gap-2 px-4 pt-3 text-sm text-renascer-ink/60">
-                <Avatar nome={user.nome} />
+                <AvatarEditavel user={user} />
                 <span>
                   Olá, <strong className="text-renascer-ink">{user.nome}</strong>
                 </span>
