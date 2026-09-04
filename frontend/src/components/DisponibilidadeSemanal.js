@@ -18,10 +18,14 @@ const DIAS = [
 // Componente compartilhado: usado tanto na tela da própria profissional quanto na tela da
 // atendente (que pode ajustar os horários de qualquer profissional a pedido dela) — mesma
 // lógica, mesmo componente, pra recepção, profissional e cliente sempre falarem a mesma língua.
-export default function DisponibilidadeSemanal({ disponibilidades, setDisponibilidades, salvar, aviso }) {
+export default function DisponibilidadeSemanal({ disponibilidades, setDisponibilidades, salvar, aviso, ocupados = [] }) {
   const [novoHorario, setNovoHorario] = useState({});
   const [msg, setMsg] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  function ocupadoDe(dia, hora) {
+    return ocupados.find((o) => o.diaSemana === dia && o.horaInicio === hora);
+  }
 
   function adicionar(dia) {
     const hora = novoHorario[dia];
@@ -59,6 +63,9 @@ export default function DisponibilidadeSemanal({ disponibilidades, setDisponibil
           {aviso ||
             'Cadastre só os horários exatos atendidos em cada dia — por exemplo, se atende 8:30, 10:30 e 18h na terça, cadastre só esses três, não uma faixa "8h às 18h". Assim ninguém (recepção ou cliente) consegue marcar num horário que não é atendido de verdade.'}
         </p>
+        {ocupados.length > 0 && (
+          <p className="text-xs text-amber-700 mt-1">🔒 = horário fixo de um cliente — pra liberar, agende um novo horário pra ele primeiro.</p>
+        )}
       </div>
       {DIAS.map(([dia, label]) => {
         const horariosDoDia = disponibilidades
@@ -70,14 +77,24 @@ export default function DisponibilidadeSemanal({ disponibilidades, setDisponibil
             <p className="text-sm font-medium mb-2">{label}</p>
             <div className="flex flex-wrap gap-2 mb-2">
               {horariosDoDia.length === 0 && <span className="text-xs text-renascer-ink/40">Nenhum horário cadastrado.</span>}
-              {horariosDoDia.map((h) => (
-                <span key={h} className="badge bg-renascer-light text-renascer flex items-center gap-1.5">
-                  {h}
-                  <button className="text-renascer-ink/50 hover:text-red-600 leading-none" onClick={() => remover(dia, h)}>
-                    ×
-                  </button>
-                </span>
-              ))}
+              {horariosDoDia.map((h) => {
+                const ocupado = ocupadoDe(dia, h);
+                return (
+                  <span
+                    key={h}
+                    className={`badge flex items-center gap-1.5 ${ocupado ? "bg-amber-100 text-amber-700" : "bg-renascer-light text-renascer"}`}
+                  >
+                    {h}
+                    {ocupado ? (
+                      <span title={`Horário fixo de ${ocupado.nome}`}>🔒 {ocupado.nome}</span>
+                    ) : (
+                      <button className="text-renascer-ink/50 hover:text-red-600 leading-none" onClick={() => remover(dia, h)}>
+                        ×
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
             </div>
             <div className="flex gap-2">
               <input
