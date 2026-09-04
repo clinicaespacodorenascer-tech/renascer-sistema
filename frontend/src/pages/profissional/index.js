@@ -25,6 +25,19 @@ const DIAS = [
   ["DOMINGO", "Domingo"],
 ];
 
+// Pra pré-preencher a data ao agendar direto de uma coluna da Agenda: acha a próxima ocorrência
+// (a mais próxima, podendo ser hoje) daquele dia da semana.
+const DIA_SEMANA_PARA_JS = { DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6 };
+function proximaDataDoDia(diaSemana) {
+  const alvo = DIA_SEMANA_PARA_JS[diaSemana];
+  const hoje = new Date();
+  const diff = (alvo - hoje.getDay() + 7) % 7;
+  const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + diff);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 const CATEGORIAS_SUGERIDAS = [
   "Ansiedade",
   "Depressão",
@@ -240,10 +253,13 @@ function AbaAgenda() {
   const [colunas, setColunas] = useState(null);
   const [colunaSobre, setColunaSobre] = useState(null);
   const [erro, setErro] = useState("");
+  const [clientes, setClientes] = useState([]);
+  const [colunaAberta, setColunaAberta] = useState(null);
 
   async function carregar() {
-    const { data } = await api.get("/profissional/agenda");
-    setColunas(data);
+    const [a, c] = await Promise.all([api.get("/profissional/agenda"), api.get("/profissional/clientes")]);
+    setColunas(a.data);
+    setClientes(c.data);
   }
   useEffect(() => {
     carregar();
@@ -290,7 +306,27 @@ function AbaAgenda() {
               if (id) moverSessao(id, chave);
             }}
           >
-            <h3 className="font-semibold text-renascer mb-3 text-sm">{label}</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-renascer text-sm">{label}</h3>
+              <button
+                className="text-renascer text-base leading-none w-6 h-6 rounded-full border border-renascer/30 hover:bg-renascer-light"
+                title="Adicionar sessão de um cliente já cadastrado"
+                onClick={() => setColunaAberta(colunaAberta === chave ? null : chave)}
+              >
+                +
+              </button>
+            </div>
+            {colunaAberta === chave && (
+              <NovaSessaoRapida
+                diaSemana={chave}
+                clientes={clientes}
+                onAgendado={() => {
+                  setColunaAberta(null);
+                  carregar();
+                }}
+                onFechar={() => setColunaAberta(null)}
+              />
+            )}
             <div className="space-y-2">
               {colunas[chave]?.length === 0 && <p className="text-xs text-renascer-ink/40">Sem sessões</p>}
               {colunas[chave]?.map((ag) => {
@@ -345,6 +381,122 @@ function AbaAgenda() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Formulário rápido de "+ adicionar sessão" que abre dentro da coluna do dia da semana, na
+// própria Agenda da profissional — pra ela poder marcar um cliente já cadastrado sem precisar
+// pedir pra atendente. Já vem com a data mais próxima daquele dia da semana preenchida.
+function NovaSessaoRapida({ diaSemana, clientes, onAgendado, onFechar }) {
+  const [clienteId, setClienteId] = useState("");
+  const [data, setData] = useState(proximaDataDoDia(diaSemana));
+  const [duracao, setDuracao] = useState("MIN50");
+  const [horarios, setHorarios] = useState(null);
+  const [horaEscolhida, setHoraEscolhida] = useState("");
+  const [msg, setMsg] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  async function buscarHorarios() {
+    if (!data) return;
+    setMsg("");
+    setHoraEscolhida("");
+    setHorarios(null);
+    try {
+      const { data: resp } = await api.get("/profissional/horarios", {
+        params: { data, duracao, clienteId: clienteId || undefined },
+      });
+      setHorarios(resp);
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao buscar horários.");
+    }
+  }
+
+  async function confirmar() {
+    if (!clienteId || !data || !horaEscolhida) {
+      setMsg("Escolha o cliente, a data e o horário.");
+      return;
+    }
+    setEnviando(true);
+    setMsg("");
+    try {
+      await api.post("/profissional/agenda", { clienteId, data, horaInicio: horaEscolhida, duracao });
+      onAgendado?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao agendar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="border border-renascer/20 bg-white rounded-lg p-2 mb-3 space-y-2">
+      <select
+        className="input !text-xs !py-1 !w-full"
+        value={clienteId}
+        onChange={(e) => {
+          setClienteId(e.target.value);
+          setHorarios(null);
+          setHoraEscolhida("");
+        }}
+      >
+        <option value="">Escolha o cliente...</option>
+        {clientes.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.user.nome}
+          </option>
+        ))}
+      </select>
+      <div className="flex gap-1">
+        <input
+          type="date"
+          className="input !text-xs !py-1 !w-1/2"
+          value={data}
+          onChange={(e) => {
+            setData(e.target.value);
+            setHorarios(null);
+            setHoraEscolhida("");
+          }}
+        />
+        <select
+          className="input !text-xs !py-1 !w-1/2"
+          value={duracao}
+          onChange={(e) => {
+            setDuracao(e.target.value);
+            setHorarios(null);
+            setHoraEscolhida("");
+          }}
+        >
+          <option value="MIN30">30 min</option>
+          <option value="MIN50">50 min</option>
+        </select>
+      </div>
+      <button className="btn-secondary !py-1 !px-2 text-xs w-full" onClick={buscarHorarios}>
+        Ver horários livres
+      </button>
+      {horarios && (
+        <div className="flex flex-wrap gap-1">
+          {horarios.length === 0 && <span className="text-xs text-renascer-ink/40">Nenhum horário livre nesse dia.</span>}
+          {horarios.map((h) => (
+            <button
+              key={h}
+              className={`badge ${horaEscolhida === h ? "bg-renascer text-white" : "bg-renascer-light text-renascer"}`}
+              onClick={() => setHoraEscolhida(h)}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      )}
+      {msg && <p className="text-xs text-red-600">{msg}</p>}
+      <div className="flex gap-1">
+        <button className="btn-primary !py-1 !px-2 text-xs flex-1" onClick={confirmar} disabled={enviando}>
+          {enviando ? "Agendando..." : "Agendar"}
+        </button>
+        <button className="btn-secondary !py-1 !px-2 text-xs" onClick={onFechar}>
+          Cancelar
+        </button>
       </div>
     </div>
   );
@@ -691,14 +843,11 @@ function AbaFinanceiro() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="card">
-          <p className="text-sm text-renascer-ink/60">Faturado no mês</p>
-          <p className="text-2xl font-bold text-renascer">R$ {resumo?.totalRecebido?.toFixed(2) ?? "0,00"}</p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Seu repasse</p>
-          <p className="text-2xl font-bold text-emerald-600">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
+          <p className="text-sm text-renascer-ink/60">Faturado no mês (sua parte)</p>
+          <p className="text-2xl font-bold text-renascer">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
+          <p className="text-xs text-renascer-ink/50 mt-1">Só o que é seu — não conta a parte que fica com a Renascer.</p>
         </div>
         <div className="card">
           <p className="text-sm text-renascer-ink/60">Repasse Renascer</p>
@@ -863,12 +1012,17 @@ function AbaConfig() {
 
   if (!perfil) return <p>Carregando...</p>;
 
+  const ocupados = (perfil.disponibilidades || [])
+    .filter((d) => d.ocupadoPorCliente)
+    .map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, nome: d.ocupadoPorCliente.user.nome }));
+
   return (
     <div className="space-y-4">
       <PerfilCompleto perfil={perfil} onAtualizado={carregarPerfil} />
       <DisponibilidadeSemanal
         disponibilidades={disponibilidades}
         setDisponibilidades={setDisponibilidades}
+        ocupados={ocupados}
         salvar={(disp) => api.put("/profissional/disponibilidades", { disponibilidades: disp })}
       />
     </div>
