@@ -5,6 +5,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
+const { notificar } = require("../utils/notificar");
 
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
@@ -186,6 +187,14 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
   res.json(transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })));
 });
 
+// Contrato assinado (foto do documento, foto do rosto, CPF/nome informados e data do aceite) —
+// o dono pode ver de qualquer cliente, pra conferência/auditoria. Se o cliente ainda não aceitou
+// o contrato, devolve null (ainda não existe registro).
+router.get("/clientes/:id/contrato", async (req, res) => {
+  const contrato = await prisma.contrato.findUnique({ where: { clienteId: req.params.id } });
+  res.json(contrato);
+});
+
 // ---------- Contato de notificação (e-mail/telefone) + data prevista de renovação ----------
 // O dono também pode cadastrar isso pra qualquer cliente (mesma função que atendente/profissional têm).
 router.put("/clientes/:id/notificacao", async (req, res) => {
@@ -270,6 +279,10 @@ router.get("/repasses-pendentes", async (req, res) => {
       valorRenascer: true,
       data: true,
       profissionalId: true,
+      repasseSolicitadoEm: true,
+      repasseComprovanteMimeType: true,
+      repasseValorInformado: true,
+      repasseReconhecidoPorIA: true,
       profissional: { select: { user: { select: { nome: true } } } },
       cliente: { select: { user: { select: { nome: true } } } },
     },
@@ -281,17 +294,24 @@ router.get("/repasses-pendentes", async (req, res) => {
     const nome = t.profissional.user.nome;
     porProfissional[nome] = porProfissional[nome] || { profissionalId: t.profissionalId, totalPendente: 0, transacoes: [] };
     porProfissional[nome].totalPendente += t.valorRenascer;
-    porProfissional[nome].transacoes.push(t);
+    porProfissional[nome].transacoes.push({
+      ...t,
+      temComprovanteRepasse: !!t.repasseComprovanteMimeType,
+      bateComEsperado:
+        t.repasseValorInformado != null ? Math.abs(t.repasseValorInformado - t.valorRenascer) < 0.01 : null,
+    });
   }
 
   res.json({ porProfissional });
 });
 
-// Marca uma transação específica como repassada (o dono confere que recebeu aquele pagamento
-// exato da profissional).
+// Marca uma transação específica como repassada (o dono confere — vendo o comprovante que a
+// profissional anexou, quando tiver, ou de outra forma — que recebeu aquele pagamento exato) e
+// avisa a profissional que o repasse dela foi confirmado.
 router.put("/repasses/:transacaoId/marcar", async (req, res) => {
   const transacao = await prisma.transacaoFinanceira.findFirst({
     where: { id: req.params.transacaoId, recebidoPor: "PROFISSIONAL" },
+    include: { profissional: { select: { userId: true } } },
   });
   if (!transacao) return res.status(404).json({ erro: "Transação não encontrada." });
   if (transacao.repassado) return res.json(transacao);
@@ -300,6 +320,13 @@ router.put("/repasses/:transacaoId/marcar", async (req, res) => {
     where: { id: transacao.id },
     data: { repassado: true, repassadoEm: new Date(), repassadoObs: "Confirmado pelo dono." },
   });
+
+  await notificar(transacao.profissional.userId, {
+    titulo: "Repasse confirmado",
+    mensagem: `Seu repasse de R$ ${transacao.valorRenascer.toFixed(2)} foi conferido e confirmado — já saiu da sua lista de pendências.`,
+    tipo: "financeiro",
+  });
+
   res.json(atualizada);
 });
 
