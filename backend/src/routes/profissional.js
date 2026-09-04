@@ -6,7 +6,7 @@ const { calcularRepasse, valorDoPlano, transacaoDuplicada } = require("../utils/
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
-const { haConflito } = require("../utils/horarios");
+const { haConflito, diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
@@ -22,7 +22,10 @@ async function getProfissionalId(req) {
 router.get("/perfil", async (req, res) => {
   const prof = await prisma.profissional.findUnique({
     where: { id: await getProfissionalId(req) },
-    include: { disponibilidades: true, user: { select: { nome: true, email: true, fotoUrl: true, telefone: true } } },
+    include: {
+      disponibilidades: { include: { ocupadoPorCliente: { select: { user: { select: { nome: true } } } } } },
+      user: { select: { nome: true, email: true, fotoUrl: true, telefone: true } },
+    },
   });
   res.json(prof);
 });
@@ -66,10 +69,33 @@ router.put("/perfil", async (req, res) => {
 router.put("/disponibilidades", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { disponibilidades } = req.body; // [{diaSemana, horaInicio}]
-  await prisma.disponibilidade.deleteMany({ where: { profissionalId } });
-  await prisma.disponibilidade.createMany({
-    data: disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
-  });
+
+  const atuais = await prisma.disponibilidade.findMany({ where: { profissionalId } });
+  const chave = (d) => `${d.diaSemana}|${d.horaInicio}`;
+  const novasChaves = new Set((disponibilidades || []).map(chave));
+
+  // Nunca apaga um horário que já é fixo de um cliente por engano — se sumiu da lista nova,
+  // barra e avisa qual cliente é, em vez de tirar o horário fixo dele sem querer.
+  const presoOcupado = atuais.find((d) => d.ocupadoPorClienteId && !novasChaves.has(chave(d)));
+  if (presoOcupado) {
+    const cliente = await prisma.cliente.findUnique({ where: { id: presoOcupado.ocupadoPorClienteId }, include: { user: true } });
+    return res.status(400).json({
+      erro: `O horário ${presoOcupado.diaSemana} ${presoOcupado.horaInicio} já é fixo do cliente ${cliente?.user?.nome || "cadastrado"} e não pode ser removido por aqui. Agende um novo horário pra ele primeiro (isso libera este automaticamente).`,
+    });
+  }
+
+  const chavesAtuais = new Set(atuais.map(chave));
+  const remover = atuais.filter((d) => !novasChaves.has(chave(d)));
+  const adicionar = (disponibilidades || []).filter((d) => !chavesAtuais.has(chave(d)));
+
+  if (remover.length > 0) {
+    await prisma.disponibilidade.deleteMany({ where: { id: { in: remover.map((d) => d.id) } } });
+  }
+  if (adicionar.length > 0) {
+    await prisma.disponibilidade.createMany({
+      data: adicionar.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, profissionalId })),
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -429,6 +455,101 @@ router.put("/financeiro/:id/repassar", async (req, res) => {
   res.json(atualizada);
 });
 
+// Horários livres da própria profissional numa data (mesma lógica de horários da atendente,
+// mas já usando a profissional logada — usado pelo botão "+" direto na Agenda dela).
+router.get("/horarios", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const { data, duracao, clienteId } = req.query;
+  if (!data) return res.status(400).json({ erro: "Informe a data (YYYY-MM-DD)." });
+
+  const diaSemana = diaSemanaDeData(data);
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({
+      where: {
+        profissionalId,
+        diaSemana,
+        ativo: true,
+        OR: [{ ocupadoPorClienteId: null }, { ocupadoPorClienteId: clienteId || "__nenhum__" }],
+      },
+    }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId,
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: duracao || "MIN50" });
+  res.json({ diaSemana, livres });
+});
+
+// Agendar uma sessão pra um cliente que já é dela, direto pelo botão "+" na coluna do dia na
+// Agenda — sem precisar passar pela atendente. Esse dia+horário vira o horário fixo dele com
+// ela (some da lista de livres pra qualquer outro cliente a partir de agora).
+router.post("/agenda", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const { clienteId, data, horaInicio, duracao } = req.body;
+  if (!clienteId || !data || !horaInicio) {
+    return res.status(400).json({ erro: "Escolha o cliente, a data e o horário." });
+  }
+
+  const cliente = await prisma.cliente.findFirst({ where: { id: clienteId, profissionalAtualId: profissionalId } });
+  if (!cliente) return res.status(400).json({ erro: "Esse cliente não é seu ou não foi encontrado." });
+
+  const diaSemana = diaSemanaDeData(data);
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({
+      where: {
+        profissionalId,
+        diaSemana,
+        ativo: true,
+        OR: [{ ocupadoPorClienteId: null }, { ocupadoPorClienteId: clienteId }],
+      },
+    }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId,
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: duracao || "MIN50" });
+  if (!livres.includes(horaInicio)) {
+    return res.status(400).json({ erro: "Esse horário não está mais disponível. Escolha outro." });
+  }
+
+  const pacote = await prisma.pacote.findFirst({ where: { clienteId, profissionalId, status: "ATIVO" }, orderBy: { iniciadoEm: "desc" } });
+  if (!pacote || pacote.sessoesUsadas >= pacote.totalSessoes) {
+    return res.status(400).json({
+      erro: "Esse cliente não tem sessões disponíveis no pacote. Registre o pagamento/pacote (aba Pacote/pagamento) antes de agendar.",
+      semPacoteAtivo: true,
+    });
+  }
+
+  const agendamento = await prisma.agendamento.create({
+    data: { profissionalId, clienteId, pacoteId: pacote.id, data: new Date(data), diaSemana, horaInicio, duracao: duracao || "MIN50" },
+  });
+
+  const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
+  if (slotFixo) {
+    await prisma.disponibilidade.updateMany({
+      where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+      data: { ocupadoPorClienteId: null, ocupadoEm: null },
+    });
+    await prisma.disponibilidade.update({
+      where: { id: slotFixo.id },
+      data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+    });
+  }
+
+  res.json(agendamento);
+});
+
 // ---------- 5. Clientes do profissional ----------
 
 // Cadastrar direto um cliente que a profissional já atendia antes (sem precisar da
@@ -541,6 +662,28 @@ router.post("/clientes", async (req, res) => {
           duracao: duracao || "MIN50",
         },
       });
+
+      // Esse dia+horário passa a ser o horário fixo dele com ela (recorrente toda semana) — só
+      // avisa se já constar como fixo de outro cliente, em vez de travar o cadastro por causa disso.
+      const slotFixo = await prisma.disponibilidade.findFirst({
+        where: { profissionalId, diaSemana: diaSemanaFixo, horaInicio: horaFixa, ativo: true },
+      });
+      if (slotFixo) {
+        if (slotFixo.ocupadoPorClienteId && slotFixo.ocupadoPorClienteId !== clienteId) {
+          avisoAgenda =
+            (avisoAgenda ? avisoAgenda + " " : "") +
+            "Atenção: esse horário já consta como fixo de outro cliente — confira se não vai bater com a sessão dele.";
+        } else {
+          await prisma.disponibilidade.updateMany({
+            where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+            data: { ocupadoPorClienteId: null, ocupadoEm: null },
+          });
+          await prisma.disponibilidade.update({
+            where: { id: slotFixo.id },
+            data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+          });
+        }
+      }
     }
   }
 
@@ -600,6 +743,8 @@ router.put("/clientes/:id/situacao", async (req, res) => {
   } else if (acao === "EXCLUIR") {
     await prisma.historicoCliente.create({ data: { ...base, tipo: "EXCLUIDO", motivo: "Não renovou — removido pela profissional." } });
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
+    // Libera qualquer horário fixo que esse cliente tivesse — volta a aparecer livre pra outros.
+    await prisma.disponibilidade.updateMany({ where: { ocupadoPorClienteId: cliente.id }, data: { ocupadoPorClienteId: null, ocupadoEm: null } });
   } else {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
   }
