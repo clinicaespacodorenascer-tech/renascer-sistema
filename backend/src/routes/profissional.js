@@ -661,8 +661,12 @@ router.post("/clientes", async (req, res) => {
   let agendamento = null;
   let avisoAgenda = null;
 
-  // Pacote atual do cliente (se ela já informou quantas sessões ele tem/tinha). Se ela também
-  // informou um valor, isso já conta no financeiro (ela mesma recebeu o pagamento direto).
+  // Pacote atual do cliente (se ela já informou quantas sessões ele tem/tinha) — só cria o
+  // controle de sessões aqui. NÃO lança automaticamente no financeiro: muita profissional cadastra
+  // cliente que já é antigo (pagou faz tempo, é só organização de agenda), e isso tava entrando
+  // como pagamento novo e bagunçando os totais/repasse. Por enquanto, cadastro de cliente novo
+  // nunca conta no financeiro — só renovação conta (aba Financeiro → registrar pacote após
+  // pagamento, ou o lançamento manual em "Anexar renovação ou pagamento").
   if (duracao && totalSessoes) {
     const total = Number(totalSessoes);
     const usadas =
@@ -671,27 +675,6 @@ router.post("/clientes", async (req, res) => {
     pacote = await prisma.pacote.create({
       data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: usadas, valorTotal: valorFinal, status: "ATIVO" },
     });
-
-    if (valorFinal) {
-      const duplicada = await transacaoDuplicada(prisma, clienteId, valorFinal);
-      if (duplicada) {
-        avisoFinanceiro = "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.";
-      } else {
-        const prof = await prisma.profissional.findUnique({ where: { id: profissionalId } });
-        const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, prof.percentualRepasse);
-        transacao = await prisma.transacaoFinanceira.create({
-          data: {
-            profissionalId,
-            clienteId,
-            tipo: "PACOTE_NOVO",
-            valorTotal: valorFinal,
-            valorProfissional,
-            valorRenascer,
-            recebidoPor: "PROFISSIONAL",
-          },
-        });
-      }
-    }
   }
 
   // Dia e horário fixo já combinado com o cliente — cria a próxima sessão direto na Agenda
