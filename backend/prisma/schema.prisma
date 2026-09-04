@@ -57,6 +57,14 @@ enum TipoTransacao {
   OUTRO
 }
 
+// Quem ficou com o dinheiro do cliente na hora: a CLINICA (a atendente registrou — cliente
+// pagou pra clínica) ou a própria PROFISSIONAL (ela recebeu direto e é ela quem deve repassar
+// a parte da Renascer).
+enum QuemRecebeu {
+  CLINICA
+  PROFISSIONAL
+}
+
 enum StatusSuporte {
   ABERTO
   EM_ANDAMENTO
@@ -108,7 +116,7 @@ model User {
   senha         String
   role          Role
   nome          String
-    telefone      String?
+  telefone      String?
   cpf           String?
   fotoUrl       String?
   ativo         Boolean  @default(true)
@@ -159,6 +167,7 @@ model Profissional {
   abordagens   String?  // ex: "TCC, Psicanálise"
   percentualRepasse Float @default(50) // % que fica com a profissional (padrão 50/50)
   linkMeet     String?  // link fixo do Google Meet da profissional, usado em todas as sessões dela
+
   disponibilidades Disponibilidade[]
   clientes         Cliente[]           @relation("ClienteDoProfissional")
   agendamentos     Agendamento[]
@@ -197,13 +206,13 @@ model Cliente {
   profissionalAtualId String?
   profissionalAtual   Profissional? @relation("ClienteDoProfissional", fields: [profissionalAtualId], references: [id])
 
-    cadastradoPorId     String?
+  cadastradoPorId     String?
   cadastradoPor       Atendente? @relation("CadastradoPorAtendente", fields: [cadastradoPorId], references: [id])
 
   // Contato dedicado pra receber avisos automáticos (pode ser diferente do login)
   notifEmail          String?
   notifTelefone       String?
-    // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
+  // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
   renovarEm             DateTime?
   renovarEmAvisoEnviado Boolean  @default(false)
 
@@ -282,7 +291,7 @@ model Pacote {
   valorTotal     Float
   status         StatusPacote  @default(ATIVO)
 
-      iniciadoEm     DateTime      @default(now())
+  iniciadoEm     DateTime      @default(now())
   encerradoEm    DateTime?
   avisoRenovacaoEmailEm DateTime? // controla pra não mandar o e-mail de renovação mais de uma vez
 
@@ -293,6 +302,7 @@ model Pacote {
   popupVisualizadoEm DateTime?
 
   agendamentos   Agendamento[]
+
   @@map("pacotes")
 }
 
@@ -313,7 +323,7 @@ model Agendamento {
   duracao        DuracaoSessao
   status         StatusAgendamento @default(AGENDADO)
 
-    reagendadoDe   String?           // id do agendamento original, se veio de reagendamento
+  reagendadoDe   String?           // id do agendamento original, se veio de reagendamento
   motivoCancelamento String?
 
   // Controle dos lembretes automáticos por e-mail (pra não mandar duas vezes)
@@ -360,7 +370,16 @@ model TransacaoFinanceira {
   valorProfissional Float       // já calculado (percentualRepasse)
   valorRenascer     Float
 
-    comprovanteUrl String?
+  // Controle de repasse: quem recebeu o dinheiro do cliente na hora, e se a pendência que
+  // sobrou disso já foi resolvida. Só importa de verdade quando recebidoPor = PROFISSIONAL
+  // (aí "repassado" fecha o quanto ela devia mandar pra Renascer) — a profissional pode marcar
+  // sozinha na aba financeiro dela, ou o dono pode confirmar na aba Repasses.
+  recebidoPor    QuemRecebeu    @default(CLINICA)
+  repassado      Boolean        @default(false)
+  repassadoEm    DateTime?
+  repassadoObs   String?
+
+  comprovanteUrl String?
   comprovanteBase64   String?   @db.Text // conteúdo real do comprovante, guardado pra poder ver depois
   comprovanteMimeType String?
   reconhecidoPorIA Boolean      @default(false)
