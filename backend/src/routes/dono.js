@@ -26,7 +26,7 @@ router.get("/dashboard", async (req, res) => {
   const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
   const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
 
-  const [transacoesMes, transacoesHoje] = await Promise.all([
+  const [transacoesMes, transacoesHoje, pendentesRepasse] = await Promise.all([
     prisma.transacaoFinanceira.aggregate({
       where: { data: { gte: inicioMes } },
       _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
@@ -42,6 +42,12 @@ router.get("/dashboard", async (req, res) => {
         valorRenascer: true,
         profissional: { select: { user: { select: { nome: true } } } },
       },
+    }),
+    // Quanto, no total, as profissionais já receberam direto dos clientes (sem passar pela
+    // clínica) e ainda não repassaram a parte da Renascer — ver aba Repasses pro detalhe.
+    prisma.transacaoFinanceira.aggregate({
+      where: { recebidoPor: "PROFISSIONAL", repassado: false },
+      _sum: { valorRenascer: true },
     }),
   ]);
 
@@ -72,6 +78,9 @@ router.get("/dashboard", async (req, res) => {
     // "A receber hoje": tudo que foi registrado/anexado hoje, e quanto disso fica pra Renascer.
     hoje: hojeTotais,
     porProfissionalHoje,
+    // Dinheiro que as profissionais já receberam direto dos clientes e ainda te devem repassar
+    // (some sozinho conforme elas ou você marcam como recebido na aba Repasses).
+    totalPendenteRepasseProfissionais: pendentesRepasse._sum.valorRenascer || 0,
     // Quantos clientes cada profissional tem hoje — soma tudo, seja cliente cadastrado
     // pela recepção ou pela própria profissional na aba dela.
     clientesPorProfissional: profissionais.map((p) => ({ nome: p.user.nome, total: p._count.clientes })),
@@ -222,6 +231,8 @@ router.get("/financeiro", async (req, res) => {
       valorRenascer: true,
       data: true,
       comprovanteMimeType: true,
+      recebidoPor: true,
+      repassado: true,
       profissional: { select: { user: { select: { nome: true } } } },
       cliente: { select: { user: { select: { nome: true } } } },
     },
@@ -245,10 +256,97 @@ router.get("/financeiro", async (req, res) => {
   });
 });
 
+// ---------- Repasses das profissionais (dinheiro que elas receberam direto dos clientes e
+// ainda devem repassar a parte da Renascer) ----------
+// Lista, agrupado por profissional, tudo que está pendente (recebidoPor = PROFISSIONAL e ainda
+// não repassado) — pra você conseguir cobrar/lançar exatamente o que cada uma te deve.
+router.get("/repasses-pendentes", async (req, res) => {
+  const pendentes = await prisma.transacaoFinanceira.findMany({
+    where: { recebidoPor: "PROFISSIONAL", repassado: false },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorRenascer: true,
+      data: true,
+      profissionalId: true,
+      profissional: { select: { user: { select: { nome: true } } } },
+      cliente: { select: { user: { select: { nome: true } } } },
+    },
+    orderBy: { data: "asc" },
+  });
+
+  const porProfissional = {};
+  for (const t of pendentes) {
+    const nome = t.profissional.user.nome;
+    porProfissional[nome] = porProfissional[nome] || { profissionalId: t.profissionalId, totalPendente: 0, transacoes: [] };
+    porProfissional[nome].totalPendente += t.valorRenascer;
+    porProfissional[nome].transacoes.push(t);
+  }
+
+  res.json({ porProfissional });
+});
+
+// Marca uma transação específica como repassada (o dono confere que recebeu aquele pagamento
+// exato da profissional).
+router.put("/repasses/:transacaoId/marcar", async (req, res) => {
+  const transacao = await prisma.transacaoFinanceira.findFirst({
+    where: { id: req.params.transacaoId, recebidoPor: "PROFISSIONAL" },
+  });
+  if (!transacao) return res.status(404).json({ erro: "Transação não encontrada." });
+  if (transacao.repassado) return res.json(transacao);
+
+  const atualizada = await prisma.transacaoFinanceira.update({
+    where: { id: transacao.id },
+    data: { repassado: true, repassadoEm: new Date(), repassadoObs: "Confirmado pelo dono." },
+  });
+  res.json(atualizada);
+});
+
+// Lançamento rápido: "recebi R$X da profissional Y" — marca como repassadas as transações
+// pendentes mais antigas dela até bater esse valor (não precisa procurar uma por uma).
+router.post("/repasses/:profissionalId/lancar", async (req, res) => {
+  const { valor } = req.body;
+  const valorRecebido = Number(valor);
+  if (!valorRecebido || valorRecebido <= 0) return res.status(400).json({ erro: "Informe um valor recebido válido." });
+
+  const pendentes = await prisma.transacaoFinanceira.findMany({
+    where: { profissionalId: req.params.profissionalId, recebidoPor: "PROFISSIONAL", repassado: false },
+    orderBy: { data: "asc" },
+  });
+
+  let restante = valorRecebido;
+  const marcadas = [];
+  for (const t of pendentes) {
+    if (restante < t.valorRenascer - 0.01) break;
+    marcadas.push(t.id);
+    restante -= t.valorRenascer;
+  }
+
+  if (marcadas.length > 0) {
+    await prisma.transacaoFinanceira.updateMany({
+      where: { id: { in: marcadas } },
+      data: { repassado: true, repassadoEm: new Date(), repassadoObs: `Lançamento do dono: recebido R$ ${valorRecebido.toFixed(2)}.` },
+    });
+  }
+
+  res.json({
+    marcadas: marcadas.length,
+    valorConsiderado: valorRecebido - restante,
+    sobrou: Number(restante.toFixed(2)),
+    aviso:
+      marcadas.length === 0
+        ? "Não achei nenhuma pendência dela com valor igual ou menor que isso — confira se o valor está certo ou marque manualmente na lista."
+        : restante > 0.01
+        ? `Sobrou R$ ${restante.toFixed(2)} sem pendência correspondente (pode ser adiantamento ou valor a mais).`
+        : null,
+  });
+});
+
 // ---------- Gestão de usuários (criar login de profissional/atendente/dono) ----------
 router.post("/usuarios", async (req, res) => {
-  const { nome, email, telefone, senha, role, dadosProfissional } = req.body;
-  if (!["PROFISSIONAL", "ATENDENTE", "DONO"].includes(role)) {
+  const { nome, email, telefone, senha, role, dadosProfissional, profissionalAtualId } = req.body;
+  if (!["PROFISSIONAL", "ATENDENTE", "DONO", "CLIENTE"].includes(role)) {
     return res.status(400).json({ erro: "Papel inválido." });
   }
 
@@ -277,10 +375,25 @@ router.post("/usuarios", async (req, res) => {
       }),
       ...(role === "ATENDENTE" && { atendente: { create: {} } }),
       ...(role === "DONO" && { dono: { create: {} } }),
+      ...(role === "CLIENTE" && {
+        cliente: {
+          create: {
+            profissionalAtualId: profissionalAtualId || null,
+            whatsappCadastro: telefone || null,
+          },
+        },
+      }),
     },
+    include: { cliente: true },
   });
 
-  res.json({ id: user.id, email: user.email, role: user.role });
+  if (role === "CLIENTE" && user.cliente) {
+    await prisma.historicoCliente.create({
+      data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
+    });
+  }
+
+  res.json({ id: user.id, email: user.email, role: user.role, cliente: user.cliente || undefined });
 });
 
 router.get("/usuarios", async (req, res) => {
