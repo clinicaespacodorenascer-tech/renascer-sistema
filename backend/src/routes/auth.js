@@ -17,15 +17,35 @@ function serializarUser(user) {
   return resto;
 }
 
-// Login único — a interface decide pra onde mandar com base no `role` devolvido
+// Login único — a interface decide pra onde mandar com base no `role` devolvido.
+// O campo "email" aceita, na verdade, e-mail, CPF ou telefone: se tiver "@" busca por e-mail
+// (jeito de sempre); senão, considera que é CPF/telefone e busca pelos dígitos, olhando tanto
+// o campo direto no User quanto o CPF salvo no cadastro do Cliente (contrato aceito).
 router.post("/login", async (req, res) => {
   const { email, senha } = req.body;
-  if (!email || !senha) return res.status(400).json({ erro: "Informe email e senha." });
+  if (!email || !senha) return res.status(400).json({ erro: "Informe e-mail, CPF ou telefone e a senha." });
 
-  const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase().trim() },
-    include: { profissional: true, cliente: true, atendente: true, dono: true },
-  });
+  const identificador = email.toString().trim();
+  const include = { profissional: true, cliente: true, atendente: true, dono: true };
+  let user;
+
+  if (identificador.includes("@")) {
+    user = await prisma.user.findUnique({ where: { email: identificador.toLowerCase() }, include });
+  } else {
+    const apenasDigitos = identificador.replace(/\D/g, "");
+    if (apenasDigitos) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { telefone: { contains: apenasDigitos } },
+            { cpf: { contains: apenasDigitos } },
+            { cliente: { cpf: { contains: apenasDigitos } } },
+          ],
+        },
+        include,
+      });
+    }
+  }
 
   if (!user || !user.ativo) return res.status(401).json({ erro: "Credenciais inválidas." });
 
