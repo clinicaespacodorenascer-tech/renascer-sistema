@@ -346,6 +346,10 @@ router.get("/financeiro/resumo", async (req, res) => {
       recebidoPor: true,
       repassado: true,
       repassadoEm: true,
+      repasseSolicitadoEm: true,
+      repasseComprovanteMimeType: true,
+      repasseValorInformado: true,
+      repasseReconhecidoPorIA: true,
       cliente: { select: { id: true, user: { select: { nome: true } } } },
     },
     orderBy: { data: "desc" },
@@ -365,7 +369,11 @@ router.get("/financeiro/resumo", async (req, res) => {
   const totalPendenteRepassar = pendentesRepasse.reduce((s, t) => s + t.valorRenascer, 0);
 
   res.json({
-    transacoes: transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })),
+    transacoes: transacoes.map((t) => ({
+      ...t,
+      temComprovante: !!t.comprovanteMimeType,
+      temComprovanteRepasse: !!t.repasseComprovanteMimeType,
+    })),
     totalRecebido,
     totalProfissional,
     totalRenascer,
@@ -437,22 +445,71 @@ router.post("/financeiro/comprovante", async (req, res) => {
   res.json({ transacao, reconhecido });
 });
 
-// A profissional marca que já repassou pra Renascer o que devia de uma transação que ela mesma
-// recebeu direto do cliente (recebidoPor = PROFISSIONAL). Isso zera a pendência dessa transação
-// — o dono também pode fazer isso pelo lado dele, na aba Repasses.
-router.put("/financeiro/:id/repassar", async (req, res) => {
+// A profissional anexa o comprovante de que já repassou pra Renascer o que devia de uma
+// transação que ela mesma recebeu direto do cliente (recebidoPor = PROFISSIONAL). Isso NÃO
+// zera a pendência na hora — fica "aguardando confirmação do dono" (repasseSolicitadoEm
+// preenchido). A IA tenta ler o valor do comprovante e já avisa se bate com o esperado. Só
+// quando o dono conferir e confirmar (aba Repasses dele) é que "repassado" vira true de verdade
+// e a pendência some pra sempre.
+router.post("/financeiro/:id/repasse-comprovante", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const transacao = await prisma.transacaoFinanceira.findFirst({
     where: { id: req.params.id, profissionalId, recebidoPor: "PROFISSIONAL" },
   });
   if (!transacao) return res.status(404).json({ erro: "Transação não encontrada." });
-  if (transacao.repassado) return res.json(transacao);
+  if (transacao.repassado) return res.json({ transacao });
+
+  const { imagemBase64, mimeType, valorManual } = req.body;
+  if (!imagemBase64 && !valorManual) {
+    return res.status(400).json({ erro: "Anexe o comprovante do repasse ou informe o valor manualmente." });
+  }
+
+  let reconhecido = { disponivel: false };
+  if (imagemBase64) {
+    try {
+      reconhecido = await reconhecerComprovante({ base64: imagemBase64, mimeType: mimeType || "image/jpeg" });
+    } catch (e) {
+      reconhecido = { disponivel: true, erro: "Falha ao consultar a IA.", detalhe: String(e) };
+    }
+  }
+
+  const valorInformadoNum = Number(valorManual ?? reconhecido.valor);
+  const valorInformado = Number.isNaN(valorInformadoNum) ? null : valorInformadoNum;
+  const bateComEsperado = valorInformado != null && Math.abs(valorInformado - transacao.valorRenascer) < 0.01;
 
   const atualizada = await prisma.transacaoFinanceira.update({
     where: { id: transacao.id },
-    data: { repassado: true, repassadoEm: new Date(), repassadoObs: "Marcado pela própria profissional." },
+    data: {
+      repasseSolicitadoEm: new Date(),
+      repasseComprovanteBase64: imagemBase64 || null,
+      repasseComprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
+      repasseValorInformado: valorInformado,
+      repasseReconhecidoPorIA: !!reconhecido.valor,
+    },
   });
-  res.json(atualizada);
+
+  // Avisa o(s) dono(s) que tem um repasse novo aguardando conferência.
+  const [donos, prof] = await Promise.all([
+    prisma.dono.findMany({ select: { userId: true } }),
+    prisma.profissional.findUnique({ where: { id: profissionalId }, include: { user: { select: { nome: true } } } }),
+  ]);
+  await Promise.all(
+    donos.map((d) =>
+      notificar(d.userId, {
+        titulo: "Repasse aguardando conferência",
+        mensagem:
+          `${prof.user.nome} enviou o comprovante de um repasse de R$ ${transacao.valorRenascer.toFixed(2)}.` +
+          (valorInformado != null
+            ? bateComEsperado
+              ? ` Valor no comprovante bate certinho: R$ ${valorInformado.toFixed(2)}.`
+              : ` Atenção: o valor no comprovante (R$ ${valorInformado.toFixed(2)}) é diferente do esperado — confira antes de confirmar.`
+            : " Não consegui identificar o valor automaticamente — confira o comprovante direto."),
+        tipo: "financeiro",
+      })
+    )
+  );
+
+  res.json({ transacao: atualizada, reconhecido, bateComEsperado });
 });
 
 // Horários livres da própria profissional numa data (mesma lógica de horários da atendente,
