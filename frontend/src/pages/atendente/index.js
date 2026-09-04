@@ -383,10 +383,23 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
   );
 }
 
+const FORM_CLIENTE_VAZIO = {
+  nome: "",
+  email: "",
+  telefone: "",
+  senhaProvisoria: "",
+  profissionalAtualId: "",
+  tipo: "PACOTE_NOVO",
+  duracao: "MIN50",
+  totalSessoes: 4,
+  valorTotal: "",
+};
+
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
-  const [form, setForm] = useState({ nome: "", email: "", telefone: "", senhaProvisoria: "", profissionalAtualId: "" });
+  const [form, setForm] = useState(FORM_CLIENTE_VAZIO);
+  const [arquivo, setArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
   const [expandido, setExpandido] = useState(null);
@@ -404,9 +417,23 @@ function Clientes() {
     setMsg("");
     setResultado(null);
     try {
-      const { data } = await api.post("/atendente/clientes", form);
+      const imagemBase64 = arquivo ? await lerArquivoBase64(arquivo) : null;
+      const { data } = await api.post("/atendente/clientes", {
+        nome: form.nome,
+        email: form.email,
+        telefone: form.telefone,
+        senhaProvisoria: form.senhaProvisoria || undefined,
+        profissionalAtualId: form.profissionalAtualId || undefined,
+        tipo: form.tipo,
+        duracao: form.duracao,
+        totalSessoes: Number(form.totalSessoes),
+        valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
+        imagemBase64,
+        mimeType: arquivo?.type,
+      });
       setResultado(data);
-      setForm({ nome: "", email: "", telefone: "", senhaProvisoria: "", profissionalAtualId: "" });
+      setForm(FORM_CLIENTE_VAZIO);
+      setArquivo(null);
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
@@ -431,14 +458,54 @@ function Clientes() {
             ))}
           </select>
         </div>
-        <button className="btn-primary mt-3" onClick={cadastrar}>
+
+        <div className="border-t border-renascer/10 mt-4 pt-4">
+          <p className="text-sm font-medium mb-1">Já lançar pagamento agora (opcional)</p>
+          <p className="text-xs text-renascer-ink/50 mb-2">
+            Se o cliente já pagou, preencha o valor aqui — escolha a profissional acima antes: isso já cria o pacote e
+            conta na hora no financeiro (aparece no "A receber hoje" do Dono).
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+              <option value="PACOTE_NOVO">Contratação nova</option>
+              <option value="RENOVACAO">Renovação</option>
+              <option value="SESSAO_EXTRA">Sessão extra</option>
+              <option value="OUTRO">Outro</option>
+            </select>
+            <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
+              <option value="MIN30">30 minutos</option>
+              <option value="MIN50">50 minutos</option>
+            </select>
+            <select className="input" value={form.totalSessoes} onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}>
+              <option value={1}>1 sessão</option>
+              <option value={2}>2 sessões</option>
+              <option value={4}>4 sessões</option>
+            </select>
+            <input className="input" placeholder="Valor (opcional)" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: e.target.value })} />
+          </div>
+          <div className="mt-2">
+            <label className="text-xs text-renascer-ink/50 block mb-1">Anexar comprovante (opcional)</label>
+            <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
+          </div>
+        </div>
+
+        <button className="btn-primary mt-4" onClick={cadastrar}>
           Cadastrar
         </button>
         {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
         {resultado && (
-          <p className="text-emerald-600 text-sm mt-2">
-            Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um canal seguro)
-          </p>
+          <div className="text-sm mt-2 space-y-1">
+            <p className="text-emerald-600">
+              Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um canal seguro)
+            </p>
+            {resultado.transacao && (
+              <p className="text-emerald-600">
+                Pagamento contabilizado! Repasse pra profissional: R$ {resultado.transacao.valorProfissional.toFixed(2)} · Fica com a
+                Renascer: R$ {resultado.transacao.valorRenascer.toFixed(2)}
+              </p>
+            )}
+            {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
+          </div>
         )}
       </div>
 
