@@ -3,7 +3,7 @@ import Link from "next/link";
 import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
-import { verComprovante } from "../../lib/comprovante";
+import { verComprovante, verComprovanteRepasse } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
@@ -316,17 +316,6 @@ function AbaAgenda() {
                 +
               </button>
             </div>
-            {colunaAberta === chave && (
-              <NovaSessaoRapida
-                diaSemana={chave}
-                clientes={clientes}
-                onAgendado={() => {
-                  setColunaAberta(null);
-                  carregar();
-                }}
-                onFechar={() => setColunaAberta(null)}
-              />
-            )}
             <div className="space-y-2">
               {colunas[chave]?.length === 0 && <p className="text-xs text-renascer-ink/40">Sem sessões</p>}
               {colunas[chave]?.map((ag) => {
@@ -382,42 +371,57 @@ function AbaAgenda() {
           </div>
         ))}
       </div>
+      {colunaAberta && (
+        <NovaSessaoModal
+          diaSemana={colunaAberta}
+          diaLabel={DIAS.find(([d]) => d === colunaAberta)?.[1] || ""}
+          clientes={clientes}
+          onAgendado={() => {
+            setColunaAberta(null);
+            carregar();
+          }}
+          onFechar={() => setColunaAberta(null)}
+        />
+      )}
     </div>
   );
 }
 
-// Formulário rápido de "+ adicionar sessão" que abre dentro da coluna do dia da semana, na
-// própria Agenda da profissional — pra ela poder marcar um cliente já cadastrado sem precisar
-// pedir pra atendente. Já vem com a data mais próxima daquele dia da semana preenchida.
-function NovaSessaoRapida({ diaSemana, clientes, onAgendado, onFechar }) {
+// Popup de "+ adicionar sessão" que abre por cima da tela (e não mais espremido dentro da
+// coluna estreita do dia) — pra profissional poder marcar um cliente já cadastrado direto na
+// Agenda, sem precisar da recepção. Já vem com a data mais próxima daquele dia da semana
+// preenchida, e busca os horários livres sozinho sempre que cliente/data/duração mudam — não
+// precisa lembrar de clicar em nada pra ver as opções.
+function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }) {
   const [clienteId, setClienteId] = useState("");
   const [data, setData] = useState(proximaDataDoDia(diaSemana));
   const [duracao, setDuracao] = useState("MIN50");
   const [horarios, setHorarios] = useState(null);
+  const [buscando, setBuscando] = useState(false);
   const [horaEscolhida, setHoraEscolhida] = useState("");
   const [msg, setMsg] = useState("");
   const [enviando, setEnviando] = useState(false);
 
-  async function buscarHorarios() {
+  useEffect(() => {
     if (!data) return;
     setMsg("");
     setHoraEscolhida("");
-    setHorarios(null);
-    try {
-      const { data: resp } = await api.get("/profissional/horarios", {
-        params: { data, duracao, clienteId: clienteId || undefined },
-      });
-      setHorarios(resp);
-    } catch (e) {
-      setMsg(e?.response?.data?.erro || "Erro ao buscar horários.");
-    }
-  }
+    setBuscando(true);
+    api
+      .get("/profissional/horarios", { params: { data, duracao, clienteId: clienteId || undefined } })
+      .then(({ data: resp }) => setHorarios(resp.livres))
+      .catch((e) => {
+        setHorarios(null);
+        setMsg(e?.response?.data?.erro || "Erro ao buscar horários.");
+      })
+      .finally(() => setBuscando(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, duracao, clienteId]);
 
   async function confirmar() {
-    if (!clienteId || !data || !horaEscolhida) {
-      setMsg("Escolha o cliente, a data e o horário.");
-      return;
-    }
+    if (!clienteId) return setMsg("Escolha o cliente.");
+    if (!data) return setMsg("Escolha a data.");
+    if (!horaEscolhida) return setMsg("Escolha um horário na lista abaixo.");
     setEnviando(true);
     setMsg("");
     try {
@@ -431,72 +435,84 @@ function NovaSessaoRapida({ diaSemana, clientes, onAgendado, onFechar }) {
   }
 
   return (
-    <div className="border border-renascer/20 bg-white rounded-lg p-2 mb-3 space-y-2">
-      <select
-        className="input !text-xs !py-1 !w-full"
-        value={clienteId}
-        onChange={(e) => {
-          setClienteId(e.target.value);
-          setHorarios(null);
-          setHoraEscolhida("");
-        }}
-      >
-        <option value="">Escolha o cliente...</option>
-        {clientes.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.user.nome}
-          </option>
-        ))}
-      </select>
-      <div className="flex gap-1">
-        <input
-          type="date"
-          className="input !text-xs !py-1 !w-1/2"
-          value={data}
-          onChange={(e) => {
-            setData(e.target.value);
-            setHorarios(null);
-            setHoraEscolhida("");
-          }}
-        />
-        <select
-          className="input !text-xs !py-1 !w-1/2"
-          value={duracao}
-          onChange={(e) => {
-            setDuracao(e.target.value);
-            setHorarios(null);
-            setHoraEscolhida("");
-          }}
-        >
-          <option value="MIN30">30 min</option>
-          <option value="MIN50">50 min</option>
-        </select>
-      </div>
-      <button className="btn-secondary !py-1 !px-2 text-xs w-full" onClick={buscarHorarios}>
-        Ver horários livres
-      </button>
-      {horarios && (
-        <div className="flex flex-wrap gap-1">
-          {horarios.length === 0 && <span className="text-xs text-renascer-ink/40">Nenhum horário livre nesse dia.</span>}
-          {horarios.map((h) => (
-            <button
-              key={h}
-              className={`badge ${horaEscolhida === h ? "bg-renascer text-white" : "bg-renascer-light text-renascer"}`}
-              onClick={() => setHoraEscolhida(h)}
-            >
-              {h}
-            </button>
-          ))}
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onFechar?.();
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-renascer text-lg">Nova sessão · {diaLabel}</h3>
+          <button className="text-renascer-ink/40 hover:text-renascer-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
+            ×
+          </button>
         </div>
-      )}
-      {msg && <p className="text-xs text-red-600">{msg}</p>}
-      <div className="flex gap-1">
-        <button className="btn-primary !py-1 !px-2 text-xs flex-1" onClick={confirmar} disabled={enviando}>
-          {enviando ? "Agendando..." : "Agendar"}
-        </button>
-        <button className="btn-secondary !py-1 !px-2 text-xs" onClick={onFechar}>
-          Cancelar
-        </button>
+
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Cliente</label>
+          <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+            <option value="">Escolha o cliente...</option>
+            {clientes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.user.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Data</label>
+            <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Duração</label>
+            <select className="input" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+              <option value="MIN30">30 minutos</option>
+              <option value="MIN50">50 minutos</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Horário</label>
+          {buscando && <p className="text-xs text-renascer-ink/40">Buscando horários livres...</p>}
+          {!buscando && horarios?.length === 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              Nenhum horário livre nesse dia. Tente outra data ou libere um horário na aba Disponibilidade.
+            </p>
+          )}
+          {!buscando && horarios?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {horarios.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setHoraEscolhida(h)}
+                  className={`text-sm px-3 py-1.5 rounded-full border ${
+                    horaEscolhida === h
+                      ? "bg-renascer text-white border-renascer"
+                      : "border-renascer/20 text-renascer-ink/70 hover:border-renascer/50"
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {msg && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{msg}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button className="btn-primary flex-1" onClick={confirmar} disabled={enviando || !horaEscolhida}>
+            {enviando ? "Agendando..." : "Agendar"}
+          </button>
+          <button className="btn-secondary" onClick={onFechar}>
+            Cancelar
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -565,6 +581,7 @@ function DetalheCliente({ cliente, onMudouSituacao }) {
       <div className="flex gap-2 my-3 flex-wrap">
         {[
           ["chat", "Chat / recados"],
+          ["agendar", "Agendar sessão"],
           ["relatorios", "Relatórios"],
           ["pacote", "Pacote / pagamento"],
           ["notificacao", "Notificação"],
@@ -579,10 +596,121 @@ function DetalheCliente({ cliente, onMudouSituacao }) {
         ))}
       </div>
       {sub === "chat" && <ChatCliente clienteId={cliente.id} />}
+      {sub === "agendar" && <AgendarSessaoCliente clienteId={cliente.id} clienteNome={cliente.user.nome} />}
       {sub === "relatorios" && <RelatoriosCliente clienteId={cliente.id} />}
       {sub === "pacote" && <NovoPacoteCliente clienteId={cliente.id} />}
       {sub === "notificacao" && <NotificacaoCliente clienteId={cliente.id} rotaBase="/profissional" />}
       <SituacaoCliente clienteId={cliente.id} rotaBase="/profissional" onMudou={onMudouSituacao} />
+    </div>
+  );
+}
+
+// Agendar uma sessão pra esse cliente direto da própria ficha dele (aba Clientes) — sem precisar
+// ir até a coluna do dia na Agenda. Usa o mesmo endpoint/lógica do botão "+" da Agenda (só que
+// aqui o cliente já vem fixo, só falta escolher o dia e o horário) — assim que confirma, a sessão
+// já aparece normalmente na aba Agenda (ela sempre busca os dados atualizados do servidor quando
+// é aberta, não precisa de nenhum passo extra).
+function AgendarSessaoCliente({ clienteId, clienteNome }) {
+  const [data, setData] = useState("");
+  const [duracao, setDuracao] = useState("MIN50");
+  const [horarios, setHorarios] = useState(null);
+  const [buscando, setBuscando] = useState(false);
+  const [horaEscolhida, setHoraEscolhida] = useState("");
+  const [msg, setMsg] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    if (!data) {
+      setHorarios(null);
+      return;
+    }
+    setMsg("");
+    setHoraEscolhida("");
+    setBuscando(true);
+    api
+      .get("/profissional/horarios", { params: { data, duracao, clienteId } })
+      .then(({ data: resp }) => setHorarios(resp.livres))
+      .catch((e) => {
+        setHorarios(null);
+        setMsg(e?.response?.data?.erro || "Erro ao buscar horários.");
+      })
+      .finally(() => setBuscando(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, duracao, clienteId]);
+
+  async function confirmar() {
+    if (!data) return setMsg("Escolha o dia da sessão.");
+    if (!horaEscolhida) return setMsg("Escolha um horário na lista abaixo.");
+    setEnviando(true);
+    setMsg("");
+    try {
+      await api.post("/profissional/agenda", { clienteId, data, horaInicio: horaEscolhida, duracao });
+      setMsg(`Sessão marcada com ${clienteNome}! Já aparece na aba Agenda.`);
+      setData("");
+      setHorarios(null);
+      setHoraEscolhida("");
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao agendar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-renascer-ink/50">
+        Escolha o dia e o horário — só aparecem os horários que você realmente atende e que ainda estão livres nesse
+        dia. Ao confirmar, a sessão já é criada e aparece direto na aba Agenda.
+      </p>
+      <div className="grid grid-cols-2 gap-3 max-w-sm">
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Dia da sessão</label>
+          <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Duração</label>
+          <select className="input" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+            <option value="MIN30">30 minutos</option>
+            <option value="MIN50">50 minutos</option>
+          </select>
+        </div>
+      </div>
+
+      {data && (
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Horário</label>
+          {buscando && <p className="text-xs text-renascer-ink/40">Buscando horários livres...</p>}
+          {!buscando && horarios?.length === 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              Nenhum horário livre nesse dia. Tente outro dia ou libere um horário na aba Disponibilidade.
+            </p>
+          )}
+          {!buscando && horarios?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {horarios.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setHoraEscolhida(h)}
+                  className={`text-sm px-3 py-1.5 rounded-full border ${
+                    horaEscolhida === h
+                      ? "bg-renascer text-white border-renascer"
+                      : "border-renascer/20 text-renascer-ink/70 hover:border-renascer/50"
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {msg && <p className="text-sm text-renascer-ink/80 bg-renascer-light/50 border border-renascer/20 rounded-lg p-2">{msg}</p>}
+
+      <button className="btn-primary" onClick={confirmar} disabled={enviando || !data || !horaEscolhida}>
+        {enviando ? "Agendando..." : "Confirmar sessão"}
+      </button>
     </div>
   );
 }
@@ -805,11 +933,6 @@ function AbaFinanceiro() {
     setRepasse(data);
   }
 
-  async function marcarRepassado(id) {
-    await api.put(`/profissional/financeiro/${id}/repassar`);
-    carregar();
-  }
-
   function lerArquivo(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -941,13 +1064,7 @@ function AbaFinanceiro() {
                 <td>R$ {t.valorProfissional.toFixed(2)}</td>
                 <td>
                   {t.recebidoPor === "PROFISSIONAL" ? (
-                    t.repassado ? (
-                      <span className="badge bg-emerald-100 text-emerald-700">Já repassado</span>
-                    ) : (
-                      <button className="text-amber-700 text-xs underline" onClick={() => marcarRepassado(t.id)}>
-                        Marcar repasse feito (R$ {t.valorRenascer.toFixed(2)})
-                      </button>
-                    )
+                    <LinhaRepasse t={t} onMudou={carregar} />
                   ) : (
                     <span className="text-renascer-ink/30 text-xs">recebido pela clínica</span>
                   )}
@@ -967,6 +1084,109 @@ function AbaFinanceiro() {
         </table>
         {resumo?.transacoes?.length === 0 && <p className="text-sm text-renascer-ink/50 mt-2">Nenhuma transação neste mês.</p>}
       </div>
+    </div>
+  );
+}
+
+// Célula da tabela de Financeiro que cuida do ciclo de vida do repasse de UMA transação: antes
+// de mandar qualquer coisa, mostra o botão pra anexar o comprovante; depois de enviado, fica
+// "aguardando confirmação do dono" (não zera sozinho — só quando ele confirma do lado dele); e
+// quando confirmado, mostra "Já repassado".
+function LinhaRepasse({ t, onMudou }) {
+  const [aberto, setAberto] = useState(false);
+  const [arquivo, setArquivo] = useState(null);
+  const [valorManual, setValorManual] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function lerArquivo(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function enviar() {
+    setEnviando(true);
+    setMsg("");
+    try {
+      const imagemBase64 = arquivo ? await lerArquivo(arquivo) : null;
+      const { data } = await api.post(`/profissional/financeiro/${t.id}/repasse-comprovante`, {
+        imagemBase64,
+        mimeType: arquivo?.type,
+        valorManual: valorManual || undefined,
+      });
+      setMsg(
+        data.bateComEsperado === false
+          ? "Comprovante enviado — mas o valor não bateu com o esperado, o dono vai conferir com atenção."
+          : "Comprovante enviado! Agora é só aguardar o dono confirmar."
+      );
+      setArquivo(null);
+      setValorManual("");
+      setAberto(false);
+      onMudou?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao enviar comprovante.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (t.repassado) {
+    return <span className="badge bg-emerald-100 text-emerald-700">Já repassado</span>;
+  }
+
+  if (t.repasseSolicitadoEm) {
+    const bateComEsperado = t.repasseValorInformado == null || Math.abs(t.repasseValorInformado - t.valorRenascer) < 0.01;
+    return (
+      <div className="space-y-0.5">
+        <span className="badge bg-amber-100 text-amber-700">Aguardando confirmação do dono</span>
+        {t.repasseValorInformado != null && (
+          <p className="text-[11px] text-renascer-ink/50">
+            Valor no comprovante: R$ {t.repasseValorInformado.toFixed(2)}
+            {!bateComEsperado && " — diferente do esperado"}
+          </p>
+        )}
+        {t.temComprovanteRepasse && (
+          <button className="text-renascer text-[11px] underline block" onClick={() => verComprovanteRepasse(t.id)}>
+            Ver comprovante enviado
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {!aberto ? (
+        <button className="text-amber-700 text-xs underline" onClick={() => setAberto(true)}>
+          Enviar comprovante do repasse (R$ {t.valorRenascer.toFixed(2)})
+        </button>
+      ) : (
+        <div className="bg-renascer-light/50 border border-renascer/10 rounded-lg p-2 space-y-1 min-w-[220px]">
+          <input type="file" accept="image/*" className="text-xs" onChange={(e) => setArquivo(e.target.files[0])} />
+          <input
+            className="input !py-1 !text-xs"
+            placeholder="Valor manual (se não anexar foto)"
+            value={valorManual}
+            onChange={(e) => setValorManual(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button
+              className="btn-primary !py-1 !px-2 text-xs"
+              onClick={enviar}
+              disabled={enviando || (!arquivo && !valorManual)}
+            >
+              {enviando ? "Enviando..." : "Enviar"}
+            </button>
+            <button className="text-xs text-renascer-ink/50 underline" onClick={() => setAberto(false)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="text-[11px] mt-1">{msg}</p>}
     </div>
   );
 }
