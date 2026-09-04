@@ -29,7 +29,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-renascer-light to-white px-4">
       <div className="card w-full max-w-sm">
         <div className="flex justify-center mb-6">
-          <Logo size={64} />
+          <Logo size={112} />
         </div>
         <h1 className="text-center text-renascer-ink/70 mb-6 text-sm">
           Entre com seu login (profissional, cliente, atendente ou administração)
@@ -37,8 +37,8 @@ export default function Login() {
         <form onSubmit={entrar} className="space-y-4">
           <input
             className="input"
-            type="email"
-            placeholder="E-mail"
+            type="text"
+            placeholder="E-mail, CPF ou telefone"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
