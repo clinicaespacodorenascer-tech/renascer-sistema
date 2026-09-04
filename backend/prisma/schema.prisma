@@ -388,6 +388,16 @@ model TransacaoFinanceira {
   repassadoEm    DateTime?
   repassadoObs   String?
 
+  // Comprovante do REPASSE em si (diferente do comprovante do pagamento do cliente lá em cima)
+  // — a profissional anexa aqui quando manda a parte da Renascer pra clínica. Isso NÃO marca
+  // "repassado" sozinho: fica só "aguardando conferência" (repasseSolicitadoEm preenchido) até
+  // o dono conferir o comprovante e confirmar de verdade — só aí "repassado" vira true.
+  repasseSolicitadoEm        DateTime?
+  repasseComprovanteBase64   String?   @db.Text
+  repasseComprovanteMimeType String?
+  repasseValorInformado      Float?    // valor que a IA leu (ou a profissional digitou) no comprovante do repasse
+  repasseReconhecidoPorIA    Boolean   @default(false)
+
   comprovanteUrl String?
   comprovanteBase64   String?   @db.Text // conteúdo real do comprovante, guardado pra poder ver depois
   comprovanteMimeType String?
