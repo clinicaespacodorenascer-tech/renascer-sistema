@@ -571,13 +571,15 @@ function Financeiro() {
 
 function Usuarios() {
   const [lista, setLista] = useState([]);
-  const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL" });
+  const [profissionais, setProfissionais] = useState([]);
+  const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL", profissionalAtualId: "" });
   const [msg, setMsg] = useState("");
   const [editando, setEditando] = useState(null);
 
   async function carregar() {
-    const { data } = await api.get("/dono/usuarios");
-    setLista(data);
+    const [u, p] = await Promise.all([api.get("/dono/usuarios"), api.get("/dono/profissionais")]);
+    setLista(u.data);
+    setProfissionais(p.data);
   }
   useEffect(() => {
     carregar();
@@ -588,7 +590,7 @@ function Usuarios() {
     try {
       await api.post("/dono/usuarios", form);
       setMsg("Usuário criado com sucesso!");
-      setForm({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL" });
+      setForm({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL", profissionalAtualId: "" });
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao criar usuário.");
@@ -618,7 +620,22 @@ function Usuarios() {
             <option value="PROFISSIONAL">Profissional</option>
             <option value="ATENDENTE">Atendente</option>
             <option value="DONO">Dono</option>
+            <option value="CLIENTE">Cliente</option>
           </select>
+          {form.role === "CLIENTE" && (
+            <select
+              className="input"
+              value={form.profissionalAtualId}
+              onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}
+            >
+              <option value="">Vincular profissional (opcional)</option>
+              {profissionais.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.user.nome}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <button className="btn-primary mt-3" onClick={criar}>
           Criar login
