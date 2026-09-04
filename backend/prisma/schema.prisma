@@ -108,7 +108,8 @@ model User {
   senha         String
   role          Role
   nome          String
-  telefone      String?
+    telefone      String?
+  cpf           String?
   fotoUrl       String?
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now())
