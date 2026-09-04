@@ -219,6 +219,13 @@ function AbaCadastrarCliente() {
               Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
               um canal seguro)
             </p>
+            {resultado.transacao && (
+              <p className="text-emerald-600">
+                Pagamento contabilizado! Seu repasse: R$ {resultado.transacao.valorProfissional.toFixed(2)} · Parte da
+                Renascer (você ainda deve repassar): R$ {resultado.transacao.valorRenascer.toFixed(2)}
+              </p>
+            )}
+            {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
             {resultado.agendamento && <p className="text-emerald-600">Sessão fixa já criada direto na sua Agenda ✅</p>}
             {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
           </div>
@@ -496,7 +503,10 @@ function NovoPacoteCliente({ clienteId }) {
         totalSessoes: Number(totalSessoes),
         valorTotal: valorTotal ? Number(valorTotal) : undefined,
       });
-      setMsg(`Pacote registrado! ${data.totalSessoes} sessão(ões) de ${data.duracao === "MIN30" ? "30min" : "50min"} liberadas.`);
+      const repasseInfo = data.transacao
+        ? ` Seu repasse: R$ ${data.transacao.valorProfissional.toFixed(2)} · Parte da Renascer (a repassar): R$ ${data.transacao.valorRenascer.toFixed(2)}.`
+        : "";
+      setMsg(`Pacote registrado! ${data.totalSessoes} sessão(ões) de ${data.duracao === "MIN30" ? "30min" : "50min"} liberadas.${repasseInfo}`);
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao registrar pacote.");
     }
@@ -643,6 +653,11 @@ function AbaFinanceiro() {
     setRepasse(data);
   }
 
+  async function marcarRepassado(id) {
+    await api.put(`/profissional/financeiro/${id}/repassar`);
+    carregar();
+  }
+
   function lerArquivo(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -676,7 +691,7 @@ function AbaFinanceiro() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card">
           <p className="text-sm text-renascer-ink/60">Faturado no mês</p>
           <p className="text-2xl font-bold text-renascer">R$ {resumo?.totalRecebido?.toFixed(2) ?? "0,00"}</p>
@@ -688,6 +703,11 @@ function AbaFinanceiro() {
         <div className="card">
           <p className="text-sm text-renascer-ink/60">Repasse Renascer</p>
           <p className="text-2xl font-bold text-renascer-ink/70">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
+        </div>
+        <div className="card !border-amber-300 bg-amber-50">
+          <p className="text-sm text-renascer-ink/60">Você ainda deve repassar</p>
+          <p className="text-2xl font-bold text-amber-700">R$ {resumo?.totalPendenteRepassar?.toFixed(2) ?? "0,00"}</p>
+          <p className="text-xs text-renascer-ink/50 mt-1">Dinheiro que você recebeu direto do cliente e ainda não repassou pra Renascer.</p>
         </div>
       </div>
 
@@ -758,6 +778,7 @@ function AbaFinanceiro() {
               <th>Tipo</th>
               <th>Total</th>
               <th>Seu repasse</th>
+              <th>Repasse à Renascer</th>
               <th></th>
             </tr>
           </thead>
@@ -769,191 +790,12 @@ function AbaFinanceiro() {
                 <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
                 <td>R$ {t.valorTotal.toFixed(2)}</td>
                 <td>R$ {t.valorProfissional.toFixed(2)}</td>
-                <td className="text-right">
-                  {t.temComprovante ? (
-                    <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
-                      Ver comprovante
-                    </button>
-                  ) : (
-                    <span className="text-renascer-ink/30 text-xs">sem comprovante</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {resumo?.transacoes?.length === 0 && <p className="text-sm text-renascer-ink/50 mt-2">Nenhuma transação neste mês.</p>}
-      </div>
-    </div>
-  );
-}
-
-// ---------------- NOTIFICAÇÕES ----------------
-function AbaNotificacoes() {
-  const [lista, setLista] = useState([]);
-  useEffect(() => {
-    api.get("/comum/notificacoes").then((r) => setLista(r.data));
-  }, []);
-  return (
-    <div className="card">
-      <h2 className="font-semibold mb-3">Avisos de renovação e sistema</h2>
-      <p className="text-sm text-renascer-ink/50 mb-3">
-        Você recebe um aviso automático aqui sempre que um cliente estiver na 2ª ou 3ª sessão de um pacote de 4, ou faltando a última sessão de um pacote menor.
-      </p>
-      <div className="space-y-2">
-        {lista.map((n) => (
-          <div key={n.id} className={`border rounded-lg p-3 ${n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"}`}>
-            <p className="font-medium text-sm">{n.titulo}</p>
-            <p className="text-sm text-renascer-ink/60">{n.mensagem}</p>
-          </div>
-        ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum aviso por enquanto.</p>}
-      </div>
-    </div>
-  );
-}
-
-// ---------------- CONFIGURAÇÃO / PERFIL + DISPONIBILIDADE ----------------
-function AbaConfig() {
-  const [perfil, setPerfil] = useState(null);
-  const [disponibilidades, setDisponibilidades] = useState([]);
-
-  async function carregarPerfil() {
-    const r = await api.get("/profissional/perfil");
-    setPerfil(r.data);
-    setDisponibilidades(r.data.disponibilidades.map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio })));
-  }
-  useEffect(() => {
-    carregarPerfil();
-  }, []);
-
-  if (!perfil) return <p>Carregando...</p>;
-
-  return (
-    <div className="space-y-4">
-      <PerfilCompleto perfil={perfil} onAtualizado={carregarPerfil} />
-      <DisponibilidadeSemanal
-        disponibilidades={disponibilidades}
-        setDisponibilidades={setDisponibilidades}
-        salvar={(disp) => api.put("/profissional/disponibilidades", { disponibilidades: disp })}
-      />
-    </div>
-  );
-}
-
-function PerfilCompleto({ perfil, onAtualizado }) {
-  const [nome, setNome] = useState(perfil.user.nome || "");
-  const [titulo, setTitulo] = useState(perfil.titulo || "");
-  const [registro, setRegistro] = useState(perfil.registro || "");
-  const [idade, setIdade] = useState(perfil.idade || "");
-  const [bio, setBio] = useState(perfil.bio || "");
-  const [abordagens, setAbordagens] = useState(perfil.abordagens || "");
-  const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
-  const [especialidades, setEspecialidades] = useState(perfil.especialidades || []);
-  const [foto, setFoto] = useState(null);
-  const [salvando, setSalvando] = useState(false);
-  const [msg, setMsg] = useState("");
-
-  function alternarCategoria(cat) {
-    setEspecialidades((atual) => (atual.includes(cat) ? atual.filter((c) => c !== cat) : [...atual, cat]));
-  }
-
-  function lerArquivo(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function salvar() {
-    setSalvando(true);
-    setMsg("");
-    try {
-      const fotoBase64 = foto ? await lerArquivo(foto) : undefined;
-      await api.put("/profissional/perfil", {
-        nome,
-        titulo,
-        registro,
-        idade: idade || null,
-        bio,
-        abordagens,
-        especialidades,
-        linkMeet,
-        ...(fotoBase64 && { fotoBase64 }),
-      });
-      setMsg("Perfil atualizado! A atendente já vê essas informações pra te encaixar certinho.");
-      setFoto(null);
-      onAtualizado();
-    } catch (e) {
-      setMsg(e?.response?.data?.erro || "Erro ao salvar perfil.");
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <div className="card space-y-3">
-      <h2 className="font-semibold">Seu perfil (o que a atendente e o time vê de você)</h2>
-      <div className="flex items-center gap-4">
-        <img
-          src={foto ? URL.createObjectURL(foto) : perfil.user.fotoUrl || "https://via.placeholder.com/80?text=Foto"}
-          alt="Foto de perfil"
-          className="w-20 h-20 rounded-full object-cover border border-renascer/20"
-        />
-        <div>
-          <label className="text-sm text-renascer-ink/60 block mb-1">Trocar foto</label>
-          <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files[0])} />
-        </div>
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-2">
-        <input className="input" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-        <input className="input" placeholder="Idade" type="number" value={idade} onChange={(e) => setIdade(e.target.value)} />
-        <input className="input" placeholder="Categoria (ex: Psicóloga Clínica, Psicanalista)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-        <input className="input" placeholder="Registro / CRP (se tiver)" value={registro} onChange={(e) => setRegistro(e.target.value)} />
-        <input className="input sm:col-span-2" placeholder="Abordagem (ex: TCC, Psicanálise)" value={abordagens} onChange={(e) => setAbordagens(e.target.value)} />
-      </div>
-
-      <div>
-        <p className="text-sm text-renascer-ink/60 mb-1">O que você atende</p>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIAS_SUGERIDAS.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => alternarCategoria(cat)}
-              className={`text-sm px-3 py-1.5 rounded-full border ${
-                especialidades.includes(cat) ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <textarea className="input" rows={3} placeholder="Bio curta" value={bio} onChange={(e) => setBio(e.target.value)} />
-
-      <div>
-        <label className="text-sm text-renascer-ink/60 block mb-1">
-          Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
-        </label>
-        <input
-          className="input"
-          placeholder="https://meet.google.com/xxx-xxxx-xxx"
-          value={linkMeet}
-          onChange={(e) => setLinkMeet(e.target.value)}
-        />
-        <p className="text-xs text-renascer-ink/50 mt-1">
-          Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
-        </p>
-      </div>
-
-      <button className="btn-primary" onClick={salvar} disabled={salvando}>
-        {salvando ? "Salvando..." : "Salvar perfil"}
-      </button>
-      {msg && <p className="text-sm">{msg}</p>}
-    </div>
-  );
-}
+                <td>
+                  {t.recebidoPor === "PROFISSIONAL" ? (
+                    t.repassado ? (
+                      <span className="badge bg-emerald-100 text-emerald-700">Já repassado</span>
+                    ) : (
+                      <button className="text-amber-700 text-xs underline" onClick={() => marcarRepassado(t.id)}>
+                        Marcar repasse feito (R$ {t.valorRenascer.toFixed(2)})
+                      </button>
+                    )
