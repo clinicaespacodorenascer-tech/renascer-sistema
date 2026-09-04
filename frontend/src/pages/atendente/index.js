@@ -175,8 +175,9 @@ function ProfissionaisEAgendar() {
           <div className="text-xs text-renascer-ink/50 mt-2">
             {p.disponibilidades.length === 0 && "Nenhum horário liberado ainda."}
             {p.disponibilidades.map((d) => (
-              <span key={d.id} className="inline-block mr-2">
+              <span key={d.id} className={`inline-block mr-2 ${d.ocupadoPorCliente ? "text-amber-700" : ""}`}>
                 {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
+                {d.ocupadoPorCliente ? ` (fixo: ${d.ocupadoPorCliente.user.nome})` : ""}
               </span>
             ))}
           </div>
@@ -207,12 +208,16 @@ function EditarDisponibilidadeProfissional({ profissional, onSalvo }) {
   const [disponibilidades, setDisponibilidades] = useState(
     (profissional.disponibilidades || []).map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio }))
   );
+  const ocupados = (profissional.disponibilidades || [])
+    .filter((d) => d.ocupadoPorCliente)
+    .map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, nome: d.ocupadoPorCliente.user.nome }));
 
   return (
     <div className="mt-3 border-t border-renascer/10 pt-3">
       <DisponibilidadeSemanal
         disponibilidades={disponibilidades}
         setDisponibilidades={setDisponibilidades}
+        ocupados={ocupados}
         aviso={`Horários que ${profissional.user.nome} atende — o que você salvar aqui aparece igual pra ela e pro cliente.`}
         salvar={async (disp) => {
           await api.put(`/atendente/profissionais/${profissional.id}/disponibilidades`, { disponibilidades: disp });
@@ -235,7 +240,9 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
     if (!data) return;
     setMsg("");
     setHoraEscolhida("");
-    const { data: resp } = await api.get(`/atendente/profissionais/${profissional.id}/horarios`, { params: { data, duracao } });
+    const { data: resp } = await api.get(`/atendente/profissionais/${profissional.id}/horarios`, {
+      params: { data, duracao, clienteId: clienteId || undefined },
+    });
     setHorarios(resp);
   }
 
