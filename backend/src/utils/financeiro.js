@@ -29,4 +29,24 @@ function valorDoPlano(duracao, totalSessoes) {
   return tabela[totalSessoes] ?? null;
 }
 
-module.exports = { calcularRepasse, PLANOS, valorDoPlano };
+// Trava de segurança: antes de criar uma transação financeira nova, checa se já não existe
+// uma igual pra esse mesmo cliente, no mesmo dia (hoje), com o mesmo valor — pra não contar o
+// mesmo pagamento duas vezes se a atendente e a profissional (ou a atendente duas vezes)
+// registrarem o mesmo comprovante sem perceber. Critério: mesmo cliente + mesmo valor + mesmo dia.
+async function transacaoDuplicada(prisma, clienteId, valorTotal) {
+  if (!clienteId || !valorTotal) return null;
+  const inicioHoje = new Date();
+  inicioHoje.setHours(0, 0, 0, 0);
+  const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
+
+  return prisma.transacaoFinanceira.findFirst({
+    where: {
+      clienteId,
+      valorTotal: Number(valorTotal),
+      data: { gte: inicioHoje, lt: inicioAmanha },
+    },
+    orderBy: { criadoEm: "desc" },
+  });
+}
+
+module.exports = { calcularRepasse, PLANOS, valorDoPlano, transacaoDuplicada };
