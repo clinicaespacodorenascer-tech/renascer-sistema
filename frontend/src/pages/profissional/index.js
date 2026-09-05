@@ -332,7 +332,14 @@ function AbaAgenda() {
                       <StatusCliente status={ag.statusCliente} />
                       {ag.horaInicio} · {ag.cliente.user.nome}
                     </p>
-                    <span className={`badge mt-1 ${STATUS_COR[ag.status]}`}>{ag.status}</span>
+                    <div className="flex items-center gap-1 flex-wrap mt-1">
+                      <span className={`badge ${STATUS_COR[ag.status]}`}>{ag.status}</span>
+                      {ag.pacote && (
+                        <span className="badge bg-renascer-light text-renascer" title="Sessões realizadas / total do pacote">
+                          {ag.pacote.sessoesUsadas}/{ag.pacote.totalSessoes} sessões
+                        </span>
+                      )}
+                    </div>
                     {podeMover && (
                       <>
                         <select
@@ -1166,7 +1173,6 @@ function AbaFinanceiro() {
           </select>
           <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
             <option value="RENOVACAO">Renovação</option>
-            <option value="PACOTE_NOVO">Contratação nova</option>
             <option value="SESSAO_EXTRA">Sessão extra</option>
             <option value="OUTRO">Outro</option>
           </select>
@@ -1209,7 +1215,12 @@ function AbaFinanceiro() {
               <tr key={t.id} className="border-t border-renascer/10">
                 <td className="py-1">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
                 <td>{t.cliente?.user?.nome || "-"}</td>
-                <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
+                <td>
+                  {TIPO_LABEL[t.tipo] || t.tipo}
+                  {t.origem === "ATENDENTE" && (
+                    <span className="block text-[10px] text-renascer-ink/40">fechado pela recepção</span>
+                  )}
+                </td>
                 <td>R$ {t.valorTotal.toFixed(2)}</td>
                 <td>R$ {t.valorProfissional.toFixed(2)}</td>
                 <td>
