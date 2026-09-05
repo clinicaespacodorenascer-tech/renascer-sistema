@@ -32,11 +32,13 @@ router.get("/dashboard", async (req, res) => {
       where: { data: { gte: inicioMes } },
       _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
     }),
-    // Tudo que foi anexado/registrado hoje (contratação, renovação, pacote) — seja pela
-    // atendente ou pela própria profissional. Essa lista muda sozinha de um dia pro outro,
-    // porque só olha pra data de hoje: não precisa "zerar" nada, amanhã ela já começa vazia.
+    // Tudo que a ATENDENTE fechou/anexou hoje (contratação nova, renovação, sessão extra, o que
+    // for) — é o que representa "negócio novo fechado hoje" e por isso entra em "a receber
+    // hoje". O que a própria profissional lança sozinha (renovação/sessão extra dela) não entra
+    // aqui — isso só aparece nas pendências de repasse. Essa lista muda sozinha de um dia pro
+    // outro, porque só olha pra data de hoje: não precisa "zerar" nada, amanhã já começa vazia.
     prisma.transacaoFinanceira.findMany({
-      where: { data: { gte: inicioHoje, lt: inicioAmanha } },
+      where: { data: { gte: inicioHoje, lt: inicioAmanha }, origem: "ATENDENTE" },
       select: {
         valorTotal: true,
         valorProfissional: true,
@@ -271,7 +273,15 @@ router.get("/financeiro", async (req, res) => {
 // não repassado) — pra você conseguir cobrar/lançar exatamente o que cada uma te deve.
 router.get("/repasses-pendentes", async (req, res) => {
   const pendentes = await prisma.transacaoFinanceira.findMany({
-    where: { recebidoPor: "PROFISSIONAL", repassado: false },
+    // Tudo que a atendente lançou entra aqui (qualquer tipo). Já o que a própria profissional
+    // lançou sozinha só entra se for renovação ou sessão extra — contratação nova é sempre coisa
+    // da atendente, então uma "PACOTE_NOVO" lançada pela profissional não devia existir, mas por
+    // segurança não deixamos aparecer aqui como pendência de repasse.
+    where: {
+      recebidoPor: "PROFISSIONAL",
+      repassado: false,
+      OR: [{ origem: "ATENDENTE" }, { origem: "PROFISSIONAL", tipo: { in: ["RENOVACAO", "SESSAO_EXTRA"] } }],
+    },
     select: {
       id: true,
       tipo: true,
@@ -279,6 +289,7 @@ router.get("/repasses-pendentes", async (req, res) => {
       valorRenascer: true,
       data: true,
       profissionalId: true,
+      origem: true,
       repasseSolicitadoEm: true,
       repasseComprovanteMimeType: true,
       repasseValorInformado: true,
