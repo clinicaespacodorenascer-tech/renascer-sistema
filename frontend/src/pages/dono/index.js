@@ -209,8 +209,9 @@ function Dashboard() {
       <div className="card !border-renascer/30 bg-renascer-light/30">
         <h3 className="font-semibold mb-1">A receber hoje</h3>
         <p className="text-xs text-renascer-ink/50 mb-3">
-          Tudo que foi registrado hoje (contratação, renovação ou pacote) pela atendente ou pelas profissionais. Esse
-          número reinicia sozinho todo dia — amanhã começa do zero de novo.
+          Tudo que a atendente fechou hoje (contratação nova, renovação, sessão extra ou qualquer outro pagamento). O que
+          a própria profissional registra sozinha (renovação/sessão extra dela) não conta aqui — só aparece nas
+          pendências de repasse abaixo. Esse número reinicia sozinho todo dia — amanhã começa do zero de novo.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
           <div>
