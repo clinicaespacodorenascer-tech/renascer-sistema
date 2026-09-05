@@ -281,6 +281,21 @@ function AbaAgenda() {
     }
   }
 
+  async function excluirDaAgenda(ag) {
+    const aviso =
+      ag.status === "REALIZADO"
+        ? `Excluir esse card da agenda? Foi um agendamento por engano — a sessão de "${ag.pacote ? `${ag.pacote.sessoesUsadas}/${ag.pacote.totalSessoes}" ` : ""}será descontada de volta pro pacote (o cadastro do cliente continua normal, só some esse card da agenda).`
+        : `Excluir esse card da agenda? O cadastro do cliente continua normal, só some esse card daqui.`;
+    if (!window.confirm(aviso)) return;
+    setErro("");
+    try {
+      await api.delete(`/profissional/agenda/${ag.id}`);
+      carregar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível excluir esse card da agenda.");
+    }
+  }
+
   if (!colunas) return <p>Carregando agenda...</p>;
 
   return (
@@ -375,6 +390,13 @@ function AbaAgenda() {
                         </div>
                       </>
                     )}
+                    <button
+                      className="text-xs text-red-600/70 underline mt-1"
+                      onClick={() => excluirDaAgenda(ag)}
+                      title="Remove só o card da agenda — o cadastro do cliente continua normal"
+                    >
+                      Excluir da agenda
+                    </button>
                   </div>
                 );
               })}
