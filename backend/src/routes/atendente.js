@@ -30,7 +30,13 @@ router.post("/clientes", async (req, res) => {
     imagemBase64,
     mimeType,
     observacao,
+    recebidoPor,
   } = req.body;
+  // Quem ficou com o dinheiro na prática: "CLINICA" (pagou pra Renascer, Pix/cartão da
+  // clínica — padrão, mantém o comportamento de sempre) ou "PROFISSIONAL" (o cliente pagou
+  // direto pra ela, e a atendente só está lançando o cadastro/pacote depois). Só nesse
+  // segundo caso é que vira pendência de repasse na aba do Dono.
+  const recebidoPorFinal = recebidoPor === "PROFISSIONAL" ? "PROFISSIONAL" : "CLINICA";
 
   const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
@@ -95,18 +101,26 @@ router.post("/clientes", async (req, res) => {
           valorTotal: valorFinal,
           valorProfissional,
           valorRenascer,
-          recebidoPor: "CLINICA",
+          recebidoPor: recebidoPorFinal,
           comprovanteBase64: imagemBase64 || null,
           comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
           observacao: observacao || null,
         },
       });
 
-      await notificar(profissional.userId, {
-        titulo: "Novo repasse a receber",
-        mensagem: `Pagamento registrado para ${nome}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
-        tipo: "financeiro",
-      });
+      if (recebidoPorFinal === "PROFISSIONAL") {
+        await notificar(profissional.userId, {
+          titulo: "Lembrete de repasse",
+          mensagem: `Pagamento de ${nome} registrado como recebido direto por você. Não esqueça de repassar R$ ${valorRenascer.toFixed(2)} pra Renascer e anexar o comprovante na aba Financeiro.`,
+          tipo: "financeiro",
+        });
+      } else {
+        await notificar(profissional.userId, {
+          titulo: "Novo repasse a receber",
+          mensagem: `Pagamento registrado para ${nome}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
+          tipo: "financeiro",
+        });
+      }
     }
   }
 
@@ -408,7 +422,10 @@ router.post("/agendamentos", async (req, res) => {
 // no cadastro do cliente pra poder ser visto depois, e já contabiliza automaticamente
 // quanto vai pra profissional e quanto fica pra Renascer (aparece no painel do Dono no mesmo dia).
 router.post("/clientes/:id/pacotes", async (req, res) => {
-  const { duracao, totalSessoes, valorTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
+  const { duracao, totalSessoes, valorTotal, tipo, imagemBase64, mimeType, observacao, recebidoPor } = req.body;
+  // Mesma lógica do cadastro: só vira pendência de repasse (aba Repasses do Dono) se quem
+  // ficou com o dinheiro foi a profissional, não a clínica.
+  const recebidoPorFinal = recebidoPor === "PROFISSIONAL" ? "PROFISSIONAL" : "CLINICA";
   const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, include: { user: true } });
   if (!cliente?.profissionalAtualId) {
     return res.status(400).json({ erro: "Vincule o cliente a uma profissional antes de registrar o pacote." });
@@ -446,7 +463,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
       valorTotal: valorFinal,
       valorProfissional,
       valorRenascer,
-      recebidoPor: "CLINICA",
+      recebidoPor: recebidoPorFinal,
       comprovanteBase64: imagemBase64 || null,
       comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
       observacao: observacao || null,
@@ -459,12 +476,21 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     tipo: "sistema",
   });
 
-  // Avisa a profissional quanto ela tem a receber desse pagamento (repasse)
-  await notificar(profissional.userId, {
-    titulo: "Novo repasse a receber",
-    mensagem: `Pagamento registrado para ${cliente.user?.nome || "seu cliente"}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
-    tipo: "financeiro",
-  });
+  // Avisa a profissional: se foi ela quem recebeu o dinheiro, lembra de repassar a parte da
+  // Renascer; se foi a clínica que recebeu, avisa quanto ela tem a receber (repasse ao contrário).
+  if (recebidoPorFinal === "PROFISSIONAL") {
+    await notificar(profissional.userId, {
+      titulo: "Lembrete de repasse",
+      mensagem: `Pagamento de ${cliente.user?.nome || "seu cliente"} registrado como recebido direto por você. Não esqueça de repassar R$ ${valorRenascer.toFixed(2)} pra Renascer e anexar o comprovante na aba Financeiro.`,
+      tipo: "financeiro",
+    });
+  } else {
+    await notificar(profissional.userId, {
+      titulo: "Novo repasse a receber",
+      mensagem: `Pagamento registrado para ${cliente.user?.nome || "seu cliente"}: seu repasse é de R$ ${valorProfissional.toFixed(2)}.`,
+      tipo: "financeiro",
+    });
+  }
 
   res.json({ pacote, transacao });
 });
