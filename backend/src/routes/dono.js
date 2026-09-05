@@ -341,6 +341,31 @@ router.put("/repasses/:transacaoId/marcar", async (req, res) => {
   res.json(atualizada);
 });
 
+// Correção pontual pra transações antigas (lançadas antes da regra "sempre é a profissional
+// que recebe" entrar no ar) que ficaram marcadas como "recebido pela clínica" — o dono usa esse
+// botão quando sabe que, na prática, foi a profissional quem recebeu. Depois disso a transação
+// passa a contar normalmente como pendência de repasse.
+router.put("/transacoes/:id/reclassificar-profissional", async (req, res) => {
+  const transacao = await prisma.transacaoFinanceira.findUnique({
+    where: { id: req.params.id },
+    include: { profissional: { select: { userId: true } } },
+  });
+  if (!transacao) return res.status(404).json({ erro: "Transação não encontrada." });
+
+  const atualizada = await prisma.transacaoFinanceira.update({
+    where: { id: transacao.id },
+    data: { recebidoPor: "PROFISSIONAL", origem: "ATENDENTE" },
+  });
+
+  await notificar(transacao.profissional.userId, {
+    titulo: "Lembrete de repasse",
+    mensagem: `Um pagamento antigo (R$ ${transacao.valorTotal.toFixed(2)}) foi corrigido: você recebeu direto e precisa repassar R$ ${transacao.valorRenascer.toFixed(2)} pra Renascer, se ainda não repassou.`,
+    tipo: "financeiro",
+  });
+
+  res.json(atualizada);
+});
+
 // Lançamento rápido: "recebi R$X da profissional Y" — marca como repassadas as transações
 // pendentes mais antigas dela até bater esse valor (não precisa procurar uma por uma).
 router.post("/repasses/:profissionalId/lancar", async (req, res) => {
