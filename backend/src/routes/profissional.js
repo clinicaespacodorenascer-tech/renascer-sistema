@@ -792,6 +792,47 @@ router.put("/clientes/:id/situacao", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Corrigir dados de login do cliente (nome, e-mail, senha) — pra quando ela errou algo no
+// cadastro (e-mail digitado errado, por exemplo) e o cliente não consegue entrar. Só pode
+// mexer em cliente que é dela. Cada campo é opcional — só muda o que ela preencher.
+router.put("/clientes/:id/login", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: req.params.id, profissionalAtualId: profissionalId },
+    include: { user: true },
+  });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado ou não é seu." });
+
+  const { nome, email, novaSenha } = req.body;
+  const dados = {};
+
+  if (nome !== undefined && nome.trim()) {
+    dados.nome = nome.trim();
+  }
+  if (email !== undefined && email.trim()) {
+    const emailNormalizado = email.toLowerCase().trim();
+    if (emailNormalizado !== cliente.user.email) {
+      const existente = await prisma.user.findUnique({ where: { email: emailNormalizado } });
+      if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
+      dados.email = emailNormalizado;
+    }
+  }
+  if (novaSenha) {
+    dados.senha = await bcrypt.hash(novaSenha, 10);
+  }
+
+  if (Object.keys(dados).length === 0) {
+    return res.status(400).json({ erro: "Informe pelo menos um campo pra alterar." });
+  }
+
+  const atualizado = await prisma.user.update({
+    where: { id: cliente.userId },
+    data: dados,
+    select: { id: true, nome: true, email: true },
+  });
+  res.json(atualizado);
+});
+
 router.get("/clientes/:id", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const cliente = await prisma.cliente.findFirst({
