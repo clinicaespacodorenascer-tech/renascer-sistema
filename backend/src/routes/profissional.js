@@ -344,6 +344,7 @@ router.get("/financeiro/resumo", async (req, res) => {
       reconhecidoPorIA: true,
       comprovanteMimeType: true,
       recebidoPor: true,
+      origem: true,
       repassado: true,
       repassadoEm: true,
       repasseSolicitadoEm: true,
@@ -435,6 +436,7 @@ router.post("/financeiro/comprovante", async (req, res) => {
       valorProfissional,
       valorRenascer,
       recebidoPor: "PROFISSIONAL",
+      origem: "PROFISSIONAL",
       comprovanteBase64: imagemBase64 || null,
       comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
       reconhecidoPorIA: !!reconhecido.valor,
@@ -912,6 +914,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
       valorProfissional,
       valorRenascer,
       recebidoPor: "PROFISSIONAL",
+      origem: "PROFISSIONAL",
     },
   });
 
