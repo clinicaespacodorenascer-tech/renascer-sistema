@@ -65,6 +65,14 @@ enum QuemRecebeu {
   PROFISSIONAL
 }
 
+// Quem registrou a transação no sistema — não é sobre o dinheiro (isso é o QuemRecebeu acima),
+// é só pra separar nos painéis do dono o que a atendente fechou (aparece em "a receber hoje")
+// do que a própria profissional lançou sozinha (renovação/sessão extra dela mesma).
+enum OrigemTransacao {
+  ATENDENTE
+  PROFISSIONAL
+}
+
 enum StatusSuporte {
   ABERTO
   EM_ANDAMENTO
@@ -384,6 +392,10 @@ model TransacaoFinanceira {
   // (aí "repassado" fecha o quanto ela devia mandar pra Renascer) — a profissional pode marcar
   // sozinha na aba financeiro dela, ou o dono pode confirmar na aba Repasses.
   recebidoPor    QuemRecebeu    @default(CLINICA)
+  // Quem lançou: a atendente (fechou/anexou pagamento de um cliente) ou a própria profissional
+  // (registrou uma renovação/sessão extra que ela mesma recebeu). Usado só pra filtrar os
+  // painéis do dono — não muda em nada o cálculo do repasse.
+  origem         OrigemTransacao @default(PROFISSIONAL)
   repassado      Boolean        @default(false)
   repassadoEm    DateTime?
   repassadoObs   String?
