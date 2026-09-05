@@ -255,6 +255,7 @@ function AbaAgenda() {
   const [erro, setErro] = useState("");
   const [clientes, setClientes] = useState([]);
   const [colunaAberta, setColunaAberta] = useState(null);
+  const [reagendando, setReagendando] = useState(null);
 
   async function carregar() {
     const [a, c] = await Promise.all([api.get("/profissional/agenda"), api.get("/profissional/clientes")]);
@@ -354,12 +355,15 @@ function AbaAgenda() {
                         >
                           🎥 Entrar na videochamada
                         </Link>
-                        <div className="flex gap-1 mt-1">
+                        <div className="flex gap-2 mt-1 flex-wrap">
                           <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
                             Realizada
                           </button>
                           <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
                             Cancelar
+                          </button>
+                          <button className="text-xs text-renascer underline" onClick={() => setReagendando(ag)}>
+                            Mudar data/horário
                           </button>
                         </div>
                       </>
@@ -383,6 +387,101 @@ function AbaAgenda() {
           onFechar={() => setColunaAberta(null)}
         />
       )}
+      {reagendando && (
+        <ReagendarModal
+          agendamento={reagendando}
+          onReagendado={() => {
+            setReagendando(null);
+            carregar();
+          }}
+          onFechar={() => setReagendando(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Mudar a data/horário de UMA sessão específica — diferente do "Mover para..." (que só troca o
+// dia dentro da mesma semana): aqui dá pra jogar pra qualquer data, útil pra imprevisto ou pra
+// remarcar a última sessão do pacote antes de renovar. A sessão antiga fica marcada como
+// "REAGENDADO" no histórico e uma nova é criada na data escolhida.
+const JS_PARA_DIA_SEMANA = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+function ReagendarModal({ agendamento, onReagendado, onFechar }) {
+  const dataAtual = new Date(agendamento.data).toISOString().slice(0, 10);
+  const [novaData, setNovaData] = useState(dataAtual);
+  const [novaHora, setNovaHora] = useState(agendamento.horaInicio);
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function confirmar() {
+    if (!novaData || !novaHora) {
+      setMsg("Escolha a nova data e o novo horário.");
+      return;
+    }
+    setEnviando(true);
+    setMsg("");
+    try {
+      const novoDiaSemana = JS_PARA_DIA_SEMANA[new Date(`${novaData}T00:00:00`).getDay()];
+      await api.post(`/profissional/agenda/${agendamento.id}/reagendar`, {
+        novaData,
+        novoDiaSemana,
+        novaHora,
+        motivo: motivo || undefined,
+      });
+      onReagendado?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao mudar a data da sessão.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onFechar?.();
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-renascer text-lg">Mudar data/horário · {agendamento.cliente.user.nome}</h3>
+          <button className="text-renascer-ink/40 hover:text-renascer-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
+            ×
+          </button>
+        </div>
+        <p className="text-xs text-renascer-ink/50">
+          Data e horário atuais: {new Date(agendamento.data).toLocaleDateString("pt-BR")} às {agendamento.horaInicio}.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Nova data</label>
+            <input type="date" className="input" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Novo horário</label>
+            <input type="time" className="input" value={novaHora} onChange={(e) => setNovaHora(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Motivo (opcional, o cliente vê no aviso)</label>
+          <input className="input" placeholder="Ex: imprevisto, remarcação da última sessão..." value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </div>
+
+        {msg && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{msg}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button className="btn-primary flex-1" onClick={confirmar} disabled={enviando}>
+            {enviando ? "Salvando..." : "Confirmar nova data"}
+          </button>
+          <button className="btn-secondary" onClick={onFechar}>
+            Cancelar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -585,6 +684,7 @@ function DetalheCliente({ cliente, onMudouSituacao }) {
           ["relatorios", "Relatórios"],
           ["pacote", "Pacote / pagamento"],
           ["notificacao", "Notificação"],
+          ["login", "Corrigir login"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -600,7 +700,57 @@ function DetalheCliente({ cliente, onMudouSituacao }) {
       {sub === "relatorios" && <RelatoriosCliente clienteId={cliente.id} />}
       {sub === "pacote" && <NovoPacoteCliente clienteId={cliente.id} />}
       {sub === "notificacao" && <NotificacaoCliente clienteId={cliente.id} rotaBase="/profissional" />}
+      {sub === "login" && <CorrigirLoginCliente cliente={cliente} />}
       <SituacaoCliente clienteId={cliente.id} rotaBase="/profissional" onMudou={onMudouSituacao} />
+    </div>
+  );
+}
+
+// Corrigir nome, e-mail ou senha do login do cliente — pra quando a profissional errou algo no
+// cadastro (e-mail digitado errado, por exemplo) e o cliente não consegue entrar. Cada campo é
+// opcional: só muda o que ela preencher.
+function CorrigirLoginCliente({ cliente }) {
+  const [nome, setNome] = useState(cliente.user.nome || "");
+  const [email, setEmail] = useState(cliente.user.email || "");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function salvar() {
+    setSalvando(true);
+    setMsg("");
+    try {
+      const { data } = await api.put(`/profissional/clientes/${cliente.id}/login`, {
+        nome: nome !== cliente.user.nome ? nome : undefined,
+        email: email !== cliente.user.email ? email : undefined,
+        novaSenha: novaSenha || undefined,
+      });
+      setMsg(`Salvo! Login atualizado: ${data.email}` + (novaSenha ? " · Senha alterada." : ""));
+      setNovaSenha("");
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 mt-2 max-w-sm">
+      <p className="text-xs text-renascer-ink/50">
+        Errou o e-mail, o nome ou quer trocar a senha do cliente? Corrija aqui — ele passa a usar o novo login na hora.
+      </p>
+      <input className="input" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+      <input className="input" placeholder="E-mail de login" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <input
+        className="input"
+        placeholder="Nova senha (deixe em branco pra não mudar)"
+        value={novaSenha}
+        onChange={(e) => setNovaSenha(e.target.value)}
+      />
+      <button className="btn-secondary" onClick={salvar} disabled={salvando}>
+        {salvando ? "Salvando..." : "Salvar alterações"}
+      </button>
+      {msg && <p className="text-sm">{msg}</p>}
     </div>
   );
 }
