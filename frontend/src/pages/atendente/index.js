@@ -321,7 +321,6 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
   const [duracao, setDuracao] = useState("MIN50");
   const [totalSessoes, setTotalSessoes] = useState(4);
   const [valorTotal, setValorTotal] = useState("");
-  const [recebidoPor, setRecebidoPor] = useState("CLINICA");
   const [arquivo, setArquivo] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [msg, setMsg] = useState("");
@@ -340,15 +339,12 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
         totalSessoes: Number(totalSessoes),
         valorTotal: valorTotal ? Number(valorTotal) : undefined,
         tipo,
-        recebidoPor,
         imagemBase64,
         mimeType: arquivo?.type,
       });
       setMsg(
-        recebidoPor === "PROFISSIONAL"
-          ? `Registrado! Como foi a profissional quem recebeu direto, ela ainda deve repassar R$ ${data.transacao.valorRenascer.toFixed(2)} pra Renascer (vai aparecer em Repasses assim que ela mandar o comprovante).`
-          : `Registrado! Repasse pra profissional: R$ ${data.transacao.valorProfissional.toFixed(2)} · Fica com a Renascer: R$ ${data.transacao.valorRenascer.toFixed(2)}` +
-              (arquivo ? " · Comprovante anexado e guardado." : "")
+        `Registrado! A profissional recebe direto e deve repassar R$ ${data.transacao.valorRenascer.toFixed(2)} pra Renascer (vai aparecer em Repasses assim que ela mandar o comprovante).` +
+          (arquivo ? " Comprovante anexado e guardado." : "")
       );
       setArquivo(null);
       setValorTotal("");
@@ -381,13 +377,6 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
         <input className="input !w-32" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
       </div>
       <div>
-        <label className="text-xs text-renascer-ink/50 block mb-1">Quem recebeu esse pagamento?</label>
-        <select className="input !w-auto" value={recebidoPor} onChange={(e) => setRecebidoPor(e.target.value)}>
-          <option value="CLINICA">A clínica (Renascer) — Pix/cartão da clínica</option>
-          <option value="PROFISSIONAL">A profissional, direto</option>
-        </select>
-      </div>
-      <div>
         <label className="text-xs text-renascer-ink/50 block mb-1">
           Anexar comprovante do pagamento (fica guardado no cadastro do cliente pra poder ver depois)
         </label>
@@ -411,7 +400,6 @@ const FORM_CLIENTE_VAZIO = {
   duracao: "MIN50",
   totalSessoes: 4,
   valorTotal: "",
-  recebidoPor: "CLINICA",
 };
 
 function Clientes() {
@@ -447,7 +435,6 @@ function Clientes() {
         duracao: form.duracao,
         totalSessoes: Number(form.totalSessoes),
         valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
-        recebidoPor: form.recebidoPor,
         imagemBase64,
         mimeType: arquivo?.type,
       });
@@ -504,13 +491,6 @@ function Clientes() {
             <input className="input" placeholder="Valor (opcional)" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: e.target.value })} />
           </div>
           <div className="mt-2">
-            <label className="text-xs text-renascer-ink/50 block mb-1">Quem recebeu esse pagamento?</label>
-            <select className="input !w-auto" value={form.recebidoPor} onChange={(e) => setForm({ ...form, recebidoPor: e.target.value })}>
-              <option value="CLINICA">A clínica (Renascer) — Pix/cartão da clínica</option>
-              <option value="PROFISSIONAL">A profissional, direto</option>
-            </select>
-          </div>
-          <div className="mt-2">
             <label className="text-xs text-renascer-ink/50 block mb-1">Anexar comprovante (opcional)</label>
             <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
           </div>
@@ -525,17 +505,11 @@ function Clientes() {
             <p className="text-emerald-600">
               Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um canal seguro)
             </p>
-            {resultado.transacao && resultado.transacao.recebidoPor === "PROFISSIONAL" && (
+            {resultado.transacao && (
               <p className="text-emerald-600">
-                Pagamento contabilizado! Como foi a profissional quem recebeu direto, ela ainda deve repassar R${" "}
+                Pagamento contabilizado! A profissional recebe direto e deve repassar R${" "}
                 {resultado.transacao.valorRenascer.toFixed(2)} pra Renascer (vai aparecer em Repasses assim que ela mandar o
                 comprovante).
-              </p>
-            )}
-            {resultado.transacao && resultado.transacao.recebidoPor !== "PROFISSIONAL" && (
-              <p className="text-emerald-600">
-                Pagamento contabilizado! Repasse pra profissional: R$ {resultado.transacao.valorProfissional.toFixed(2)} · Fica com a
-                Renascer: R$ {resultado.transacao.valorRenascer.toFixed(2)}
               </p>
             )}
             {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
