@@ -169,6 +169,29 @@ router.put("/agenda/:id/status", async (req, res) => {
   res.json(atualizado);
 });
 
+// Remove o card de UMA sessão da Agenda (ex: ela agendou no dia errado por engano) — some só
+// da agenda, não mexe no cadastro do cliente nem apaga ele do sistema. Se a sessão já estava
+// marcada como "Realizada" (contava no pacote), desconta de volta 1 sessão usada, pra não ficar
+// contando uma sessão que na verdade nunca aconteceu.
+router.delete("/agenda/:id", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const agendamento = await prisma.agendamento.findFirst({ where: { id: req.params.id, profissionalId } });
+  if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado." });
+
+  if (agendamento.status === "REALIZADO" && agendamento.pacoteId) {
+    const pacote = await prisma.pacote.findUnique({ where: { id: agendamento.pacoteId } });
+    if (pacote && pacote.sessoesUsadas > 0) {
+      await prisma.pacote.update({
+        where: { id: pacote.id },
+        data: { sessoesUsadas: { decrement: 1 } },
+      });
+    }
+  }
+
+  await prisma.agendamento.delete({ where: { id: agendamento.id } });
+  res.json({ ok: true });
+});
+
 // Move a sessão pra outro dia da mesma semana (drag-and-drop na Agenda), mantendo o
 // mesmo horário. Bloqueia se já existir outra sessão dela nesse horário no dia de destino.
 router.put("/agenda/:id/mover", async (req, res) => {
