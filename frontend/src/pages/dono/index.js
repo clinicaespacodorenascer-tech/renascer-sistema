@@ -567,9 +567,20 @@ function MetricasCliente({ clienteId, rotaBase }) {
 
 function Financeiro() {
   const [f, setF] = useState(null);
+  async function carregar() {
+    const r = await api.get("/dono/financeiro");
+    setF(r.data);
+  }
   useEffect(() => {
-    api.get("/dono/financeiro").then((r) => setF(r.data));
+    carregar();
   }, []);
+
+  async function reclassificar(id) {
+    if (!window.confirm("Confirma que foi a profissional quem recebeu esse pagamento direto do cliente? Isso passa a contar como pendência de repasse dela.")) return;
+    await api.put(`/dono/transacoes/${id}/reclassificar-profissional`);
+    carregar();
+  }
+
   if (!f) return <p>Carregando...</p>;
   return (
     <div className="space-y-4">
@@ -634,7 +645,16 @@ function Financeiro() {
                       <span className="badge bg-amber-100 text-amber-700">Profissional (pendente)</span>
                     )
                   ) : (
-                    <span className="badge bg-renascer-light text-renascer">Clínica</span>
+                    <div className="space-y-0.5">
+                      <span className="badge bg-renascer-light text-renascer">Clínica</span>
+                      <button
+                        className="block text-[11px] text-amber-700 underline"
+                        onClick={() => reclassificar(t.id)}
+                        title="Use se souber que, na prática, foi a profissional quem recebeu esse pagamento direto"
+                      >
+                        Corrigir: foi a profissional
+                      </button>
+                    </div>
                   )}
                 </td>
                 <td className="text-right">
