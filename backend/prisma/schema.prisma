@@ -562,3 +562,80 @@ model Notificacao {
 
   @@map("notificacoes")
 }
+
+// ---------- FINANÇAS PESSOAIS (privado, só quem é DONO vê — isolado do resto do sistema:
+// nenhuma dessas tabelas se relaciona com cliente/profissional/agendamento/transação da clínica) ----------
+
+enum TipoLancamentoPessoal {
+  RECEITA
+  DESPESA
+}
+
+// Categoria fixa de onde veio (receita) ou pra onde vai (despesa) o dinheiro. "OUTROS" sempre
+// libera o campo de descrição livre pra digitar o que for.
+enum CategoriaLancamentoPessoal {
+  TURBINE
+  RENASCER
+  ATENDIMENTO
+  CARTAO
+  CASA
+  ALIMENTOS
+  FARMACIA
+  ESPOSA
+  FILHOS
+  PENSAO
+  PESSOA
+  OUTROS
+}
+
+model LancamentoPessoal {
+  id             String                     @id @default(cuid())
+  tipo           TipoLancamentoPessoal
+  categoria      CategoriaLancamentoPessoal
+  descricao      String?                    // texto livre — obrigatório na prática quando categoria = OUTROS
+  pessoa         String?                    // pra quem devo (categoria PESSOA, ou qualquer despesa com nome)
+  valor          Float
+  parcelaAtual   Int?                       // ex: parcela 2
+  totalParcelas  Int?                       // de um total de 6
+  dataVencimento DateTime?                  // só despesa — quando programar pra pagar
+  dataPagamento  DateTime?                  // preenchido = já foi pago
+  observacao     String?                    @db.Text
+  criadoEm       DateTime                   @default(now())
+  atualizadoEm   DateTime                   @updatedAt
+
+  @@map("lancamentos_pessoais")
+}
+
+model MetaPessoal {
+  id         String    @id @default(cuid())
+  titulo     String
+  valorMeta  Float
+  valorAtual Float     @default(0)
+  dataAlvo   DateTime?
+  criadoEm   DateTime  @default(now())
+
+  @@map("metas_pessoais")
+}
+
+// Poupança pessoal — cada linha é um aporte (positivo) ou uma retirada (negativo); o total é a
+// soma de tudo, sem precisar guardar um "saldo" solto que pode dessincronizar.
+model PoupancaAportePessoal {
+  id         String   @id @default(cuid())
+  valor      Float
+  observacao String?
+  data       DateTime @default(now())
+
+  @@map("poupanca_aportes_pessoais")
+}
+
+// Anotações rápidas / lista do que está faltando (casa, trabalho, bebê, mercado etc) — fica do
+// lado financeiro só porque é onde ele decide o que comprar, mas não é lançamento de dinheiro.
+model NotaPessoal {
+  id        String   @id @default(cuid())
+  texto     String
+  local     String?  // "Casa" | "Trabalho" | "Bebê" | livre
+  resolvido Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+
+  @@map("notas_pessoais")
+}
