@@ -27,6 +27,7 @@ export default function AreaDono() {
     { id: "repasses", label: "Repasses" },
     { id: "usuarios", label: "Usuários" },
     { id: "suporte", label: "Suporte escalado" },
+    { id: "financaPessoal", label: "Financeiro pessoal" },
   ];
 
   return (
@@ -40,6 +41,7 @@ export default function AreaDono() {
       {aba === "repasses" && <RepassesProfissionais />}
       {aba === "usuarios" && <Usuarios />}
       {aba === "suporte" && <SuporteEscalado />}
+      {aba === "financaPessoal" && <AbaFinancaPessoal />}
     </Layout>
   );
 }
@@ -1043,6 +1045,757 @@ function SuporteEscalado() {
         </div>
       ))}
       {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
+    </div>
+  );
+}
+
+// ========== Financeiro pessoal (privado — só o dono vê; totalmente isolado do financeiro da clínica) ==========
+
+const CATEGORIA_PESSOAL_LABEL = {
+  TURBINE: "Turbine",
+  RENASCER: "Renascer",
+  ATENDIMENTO: "Atendimento/Consulta",
+  CARTAO: "Cartão",
+  CASA: "Casa",
+  ALIMENTOS: "Alimentos",
+  FARMACIA: "Farmácia",
+  ESPOSA: "Esposa",
+  FILHOS: "Filhos",
+  PENSAO: "Pensão",
+  PESSOA: "Pessoa",
+  OUTROS: "Outros",
+};
+const CATEGORIAS_RECEITA_PESSOAL = ["TURBINE", "RENASCER", "ATENDIMENTO", "OUTROS"];
+const CATEGORIAS_DESPESA_PESSOAL = ["CARTAO", "CASA", "ALIMENTOS", "FARMACIA", "ESPOSA", "FILHOS", "PENSAO", "PESSOA", "OUTROS"];
+const STATUS_DESPESA_PESSOAL = {
+  ATRASADO: { label: "Atrasado", cls: "bg-red-100 text-red-700" },
+  VENCE_EM_BREVE: { label: "Vence em breve", cls: "bg-amber-100 text-amber-700" },
+  PENDENTE: { label: "Pendente", cls: "bg-renascer-light text-renascer" },
+  PAGO: { label: "Pago", cls: "bg-emerald-100 text-emerald-700" },
+};
+
+function AbaFinancaPessoal() {
+  const [subaba, setSubaba] = useState("resumo");
+  const SUBABAS = [
+    { id: "resumo", label: "Resumo" },
+    { id: "lancamentos", label: "Lançamentos" },
+    { id: "metas", label: "Metas" },
+    { id: "poupanca", label: "Poupança" },
+    { id: "notas", label: "Anotações" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-renascer-ink">Financeiro pessoal</h2>
+        <p className="text-xs text-renascer-ink/50">Só você vê esta aba. Não afeta o financeiro da clínica nem dos profissionais.</p>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        {SUBABAS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSubaba(s.id)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+              subaba === s.id ? "bg-renascer text-white" : "bg-renascer-light text-renascer"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {subaba === "resumo" && <ResumoFinancaPessoal />}
+      {subaba === "lancamentos" && <LancamentosFinancaPessoal />}
+      {subaba === "metas" && <MetasFinancaPessoal />}
+      {subaba === "poupanca" && <PoupancaFinancaPessoal />}
+      {subaba === "notas" && <NotasFinancaPessoal />}
+    </div>
+  );
+}
+
+function KpiCardPessoal({ label, valor, cor }) {
+  const cores = {
+    emerald: "text-emerald-700",
+    red: "text-red-600",
+    renascer: "text-renascer",
+  };
+  return (
+    <div className="card">
+      <p className="text-xs text-renascer-ink/50 mb-1">{label}</p>
+      <p className={`text-xl font-bold ${cores[cor] || "text-renascer-ink"}`}>R$ {valor.toFixed(2)}</p>
+    </div>
+  );
+}
+
+function BarraMetaPessoal({ meta, onAdicionar, onExcluir }) {
+  const pct = meta.valorMeta > 0 ? Math.min(100, (meta.valorAtual / meta.valorMeta) * 100) : 0;
+  return (
+    <div className="border border-renascer/10 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="font-medium">{meta.titulo}</p>
+        {onExcluir && (
+          <button className="text-xs text-red-600 underline" onClick={onExcluir}>
+            Excluir
+          </button>
+        )}
+      </div>
+      <div className="h-2 rounded-full bg-renascer-light overflow-hidden">
+        <div className="h-full bg-renascer" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="flex items-center justify-between mt-1 text-xs text-renascer-ink/60">
+        <span>
+          R$ {meta.valorAtual.toFixed(2)} de R$ {meta.valorMeta.toFixed(2)} ({pct.toFixed(0)}%)
+        </span>
+        {meta.dataAlvo && <span>até {new Date(meta.dataAlvo).toLocaleDateString("pt-BR")}</span>}
+      </div>
+      {onAdicionar && (
+        <button className="btn-secondary text-xs mt-2" onClick={onAdicionar}>
+          + Adicionar valor
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ResumoFinancaPessoal() {
+  const [dados, setDados] = useState(null);
+  const [historico, setHistorico] = useState([]);
+
+  async function carregar() {
+    const [r1, r2] = await Promise.all([
+      api.get("/financa-pessoal/resumo"),
+      api.get("/financa-pessoal/historico-mensal"),
+    ]);
+    setDados(r1.data);
+    setHistorico(r2.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  if (!dados) return <p>Carregando...</p>;
+
+  const maxHistorico = Math.max(1, ...historico.map((h) => Math.max(h.totalReceitas, h.totalDespesas)));
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCardPessoal label="Total entrado" valor={dados.totalReceitas} cor="emerald" />
+        <KpiCardPessoal label="Total de despesas" valor={dados.totalDespesas} cor="red" />
+        <KpiCardPessoal label="Saldo" valor={dados.saldo} cor={dados.saldo >= 0 ? "emerald" : "red"} />
+        <KpiCardPessoal label="Poupança total" valor={dados.totalPoupanca} cor="renascer" />
+      </div>
+
+      {(dados.qtdAtrasadas > 0 || dados.qtdVenceEmBreve > 0) && (
+        <div className="card border border-amber-200 bg-amber-50">
+          <p className="text-sm text-amber-800">
+            {dados.qtdAtrasadas > 0 && (
+              <>
+                ⚠ {dados.qtdAtrasadas} despesa(s) atrasada(s), totalizando R$ {dados.totalAtrasado.toFixed(2)}.{" "}
+              </>
+            )}
+            {dados.qtdVenceEmBreve > 0 && <>{dados.qtdVenceEmBreve} despesa(s) vencem em breve.</>}
+          </p>
+        </div>
+      )}
+
+      <div className="card">
+        <h3 className="font-semibold mb-2">Próximas a vencer</h3>
+        <div className="space-y-2">
+          {dados.proximasVencer.map((d) => {
+            const st = STATUS_DESPESA_PESSOAL[d.status];
+            return (
+              <div key={d.id} className="flex items-center justify-between text-sm border-t border-renascer/10 pt-2 first:border-0 first:pt-0">
+                <div>
+                  <p className="font-medium">
+                    {CATEGORIA_PESSOAL_LABEL[d.categoria]}
+                    {d.descricao ? ` — ${d.descricao}` : ""}
+                    {d.pessoa ? ` (${d.pessoa})` : ""}
+                  </p>
+                  <p className="text-xs text-renascer-ink/50">
+                    {d.dataVencimento ? new Date(d.dataVencimento).toLocaleDateString("pt-BR") : "sem data"}
+                    {d.diasParaVencer !== null && (
+                      <> · {d.diasParaVencer < 0 ? `${Math.abs(d.diasParaVencer)} dia(s) atrasado` : `em ${d.diasParaVencer} dia(s)`}</>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">R$ {d.valor.toFixed(2)}</span>
+                  <span className={`badge ${st.cls}`}>{st.label}</span>
+                </div>
+              </div>
+            );
+          })}
+          {dados.proximasVencer.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma despesa pendente.</p>}
+        </div>
+      </div>
+
+      <div className="card overflow-x-auto">
+        <h3 className="font-semibold mb-2">Histórico mensal — quanto recebi por mês</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-renascer-ink/50">
+              <th className="py-1">Mês</th>
+              <th>Recebido</th>
+              <th>Gasto</th>
+              <th>Saldo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {historico.map((h) => (
+              <tr key={h.chave} className="border-t border-renascer/10">
+                <td className="py-2 whitespace-nowrap">{h.mesAno}</td>
+                <td className="text-emerald-700 whitespace-nowrap">R$ {h.totalReceitas.toFixed(2)}</td>
+                <td className="text-red-600 whitespace-nowrap">R$ {h.totalDespesas.toFixed(2)}</td>
+                <td className={`whitespace-nowrap ${h.saldo >= 0 ? "text-emerald-700" : "text-red-600"}`}>R$ {h.saldo.toFixed(2)}</td>
+                <td className="w-1/3 min-w-[100px]">
+                  <div className="h-1.5 rounded-full bg-red-100 overflow-hidden mb-1">
+                    <div className="h-full bg-emerald-500" style={{ width: `${(h.totalReceitas / maxHistorico) * 100}%` }} />
+                  </div>
+                  <div className="h-1.5 rounded-full bg-renascer-light overflow-hidden">
+                    <div className="h-full bg-red-400" style={{ width: `${(h.totalDespesas / maxHistorico) * 100}%` }} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {historico.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-2 text-renascer-ink/50">
+                  Nenhum lançamento ainda.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {dados.metas.length > 0 && (
+        <div className="card space-y-3">
+          <h3 className="font-semibold">Metas</h3>
+          {dados.metas.map((m) => (
+            <BarraMetaPessoal key={m.id} meta={m} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormLancamentoPessoal({ inicial, onSalvo, onCancelar }) {
+  const ehEdicao = !!inicial;
+  const [tipo, setTipo] = useState(inicial?.tipo || "RECEITA");
+  const [categoria, setCategoria] = useState(inicial?.categoria || "TURBINE");
+  const [descricao, setDescricao] = useState(inicial?.descricao || "");
+  const [pessoa, setPessoa] = useState(inicial?.pessoa || "");
+  const [valor, setValor] = useState(inicial?.valor !== undefined ? String(inicial.valor) : "");
+  const [parcelaAtual, setParcelaAtual] = useState(inicial?.parcelaAtual ? String(inicial.parcelaAtual) : "");
+  const [totalParcelas, setTotalParcelas] = useState(inicial?.totalParcelas ? String(inicial.totalParcelas) : "");
+  const [dataVencimento, setDataVencimento] = useState(inicial?.dataVencimento ? inicial.dataVencimento.slice(0, 10) : "");
+  const [observacao, setObservacao] = useState(inicial?.observacao || "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    const opcoes = tipo === "RECEITA" ? CATEGORIAS_RECEITA_PESSOAL : CATEGORIAS_DESPESA_PESSOAL;
+    if (!opcoes.includes(categoria)) setCategoria(opcoes[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo]);
+
+  async function salvar() {
+    if (!valor) {
+      setErro("Informe o valor.");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    try {
+      const payload = {
+        tipo,
+        categoria,
+        descricao: descricao || null,
+        pessoa: tipo === "DESPESA" && categoria === "PESSOA" ? pessoa || null : null,
+        valor: Number(valor),
+        parcelaAtual: parcelaAtual ? Number(parcelaAtual) : null,
+        totalParcelas: totalParcelas ? Number(totalParcelas) : null,
+        dataVencimento: tipo === "DESPESA" && dataVencimento ? dataVencimento : null,
+        observacao: observacao || null,
+      };
+      if (ehEdicao) {
+        await api.put(`/financa-pessoal/lancamentos/${inicial.id}`, payload);
+      } else {
+        await api.post("/financa-pessoal/lancamentos", payload);
+      }
+      onSalvo();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Erro ao salvar lançamento.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const opcoesCategoria = tipo === "RECEITA" ? CATEGORIAS_RECEITA_PESSOAL : CATEGORIAS_DESPESA_PESSOAL;
+
+  return (
+    <div className="card space-y-3">
+      <h3 className="font-semibold">{ehEdicao ? "Editar lançamento" : "Novo lançamento"}</h3>
+      <div className="flex gap-2">
+        <button className={tipo === "RECEITA" ? "btn-primary" : "btn-secondary"} onClick={() => setTipo("RECEITA")}>
+          Recebimento
+        </button>
+        <button className={tipo === "DESPESA" ? "btn-primary" : "btn-secondary"} onClick={() => setTipo("DESPESA")}>
+          Despesa
+        </button>
+      </div>
+      <select className="input" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+        {opcoesCategoria.map((c) => (
+          <option key={c} value={c}>
+            {CATEGORIA_PESSOAL_LABEL[c]}
+          </option>
+        ))}
+      </select>
+      {categoria === "OUTROS" && (
+        <input
+          className="input"
+          placeholder={tipo === "RECEITA" ? "De onde veio esse valor?" : "Pra onde foi esse valor?"}
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      )}
+      {tipo === "DESPESA" && categoria === "PESSOA" && (
+        <input className="input" placeholder="Nome da pessoa" value={pessoa} onChange={(e) => setPessoa(e.target.value)} />
+      )}
+      <input className="input" type="number" step="0.01" placeholder="Valor (R$)" value={valor} onChange={(e) => setValor(e.target.value)} />
+      {tipo === "DESPESA" && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="input"
+              type="number"
+              placeholder="Parcela atual (ex: 2)"
+              value={parcelaAtual}
+              onChange={(e) => setParcelaAtual(e.target.value)}
+            />
+            <input
+              className="input"
+              type="number"
+              placeholder="Total de parcelas (ex: 6)"
+              value={totalParcelas}
+              onChange={(e) => setTotalParcelas(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-renascer-ink/50">Data para pagar</label>
+            <input className="input" type="date" value={dataVencimento} onChange={(e) => setDataVencimento(e.target.value)} />
+          </div>
+        </>
+      )}
+      <textarea
+        className="input"
+        placeholder="Observação (opcional)"
+        value={observacao}
+        onChange={(e) => setObservacao(e.target.value)}
+      />
+      {erro && <p className="text-red-600 text-sm">{erro}</p>}
+      <div className="flex gap-2">
+        <button className="btn-primary" disabled={salvando} onClick={salvar}>
+          {salvando ? "Salvando..." : "Salvar"}
+        </button>
+        <button className="btn-secondary" onClick={onCancelar}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LancamentosFinancaPessoal() {
+  const [lista, setLista] = useState([]);
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [editando, setEditando] = useState(null);
+  const [mostrarForm, setMostrarForm] = useState(false);
+
+  async function carregar() {
+    const params = filtroTipo ? { tipo: filtroTipo } : {};
+    const r = await api.get("/financa-pessoal/lancamentos", { params });
+    setLista(r.data);
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroTipo]);
+
+  async function excluir(id) {
+    if (!window.confirm("Excluir este lançamento?")) return;
+    await api.delete(`/financa-pessoal/lancamentos/${id}`);
+    carregar();
+  }
+  async function marcarPago(id) {
+    await api.put(`/financa-pessoal/lancamentos/${id}/pagar`);
+    carregar();
+  }
+  async function desmarcarPago(id) {
+    await api.put(`/financa-pessoal/lancamentos/${id}/desmarcar-pago`);
+    carregar();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="font-semibold">Lançamentos</h3>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              setEditando(null);
+              setMostrarForm(true);
+            }}
+          >
+            + Novo lançamento
+          </button>
+        </div>
+        <div className="flex gap-2 mb-3">
+          {[
+            { id: "", label: "Todos" },
+            { id: "RECEITA", label: "Recebimentos" },
+            { id: "DESPESA", label: "Despesas" },
+          ].map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFiltroTipo(f.id)}
+              className={`px-3 py-1 rounded-full text-xs font-medium ${
+                filtroTipo === f.id ? "bg-renascer text-white" : "bg-renascer-light text-renascer"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-renascer-ink/50">
+                <th className="py-1">Data</th>
+                <th>Tipo</th>
+                <th>Categoria</th>
+                <th>Valor</th>
+                <th>Vencimento / status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map((l) => {
+                const st = l.tipo === "DESPESA" ? STATUS_DESPESA_PESSOAL[l.status] : null;
+                return (
+                  <tr key={l.id} className="border-t border-renascer/10 align-top">
+                    <td className="py-2 whitespace-nowrap">{new Date(l.criadoEm).toLocaleDateString("pt-BR")}</td>
+                    <td>
+                      <span className={`badge ${l.tipo === "RECEITA" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                        {l.tipo === "RECEITA" ? "Recebimento" : "Despesa"}
+                      </span>
+                    </td>
+                    <td>
+                      {CATEGORIA_PESSOAL_LABEL[l.categoria]}
+                      {l.descricao ? ` — ${l.descricao}` : ""}
+                      {l.pessoa ? ` (${l.pessoa})` : ""}
+                      {l.totalParcelas ? (
+                        <div className="text-xs text-renascer-ink/50">
+                          parcela {l.parcelaAtual || "?"}/{l.totalParcelas}
+                        </div>
+                      ) : null}
+                      {l.observacao && <div className="text-xs text-renascer-ink/40">{l.observacao}</div>}
+                    </td>
+                    <td className="font-semibold whitespace-nowrap">R$ {l.valor.toFixed(2)}</td>
+                    <td className="whitespace-nowrap">
+                      {l.tipo === "DESPESA" ? (
+                        <div className="space-y-1">
+                          <div>{l.dataVencimento ? new Date(l.dataVencimento).toLocaleDateString("pt-BR") : "sem data"}</div>
+                          <span className={`badge ${st.cls}`}>{st.label}</span>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="text-right space-x-2 whitespace-nowrap">
+                      {l.tipo === "DESPESA" && l.status === "PAGO" && (
+                        <button className="text-xs text-amber-700 underline" onClick={() => desmarcarPago(l.id)}>
+                          Desmarcar pago
+                        </button>
+                      )}
+                      {l.tipo === "DESPESA" && l.status !== "PAGO" && (
+                        <button className="text-xs text-emerald-700 underline" onClick={() => marcarPago(l.id)}>
+                          Marcar pago
+                        </button>
+                      )}
+                      <button
+                        className="text-xs text-renascer underline"
+                        onClick={() => {
+                          setEditando(l);
+                          setMostrarForm(true);
+                        }}
+                      >
+                        Editar
+                      </button>
+                      <button className="text-xs text-red-600 underline" onClick={() => excluir(l.id)}>
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {lista.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-2 text-renascer-ink/50">
+                    Nenhum lançamento ainda.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {mostrarForm && (
+        <FormLancamentoPessoal
+          inicial={editando}
+          onSalvo={() => {
+            setMostrarForm(false);
+            setEditando(null);
+            carregar();
+          }}
+          onCancelar={() => {
+            setMostrarForm(false);
+            setEditando(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MetasFinancaPessoal() {
+  const [metas, setMetas] = useState([]);
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [valorMeta, setValorMeta] = useState("");
+  const [dataAlvo, setDataAlvo] = useState("");
+
+  async function carregar() {
+    const r = await api.get("/financa-pessoal/metas");
+    setMetas(r.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function criar() {
+    if (!titulo || !valorMeta) return;
+    await api.post("/financa-pessoal/metas", { titulo, valorMeta: Number(valorMeta), dataAlvo: dataAlvo || null });
+    setTitulo("");
+    setValorMeta("");
+    setDataAlvo("");
+    setMostrarForm(false);
+    carregar();
+  }
+  async function adicionar(id) {
+    const valor = window.prompt("Quanto deseja adicionar a essa meta?");
+    if (!valor || isNaN(Number(valor))) return;
+    await api.put(`/financa-pessoal/metas/${id}/adicionar`, { valor: Number(valor) });
+    carregar();
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir esta meta?")) return;
+    await api.delete(`/financa-pessoal/metas/${id}`);
+    carregar();
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Metas</h3>
+        <button className="btn-primary" onClick={() => setMostrarForm(!mostrarForm)}>
+          + Nova meta
+        </button>
+      </div>
+      {mostrarForm && (
+        <div className="space-y-2 p-3 rounded-xl bg-renascer-light/40">
+          <input
+            className="input"
+            placeholder="Nome da meta (ex: Viagem, Reserva de emergência)"
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+          />
+          <input
+            className="input"
+            type="number"
+            step="0.01"
+            placeholder="Valor da meta (R$)"
+            value={valorMeta}
+            onChange={(e) => setValorMeta(e.target.value)}
+          />
+          <input className="input" type="date" value={dataAlvo} onChange={(e) => setDataAlvo(e.target.value)} />
+          <button className="btn-primary" onClick={criar}>
+            Salvar meta
+          </button>
+        </div>
+      )}
+      <div className="space-y-3">
+        {metas.map((m) => (
+          <BarraMetaPessoal key={m.id} meta={m} onAdicionar={() => adicionar(m.id)} onExcluir={() => excluir(m.id)} />
+        ))}
+        {metas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma meta cadastrada.</p>}
+      </div>
+    </div>
+  );
+}
+
+function PoupancaFinancaPessoal() {
+  const [dados, setDados] = useState(null);
+  const [valor, setValor] = useState("");
+  const [observacao, setObservacao] = useState("");
+
+  async function carregar() {
+    const r = await api.get("/financa-pessoal/poupanca");
+    setDados(r.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function adicionar() {
+    if (!valor || isNaN(Number(valor))) return;
+    await api.post("/financa-pessoal/poupanca/aportes", { valor: Number(valor), observacao: observacao || null });
+    setValor("");
+    setObservacao("");
+    carregar();
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir este movimento?")) return;
+    await api.delete(`/financa-pessoal/poupanca/aportes/${id}`);
+    carregar();
+  }
+
+  if (!dados) return <p>Carregando...</p>;
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <p className="text-xs text-renascer-ink/50 mb-1">Total em poupança</p>
+        <p className="text-2xl font-bold text-renascer">R$ {dados.total.toFixed(2)}</p>
+      </div>
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Adicionar movimento</h3>
+        <p className="text-xs text-renascer-ink/50">Para registrar uma retirada, use um valor negativo.</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input className="input" type="number" step="0.01" placeholder="Valor (R$)" value={valor} onChange={(e) => setValor(e.target.value)} />
+          <input className="input" placeholder="Observação (opcional)" value={observacao} onChange={(e) => setObservacao(e.target.value)} />
+        </div>
+        <button className="btn-primary" onClick={adicionar}>
+          Salvar
+        </button>
+      </div>
+      <div className="card overflow-x-auto">
+        <h3 className="font-semibold mb-2">Movimentos</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-renascer-ink/50">
+              <th className="py-1">Data</th>
+              <th>Valor</th>
+              <th>Observação</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {dados.aportes.map((a) => (
+              <tr key={a.id} className="border-t border-renascer/10">
+                <td className="py-1">{new Date(a.data).toLocaleDateString("pt-BR")}</td>
+                <td className={a.valor >= 0 ? "text-emerald-700" : "text-red-600"}>R$ {a.valor.toFixed(2)}</td>
+                <td>{a.observacao || "-"}</td>
+                <td className="text-right">
+                  <button className="text-xs text-red-600 underline" onClick={() => excluir(a.id)}>
+                    Excluir
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {dados.aportes.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-2 text-renascer-ink/50">
+                  Nenhum movimento ainda.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function NotasFinancaPessoal() {
+  const [notas, setNotas] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [local, setLocal] = useState("");
+
+  async function carregar() {
+    const r = await api.get("/financa-pessoal/notas");
+    setNotas(r.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function criar() {
+    if (!texto) return;
+    await api.post("/financa-pessoal/notas", { texto, local: local || null });
+    setTexto("");
+    setLocal("");
+    carregar();
+  }
+  async function alternar(nota) {
+    await api.put(`/financa-pessoal/notas/${nota.id}`, { resolvido: !nota.resolvido });
+    carregar();
+  }
+  async function excluir(id) {
+    await api.delete(`/financa-pessoal/notas/${id}`);
+    carregar();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Nova anotação / item da lista</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <input
+            className="input md:col-span-2"
+            placeholder="Ex: Comprar fralda, pagar boleto da luz..."
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+          />
+          <input className="input" placeholder="Local (Casa, Trabalho, Bebê...)" value={local} onChange={(e) => setLocal(e.target.value)} />
+        </div>
+        <button className="btn-primary" onClick={criar}>
+          Adicionar
+        </button>
+      </div>
+      <div className="card">
+        <h3 className="font-semibold mb-2">Pendências</h3>
+        <div className="space-y-2">
+          {notas.map((n) => (
+            <div
+              key={n.id}
+              className={`flex items-center justify-between p-2 rounded-lg border border-renascer/10 ${n.resolvido ? "opacity-50" : ""}`}
+            >
+              <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                <input type="checkbox" checked={n.resolvido} onChange={() => alternar(n)} />
+                <span className={n.resolvido ? "line-through" : ""}>{n.texto}</span>
+                {n.local && <span className="badge bg-renascer-light text-renascer">{n.local}</span>}
+              </label>
+              <button className="text-xs text-red-600 underline" onClick={() => excluir(n.id)}>
+                Excluir
+              </button>
+            </div>
+          ))}
+          {notas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma anotação ainda.</p>}
+        </div>
+      </div>
     </div>
   );
 }
