@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
-const { valorDoPlano, calcularRepasse, transacaoDuplicada } = require("../utils/financeiro");
+const { valorDoPlano, calcularRepasse, transacaoDuplicada, parseValorMonetario } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
@@ -71,7 +71,7 @@ router.post("/clientes", async (req, res) => {
   let avisoFinanceiro = null;
 
   const valorOficial = duracao && totalSessoes ? valorDoPlano(duracao, Number(totalSessoes)) : null;
-  const valorFinal = valorTotal ? Number(valorTotal) : valorOficial;
+  const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorOficial;
 
   if (profissionalAtualId && valorFinal) {
     const duplicada = await transacaoDuplicada(prisma, user.cliente.id, valorFinal);
@@ -424,7 +424,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
   const profissional = await prisma.profissional.findUnique({ where: { id: cliente.profissionalAtualId } });
 
   const valorOficial = valorDoPlano(duracao, totalSessoes);
-  const valorFinal = Number(valorTotal ?? valorOficial);
+  const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorOficial;
   if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
 
   const duplicada = await transacaoDuplicada(prisma, cliente.id, valorFinal);
