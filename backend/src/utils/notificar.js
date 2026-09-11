@@ -7,13 +7,16 @@ async function notificar(userId, { titulo, mensagem, tipo = "sistema" }) {
 }
 
 // Verifica se um pacote precisa de aviso de renovação:
-// - avisa a PARTIR da 2ª sessão realizada, e reforça na 3ª, se o pacote tiver 4 sessões
-//   (pacotes de 1 ou 2 sessões avisam quando faltar só 1 pra acabar)
+// - pacotes com 4 sessões ou mais (4, 5, 6, 10, 12...) avisam quando faltarem 2 sessões pra
+//   acabar, e reforçam quando faltar só 1 — baseado em quantas RESTAM, não em quantas já foram
+//   usadas, pra funcionar certo em qualquer tamanho de pacote (antes só funcionava certinho pra
+//   pacotes de exatamente 4 sessões; num pacote de 10, por exemplo, avisava faltando 7/8 sessões)
+// - pacotes de 1 a 3 sessões avisam quando faltar só 1 pra acabar
 function precisaAvisoRenovacao(pacote) {
   if (pacote.status !== "ATIVO") return false;
   const restantes = pacote.totalSessoes - pacote.sessoesUsadas;
   if (pacote.totalSessoes >= 4) {
-    return pacote.sessoesUsadas === 2 || pacote.sessoesUsadas === 3;
+    return restantes === 2 || restantes === 1;
   }
   return restantes === 1;
 }
