@@ -6,6 +6,7 @@ const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 const { notificar } = require("../utils/notificar");
+const { parseValorMonetario } = require("../utils/financeiro");
 
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
@@ -370,7 +371,7 @@ router.put("/transacoes/:id/reclassificar-profissional", async (req, res) => {
 // pendentes mais antigas dela até bater esse valor (não precisa procurar uma por uma).
 router.post("/repasses/:profissionalId/lancar", async (req, res) => {
   const { valor } = req.body;
-  const valorRecebido = Number(valor);
+  const valorRecebido = parseValorMonetario(valor) || 0;
   if (!valorRecebido || valorRecebido <= 0) return res.status(400).json({ erro: "Informe um valor recebido válido." });
 
   const pendentes = await prisma.transacaoFinanceira.findMany({
