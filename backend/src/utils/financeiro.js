@@ -29,6 +29,37 @@ function valorDoPlano(duracao, totalSessoes) {
   return tabela[totalSessoes] ?? null;
 }
 
+// Converte o que a atendente/profissional digitou no campo de valor num número de verdade,
+// aceitando os jeitos que elas realmente digitam: "85", "85,00", "R$ 85,00", "R$85,00",
+// "1.234,56" (formato BR com separador de milhar). Antes disso só "85" puro funcionava —
+// qualquer "R$" ou vírgula fazia o Number() nativo falhar (virava NaN) e o lançamento
+// era rejeitado ou, pior, silenciosamente ignorado.
+function parseValorMonetario(valor) {
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (typeof valor === "number") return Number.isNaN(valor) ? null : valor;
+
+  let texto = String(valor).trim();
+  if (!texto) return null;
+
+  texto = texto
+    .replace(/r\$/gi, "")
+    .replace(/\s/g, "")
+    .replace(/[^\d,.\-]/g, "");
+  if (!texto) return null;
+
+  if (texto.includes(",") && texto.includes(".")) {
+    // "1.234,56" -> tira os pontos de milhar e troca a vírgula decimal por ponto
+    texto = texto.replace(/\./g, "").replace(",", ".");
+  } else if (texto.includes(",")) {
+    // "85,00" -> "85.00"
+    texto = texto.replace(",", ".");
+  }
+  // só ponto (ou nenhum separador) já fica pronto pro Number(), ex: "85.00" ou "85"
+
+  const numero = Number(texto);
+  return Number.isNaN(numero) ? null : numero;
+}
+
 // Trava de segurança: antes de criar uma transação financeira nova, checa se já não existe
 // uma igual pra esse mesmo cliente, no mesmo dia (hoje), com o mesmo valor — pra não contar o
 // mesmo pagamento duas vezes se a atendente e a profissional (ou a atendente duas vezes)
@@ -49,4 +80,4 @@ async function transacaoDuplicada(prisma, clienteId, valorTotal) {
   });
 }
 
-module.exports = { calcularRepasse, PLANOS, valorDoPlano, transacaoDuplicada };
+module.exports = { calcularRepasse, PLANOS, valorDoPlano, transacaoDuplicada, parseValorMonetario };
