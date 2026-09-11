@@ -177,11 +177,14 @@ function AbaCadastrarCliente() {
               <option value="MIN30">30 minutos</option>
               <option value="MIN50">50 minutos</option>
             </select>
-            <select className="input" value={form.totalSessoes} onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}>
-              <option value={1}>Pacote de 1</option>
-              <option value={2}>Pacote de 2</option>
-              <option value={4}>Pacote de 4</option>
-            </select>
+            <input
+              type="number"
+              min="1"
+              className="input"
+              placeholder="Nº de sessões do pacote"
+              value={form.totalSessoes}
+              onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
+            />
             <input
               type="number"
               min="0"
@@ -981,11 +984,14 @@ function NovoPacoteCliente({ clienteId }) {
           <option value="MIN30">30 minutos</option>
           <option value="MIN50">50 minutos</option>
         </select>
-        <select className="input !w-auto" value={totalSessoes} onChange={(e) => setTotalSessoes(e.target.value)}>
-          <option value={1}>1 sessão</option>
-          <option value={2}>2 sessões</option>
-          <option value={4}>4 sessões</option>
-        </select>
+        <input
+          type="number"
+          min="1"
+          className="input !w-36"
+          placeholder="Nº de sessões"
+          value={totalSessoes}
+          onChange={(e) => setTotalSessoes(e.target.value)}
+        />
         <input className="input !w-40" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
         <button className="btn-primary" onClick={registrar}>
           Registrar pacote
