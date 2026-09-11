@@ -369,11 +369,14 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
           <option value="MIN30">30 minutos</option>
           <option value="MIN50">50 minutos</option>
         </select>
-        <select className="input !w-auto" value={totalSessoes} onChange={(e) => setTotalSessoes(e.target.value)}>
-          <option value={1}>1 sessão</option>
-          <option value={2}>2 sessões</option>
-          <option value={4}>4 sessões</option>
-        </select>
+        <input
+          type="number"
+          min="1"
+          className="input !w-32"
+          placeholder="Nº de sessões"
+          value={totalSessoes}
+          onChange={(e) => setTotalSessoes(e.target.value)}
+        />
         <input className="input !w-32" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
       </div>
       <div>
@@ -483,11 +486,14 @@ function Clientes() {
               <option value="MIN30">30 minutos</option>
               <option value="MIN50">50 minutos</option>
             </select>
-            <select className="input" value={form.totalSessoes} onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}>
-              <option value={1}>1 sessão</option>
-              <option value={2}>2 sessões</option>
-              <option value={4}>4 sessões</option>
-            </select>
+            <input
+              type="number"
+              min="1"
+              className="input"
+              placeholder="Nº de sessões"
+              value={form.totalSessoes}
+              onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
+            />
             <input className="input" placeholder="Valor (opcional)" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: e.target.value })} />
           </div>
           <div className="mt-2">
