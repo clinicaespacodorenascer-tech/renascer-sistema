@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
-const { calcularRepasse, valorDoPlano, transacaoDuplicada } = require("../utils/financeiro");
+const { calcularRepasse, valorDoPlano, transacaoDuplicada, parseValorMonetario } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
@@ -412,7 +412,7 @@ router.post("/financeiro/calcular", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const prof = await prisma.profissional.findUnique({ where: { id: profissionalId } });
   const { valorTotal } = req.body;
-  res.json(calcularRepasse(Number(valorTotal), prof.percentualRepasse));
+  res.json(calcularRepasse(parseValorMonetario(valorTotal) || 0, prof.percentualRepasse));
 });
 
 // Upload de comprovante — a IA tenta reconhecer valor/tipo automaticamente.
@@ -432,7 +432,7 @@ router.post("/financeiro/comprovante", async (req, res) => {
     }
   }
 
-  const valorFinal = Number(valorManual ?? reconhecido.valor);
+  const valorFinal = valorManual !== undefined && valorManual !== null && valorManual !== "" ? parseValorMonetario(valorManual) : Number(reconhecido.valor);
   if (!valorFinal || Number.isNaN(valorFinal)) {
     return res.status(400).json({ erro: "Não consegui identificar o valor. Informe manualmente.", reconhecido });
   }
@@ -498,8 +498,9 @@ router.post("/financeiro/:id/repasse-comprovante", async (req, res) => {
     }
   }
 
-  const valorInformadoNum = Number(valorManual ?? reconhecido.valor);
-  const valorInformado = Number.isNaN(valorInformadoNum) ? null : valorInformadoNum;
+  const valorInformadoNum =
+    valorManual !== undefined && valorManual !== null && valorManual !== "" ? parseValorMonetario(valorManual) : Number(reconhecido.valor);
+  const valorInformado = valorInformadoNum === null || Number.isNaN(valorInformadoNum) ? null : valorInformadoNum;
   const bateComEsperado = valorInformado != null && Math.abs(valorInformado - transacao.valorRenascer) < 0.01;
 
   const atualizada = await prisma.transacaoFinanceira.update({
@@ -696,7 +697,7 @@ router.post("/clientes", async (req, res) => {
     const total = Number(totalSessoes);
     const usadas =
       sessoesRestantes !== undefined && sessoesRestantes !== "" ? Math.max(0, total - Number(sessoesRestantes)) : 0;
-    const valorFinal = valorTotal ? Number(valorTotal) : valorDoPlano(duracao, total) || 0;
+    const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorDoPlano(duracao, total) || 0;
     pacote = await prisma.pacote.create({
       data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: usadas, valorTotal: valorFinal, status: "ATIVO" },
     });
@@ -902,7 +903,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
 
   const { duracao, totalSessoes, valorTotal } = req.body;
   const valorOficial = valorDoPlano(duracao, totalSessoes);
-  const valorFinal = Number(valorTotal ?? valorOficial);
+  const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorOficial;
   if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
 
   const duplicada = await transacaoDuplicada(prisma, cliente.id, valorFinal);
