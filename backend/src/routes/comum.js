@@ -2,9 +2,43 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { autenticar } = require("../middleware/auth");
+const { vapidPublicKey } = require("../utils/push");
 
 const router = express.Router();
 router.use(autenticar);
+
+// ---------- Notificações push (toque/vibração no aparelho) ----------
+// A chave pública é a mesma pra todo mundo — é ela que o navegador usa pra criar a inscrição
+// (isso não é segredo, quem guarda segredo é a chave PRIVADA, que nunca sai do backend).
+router.get("/push/chave-publica", (req, res) => {
+  res.json({ publicKey: vapidPublicKey });
+});
+
+// Salva (ou atualiza) a inscrição desse aparelho pra esse usuário. Um mesmo usuário pode ter
+// vários aparelhos inscritos (celular + computador) — cada "endpoint" é único por aparelho, por
+// isso o upsert é por endpoint, não por usuário.
+router.post("/push/inscrever", async (req, res) => {
+  const { endpoint, keys } = req.body;
+  if (!endpoint || !keys?.p256dh || !keys?.auth) {
+    return res.status(400).json({ erro: "Inscrição de notificação inválida." });
+  }
+
+  await prisma.pushSubscription.upsert({
+    where: { endpoint },
+    update: { userId: req.user.id, p256dh: keys.p256dh, auth: keys.auth },
+    create: { userId: req.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+  });
+  res.json({ ok: true });
+});
+
+// Remove a inscrição desse aparelho (usado quando a pessoa desativa notificações).
+router.delete("/push/inscrever", async (req, res) => {
+  const { endpoint } = req.body;
+  if (endpoint) {
+    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: req.user.id } });
+  }
+  res.json({ ok: true });
+});
 
 router.get("/notificacoes", async (req, res) => {
   const notificacoes = await prisma.notificacao.findMany({
