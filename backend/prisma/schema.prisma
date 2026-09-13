@@ -138,6 +138,7 @@ model User {
 
   notificacoes  Notificacao[]
   mensagensEnviadas Mensagem[] @relation("MensagensEnviadas")
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -206,6 +207,8 @@ model Disponibilidade {
   ocupadoPorCliente   Cliente?  @relation("ClienteHorarioFixo", fields: [ocupadoPorClienteId], references: [id])
   ocupadoEm           DateTime?
 
+  @@index([profissionalId])
+  @@index([ocupadoPorClienteId])
   @@map("disponibilidades")
 }
 
@@ -253,6 +256,8 @@ model Cliente {
 
   criadoEm       DateTime @default(now())
 
+  @@index([profissionalAtualId])
+  @@index([situacao])
   @@map("clientes")
 }
 
@@ -273,6 +278,7 @@ model HistoricoCliente {
 
   criadoEm         DateTime            @default(now())
 
+  @@index([clienteId])
   @@map("historico_clientes")
 }
 
@@ -320,6 +326,9 @@ model Pacote {
 
   agendamentos   Agendamento[]
 
+  @@index([clienteId])
+  @@index([profissionalId])
+  @@index([status])
   @@map("pacotes")
 }
 
@@ -352,6 +361,10 @@ model Agendamento {
   criadoEm       DateTime          @default(now())
   atualizadoEm   DateTime          @updatedAt
 
+  @@index([profissionalId])
+  @@index([clienteId])
+  @@index([data])
+  @@index([status])
   @@map("agendamentos")
 }
 
@@ -421,6 +434,11 @@ model TransacaoFinanceira {
 
   criadoEm       DateTime       @default(now())
 
+  @@index([profissionalId])
+  @@index([clienteId])
+  @@index([data])
+  @@index([recebidoPor, repassado])
+  @@index([origem])
   @@map("transacoes_financeiras")
 }
 
@@ -439,6 +457,8 @@ model RelatorioCliente {
 
   criadoEm       DateTime     @default(now())
 
+  @@index([clienteId])
+  @@index([profissionalId])
   @@map("relatorios_cliente")
 }
 
@@ -459,6 +479,8 @@ model MensagemInterna {
   lida           Boolean      @default(false)
   criadoEm       DateTime     @default(now())
 
+  @@index([clienteId])
+  @@index([profissionalId])
   @@map("mensagens_internas")
 }
 
@@ -470,6 +492,7 @@ model RecadoDiario {
   texto      String   @db.Text
   data       DateTime @default(now())
 
+  @@index([clienteId])
   @@map("recados_diarios")
 }
 
@@ -483,6 +506,7 @@ model CheckinDiario {
   tarefaFeita Boolean?
   data       DateTime @default(now())
 
+  @@index([clienteId])
   @@map("checkins_diarios")
 }
 
@@ -497,6 +521,7 @@ model Mensagem {
   anexoUrl    String?
   criadoEm    DateTime @default(now())
 
+  @@index([ticketId])
   @@map("mensagens")
 }
 
@@ -513,6 +538,8 @@ model TicketSuporte {
   criadoEm    DateTime      @default(now())
   atualizadoEm DateTime     @updatedAt
 
+  @@index([clienteId])
+  @@index([status])
   @@map("tickets_suporte")
 }
 
@@ -545,6 +572,8 @@ model TarefaCliente {
   atribuidoEm DateTime @default(now())
   concluidoEm DateTime?
 
+  @@index([clienteId])
+  @@index([tarefaId])
   @@map("tarefas_cliente")
 }
 
@@ -560,7 +589,25 @@ model Notificacao {
   lida      Boolean  @default(false)
   criadoEm  DateTime @default(now())
 
+  @@index([userId])
   @@map("notificacoes")
+}
+
+// Inscrição de notificação push de UM aparelho de UM usuário — cada pessoa pode ter mais de um
+// aparelho inscrito (celular + computador, por exemplo), por isso é uma tabela separada e não um
+// campo único no User. "endpoint" é o identificador único que o navegador/aparelho gera pra essa
+// inscrição; "p256dh"/"auth" são as chaves de criptografia exigidas pelo protocolo Web Push.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  criadoEm  DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 // ---------- FINANÇAS PESSOAIS (privado, só quem é DONO vê — isolado do resto do sistema:
