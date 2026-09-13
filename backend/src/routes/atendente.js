@@ -4,7 +4,7 @@ const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { valorDoPlano, calcularRepasse, transacaoDuplicada, parseValorMonetario } = require("../utils/financeiro");
-const { notificar } = require("../utils/notificar");
+const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
@@ -66,6 +66,24 @@ router.post("/clientes", async (req, res) => {
     data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
   });
 
+  // Avisa a gestão (donos + outras atendentes) que entrou cliente novo, e a profissional
+  // vinculada (se já veio vinculada nesse cadastro) que chegou cliente novo pra ela.
+  await notificarDonos({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) pela recepção.`, tipo: "cliente" });
+  await notificarAtendentes(
+    { titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a).`, tipo: "cliente" },
+    req.user.id
+  );
+  if (profissionalAtualId) {
+    const profissionalVinculada = await prisma.profissional.findUnique({ where: { id: profissionalAtualId }, select: { userId: true } });
+    if (profissionalVinculada) {
+      await notificar(profissionalVinculada.userId, {
+        titulo: "Novo cliente pra você!",
+        mensagem: `${nome} foi vinculado(a) a você pela recepção.`,
+        tipo: "cliente",
+      });
+    }
+  }
+
   let pacote = null;
   let transacao = null;
   let avisoFinanceiro = null;
@@ -110,6 +128,11 @@ router.post("/clientes", async (req, res) => {
       await notificar(profissional.userId, {
         titulo: "Lembrete de repasse",
         mensagem: `Pagamento de ${nome} registrado — você recebe direto e precisa repassar R$ ${valorRenascer.toFixed(2)} pra Renascer (anexe o comprovante na aba Financeiro assim que repassar).`,
+        tipo: "financeiro",
+      });
+      await notificarDonos({
+        titulo: "Tem dinheiro na área!",
+        mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)} de ${nome} registrado pela recepção — repasse esperado da profissional: R$ ${valorRenascer.toFixed(2)}.`,
         tipo: "financeiro",
       });
     }
@@ -161,6 +184,11 @@ router.put("/clientes/:id/situacao", async (req, res) => {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
     // Libera qualquer horário fixo que esse cliente tivesse — volta a aparecer livre pra outros.
     await prisma.disponibilidade.updateMany({ where: { ocupadoPorClienteId: cliente.id }, data: { ocupadoPorClienteId: null, ocupadoEm: null } });
+    await notificarDonos({
+      titulo: "Cliente saiu",
+      mensagem: `${base.nomeCliente} não renovou e foi removido(a) pela recepção${base.profissionalNome ? ` (profissional: ${base.profissionalNome})` : ""}.`,
+      tipo: "cliente",
+    });
   } else {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
   }
@@ -206,6 +234,13 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       profissionalNome: cliente.profissionalAtual?.user?.nome || null,
     },
   });
+  if (cliente.profissionalAtual?.user) {
+    await notificar(cliente.profissionalAtual.user.id, {
+      titulo: "Novo cliente pra você!",
+      mensagem: `${cliente.user.nome} foi reativado(a) e vinculado(a) a você pela recepção.`,
+      tipo: "cliente",
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -218,7 +253,18 @@ router.get("/clientes/:id/metricas", async (req, res) => {
 
 router.put("/clientes/:id/vincular-profissional", async (req, res) => {
   const { profissionalId } = req.body;
-  const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: { profissionalAtualId: profissionalId } });
+  const cliente = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { profissionalAtualId: profissionalId },
+    include: { user: true, profissionalAtual: { include: { user: true } } },
+  });
+  if (cliente.profissionalAtual?.user) {
+    await notificar(cliente.profissionalAtual.user.id, {
+      titulo: "Novo cliente pra você!",
+      mensagem: `${cliente.user.nome} foi vinculado(a) a você pela recepção.`,
+      tipo: "cliente",
+    });
+  }
   res.json(cliente);
 });
 
@@ -471,6 +517,12 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
   await notificar(profissional.userId, {
     titulo: "Lembrete de repasse",
     mensagem: `Pagamento de ${cliente.user?.nome || "seu cliente"} registrado — você recebe direto e precisa repassar R$ ${valorRenascer.toFixed(2)} pra Renascer (anexe o comprovante na aba Financeiro assim que repassar).`,
+    tipo: "financeiro",
+  });
+
+  await notificarDonos({
+    titulo: "Tem dinheiro na área!",
+    mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)} de ${cliente.user?.nome || "um cliente"} registrado pela recepção — repasse esperado da profissional: R$ ${valorRenascer.toFixed(2)}.`,
     tipo: "financeiro",
   });
 
