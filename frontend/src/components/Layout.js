@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Logo from "./Logo";
 import api, { sair, atualizarUsuarioLocal } from "../lib/api";
+import { inscreverPush, statusPermissao, tentarReinscreverSilenciosamente } from "../lib/push";
 
 // Avatar que qualquer papel (Cliente, Atendente, Dono ou Profissional) pode clicar pra trocar a
 // própria foto — antes só a Profissional tinha isso, na tela de perfil dela. Aqui é a mesma foto
@@ -58,6 +59,129 @@ function AvatarEditavel({ user }) {
   );
 }
 
+// Sininho de notificações — usado por TODOS os papéis (Dono, Profissional, Cliente, Atendente),
+// por isso mora aqui no Layout compartilhado em vez de dentro de cada página. Faz duas coisas:
+// mostra os avisos salvos dentro do app (o que já existia antes, cada papel tinha sua própria
+// aba "Avisos" pra isso) e oferece o botão pra ativar notificação push de verdade no aparelho
+// (toque/vibração, mesmo com o app fechado).
+function SininhoNotificacoes() {
+  const [aberto, setAberto] = useState(false);
+  const [lista, setLista] = useState([]);
+  const [totalNaoLidas, setTotalNaoLidas] = useState(0);
+  const [statusPush, setStatusPush] = useState("default");
+  const [ativando, setAtivando] = useState(false);
+  const [avisoPush, setAvisoPush] = useState("");
+  const menuRef = useRef(null);
+
+  async function carregarTotal() {
+    try {
+      const { data } = await api.get("/comum/notificacoes/nao-lidas/total");
+      setTotalNaoLidas(data.total);
+    } catch (e) {
+      // silencioso — não vale a pena travar a tela por causa do contador do sininho
+    }
+  }
+
+  useEffect(() => {
+    carregarTotal();
+    setStatusPush(statusPermissao());
+    tentarReinscreverSilenciosamente();
+    const intervalo = setInterval(carregarTotal, 60000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  useEffect(() => {
+    function fecharAoClicarFora(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setAberto(false);
+    }
+    document.addEventListener("mousedown", fecharAoClicarFora);
+    return () => document.removeEventListener("mousedown", fecharAoClicarFora);
+  }, []);
+
+  async function carregarLista() {
+    const { data } = await api.get("/comum/notificacoes");
+    setLista(data);
+  }
+
+  async function alternarMenu() {
+    const vaiAbrir = !aberto;
+    setAberto(vaiAbrir);
+    if (vaiAbrir) await carregarLista();
+  }
+
+  async function marcarLida(id) {
+    await api.put(`/comum/notificacoes/${id}/lida`);
+    setLista((prev) => prev.map((n) => (n.id === id ? { ...n, lida: true } : n)));
+    carregarTotal();
+  }
+
+  async function ativarNotificacoes() {
+    setAtivando(true);
+    setAvisoPush("");
+    const resultado = await inscreverPush();
+    setAtivando(false);
+    setStatusPush(statusPermissao());
+    if (!resultado.ok) setAvisoPush(resultado.motivo || "Não foi possível ativar as notificações agora.");
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        type="button"
+        onClick={alternarMenu}
+        aria-label="Notificações"
+        className="relative p-2 rounded-lg hover:bg-renascer-light transition-colors text-renascer-ink/70"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+        {totalNaoLidas > 0 && (
+          <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-gold text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+            {totalNaoLidas > 9 ? "9+" : totalNaoLidas}
+          </span>
+        )}
+      </button>
+
+      {aberto && (
+        <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-renascer-ink/10 z-40 max-h-[70vh] overflow-y-auto">
+          <div className="p-3 border-b border-renascer-ink/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white">
+            <span className="font-semibold text-sm">Notificações</span>
+            {statusPush !== "granted" && (
+              <button
+                type="button"
+                onClick={ativarNotificacoes}
+                disabled={ativando}
+                className="text-xs text-renascer underline whitespace-nowrap disabled:opacity-50"
+              >
+                {ativando ? "Ativando..." : "Ativar no aparelho"}
+              </button>
+            )}
+            {statusPush === "granted" && <span className="text-[11px] text-green-700">Push ativado ✓</span>}
+          </div>
+          {avisoPush && <p className="px-3 py-2 text-xs text-red-600 border-b border-renascer-ink/[0.06]">{avisoPush}</p>}
+          <div className="p-2 space-y-1.5">
+            {lista.map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => marcarLida(n.id)}
+                className={`w-full text-left border rounded-lg p-2.5 transition-colors ${
+                  n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"
+                }`}
+              >
+                <p className="font-medium text-xs">{n.titulo}</p>
+                <p className="text-xs text-renascer-ink/60 mt-0.5">{n.mensagem}</p>
+              </button>
+            ))}
+            {lista.length === 0 && <p className="text-xs text-renascer-ink/40 px-2 py-4 text-center">Nenhum aviso por enquanto.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, children }) {
   const [menuAberto, setMenuAberto] = useState(false);
 
@@ -88,6 +212,7 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
             <Logo size={52} />
           </div>
           <div className="flex items-center gap-3">
+            {user && <SininhoNotificacoes />}
             {user && (
               <span className="hidden sm:flex items-center gap-2 text-sm text-renascer-ink/70 bg-renascer-light/70 border border-renascer/10 rounded-full pl-1.5 pr-3 py-1">
                 <AvatarEditavel user={user} />
