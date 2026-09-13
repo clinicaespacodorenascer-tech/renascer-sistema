@@ -5,7 +5,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
-const { notificar } = require("../utils/notificar");
+const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { parseValorMonetario } = require("../utils/financeiro");
 
 const router = express.Router();
@@ -154,6 +154,13 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       profissionalNome: cliente.profissionalAtual?.user?.nome || null,
     },
   });
+  if (cliente.profissionalAtual?.user) {
+    await notificar(cliente.profissionalAtual.user.id, {
+      titulo: "Novo cliente pra você!",
+      mensagem: `${cliente.user.nome} foi reativado(a) e vinculado(a) a você.`,
+      tipo: "cliente",
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -376,6 +383,7 @@ router.post("/repasses/:profissionalId/lancar", async (req, res) => {
 
   const pendentes = await prisma.transacaoFinanceira.findMany({
     where: { profissionalId: req.params.profissionalId, recebidoPor: "PROFISSIONAL", repassado: false },
+    select: { id: true, valorRenascer: true },
     orderBy: { data: "asc" },
   });
 
@@ -455,6 +463,18 @@ router.post("/usuarios", async (req, res) => {
     await prisma.historicoCliente.create({
       data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
     });
+    await notificarDonos({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`, tipo: "cliente" }, req.user.id);
+    await notificarAtendentes({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`, tipo: "cliente" });
+    if (profissionalAtualId) {
+      const profissionalVinculada = await prisma.profissional.findUnique({ where: { id: profissionalAtualId }, select: { userId: true } });
+      if (profissionalVinculada) {
+        await notificar(profissionalVinculada.userId, {
+          titulo: "Novo cliente pra você!",
+          mensagem: `${nome} foi vinculado(a) a você.`,
+          tipo: "cliente",
+        });
+      }
+    }
   }
 
   res.json({ id: user.id, email: user.email, role: user.role, cliente: user.cliente || undefined });
