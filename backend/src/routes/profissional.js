@@ -4,7 +4,7 @@ const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularRepasse, valorDoPlano, transacaoDuplicada, parseValorMonetario } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
-const { notificar, precisaAvisoRenovacao } = require("../utils/notificar");
+const { notificar, notificarDonos, notificarAtendentes, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const { haConflito, diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
@@ -139,7 +139,7 @@ router.put("/agenda/:id/status", async (req, res) => {
     });
 
     if (precisaAvisoRenovacao(pacote)) {
-      const cliente = await prisma.cliente.findUnique({ where: { id: pacote.clienteId } });
+      const cliente = await prisma.cliente.findUnique({ where: { id: pacote.clienteId }, include: { user: true } });
       await notificar(cliente.userId, {
         titulo: "Seu pacote está terminando",
         mensagem: `Você já usou ${pacote.sessoesUsadas} de ${pacote.totalSessoes} sessões. Que tal renovar pra não perder seu horário fixo?`,
@@ -148,6 +148,11 @@ router.put("/agenda/:id/status", async (req, res) => {
       await notificar(req.user.id, {
         titulo: "Cliente perto de renovar",
         mensagem: `Avise seu cliente sobre a renovação do pacote (sessão ${pacote.sessoesUsadas}/${pacote.totalSessoes}).`,
+        tipo: "renovacao",
+      });
+      await notificarDonos({
+        titulo: "Cliente perto de renovar",
+        mensagem: `${cliente.user?.nome || "Um cliente"} está perto de terminar o pacote (sessão ${pacote.sessoesUsadas}/${pacote.totalSessoes}) com ${req.user.nome || "a profissional"}.`,
         tipo: "renovacao",
       });
     }
@@ -467,6 +472,17 @@ router.post("/financeiro/comprovante", async (req, res) => {
     },
   });
 
+  let nomeCliente = null;
+  if (clienteId) {
+    const clienteDaTransacao = await prisma.cliente.findUnique({ where: { id: clienteId }, include: { user: { select: { nome: true } } } });
+    nomeCliente = clienteDaTransacao?.user?.nome || null;
+  }
+  await notificarDonos({
+    titulo: "Tem dinheiro na área!",
+    mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)}${nomeCliente ? ` de ${nomeCliente}` : ""} registrado por ${req.user.nome} — repasse esperado: R$ ${valorRenascer.toFixed(2)}.`,
+    tipo: "financeiro",
+  });
+
   res.json({ transacao, reconhecido });
 });
 
@@ -681,6 +697,16 @@ router.post("/clientes", async (req, res) => {
   await prisma.historicoCliente.create({
     data: { clienteId, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, profissionalNome: req.user.nome },
   });
+  await notificarDonos({
+    titulo: "Novo cliente cadastrado",
+    mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`,
+    tipo: "cliente",
+  });
+  await notificarAtendentes({
+    titulo: "Novo cliente cadastrado",
+    mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`,
+    tipo: "cliente",
+  });
   let pacote = null;
   let transacao = null;
   let avisoFinanceiro = null;
@@ -811,6 +837,11 @@ router.put("/clientes/:id/situacao", async (req, res) => {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
     // Libera qualquer horário fixo que esse cliente tivesse — volta a aparecer livre pra outros.
     await prisma.disponibilidade.updateMany({ where: { ocupadoPorClienteId: cliente.id }, data: { ocupadoPorClienteId: null, ocupadoEm: null } });
+    await notificarDonos({
+      titulo: "Cliente saiu",
+      mensagem: `${base.nomeCliente} não renovou e foi removido(a) por ${req.user.nome}.`,
+      tipo: "cliente",
+    });
   } else {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "ATIVO" } });
   }
@@ -898,7 +929,10 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
 // Isso é o que efetivamente libera sessões pro cliente agendar no app.
 router.post("/clientes/:id/pacotes", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
-  const cliente = await prisma.cliente.findFirst({ where: { id: req.params.id, profissionalAtualId: profissionalId } });
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: req.params.id, profissionalAtualId: profissionalId },
+    include: { user: { select: { nome: true } } },
+  });
   if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado ou não é seu." });
 
   const { duracao, totalSessoes, valorTotal } = req.body;
@@ -946,6 +980,12 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     titulo: "Novo pacote liberado",
     mensagem: `Seu pacote de ${totalSessoes} sessão(ões) foi confirmado. Já pode agendar seus horários!`,
     tipo: "sistema",
+  });
+
+  await notificarDonos({
+    titulo: "Tem dinheiro na área!",
+    mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)} de ${cliente.user?.nome || "um cliente"} registrado por ${req.user.nome} — repasse esperado: R$ ${valorRenascer.toFixed(2)}.`,
+    tipo: "financeiro",
   });
 
   res.json({ ...pacote, transacao });
