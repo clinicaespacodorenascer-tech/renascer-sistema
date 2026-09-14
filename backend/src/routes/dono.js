@@ -95,7 +95,9 @@ router.get("/dashboard", async (req, res) => {
 router.get("/profissionais", async (req, res) => {
   const profissionais = await prisma.profissional.findMany({
     include: {
-      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true } },
+      // "role" vai junto pra dar pra identificar, na lista, qual profissional é também um
+      // login de Dono (ex: o próprio Elismael atendendo) — mostra um selo "Dono".
+      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true, role: true } },
       clientes: { include: { user: { select: { nome: true } } } },
       disponibilidades: true,
       _count: { select: { clientes: true, agendamentos: true } },
@@ -108,7 +110,7 @@ router.get("/clientes", async (req, res) => {
   const clientes = await prisma.cliente.findMany({
     include: {
       user: { select: { nome: true, email: true, telefone: true, ativo: true } },
-      profissionalAtual: { include: { user: { select: { nome: true } } } },
+      profissionalAtual: { include: { user: { select: { nome: true, role: true } } } },
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
   });
