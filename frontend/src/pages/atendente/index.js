@@ -6,6 +6,7 @@ import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
+import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -558,6 +559,13 @@ function Clientes() {
                       <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
                       <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
                       <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />
+                      <TrocarProfissionalCliente
+                        clienteId={c.id}
+                        profissionalAtualNome={c.profissionalAtual?.user?.nome}
+                        profissionais={profissionais}
+                        rotaBase="/atendente"
+                        onTrocou={carregar}
+                      />
                     </td>
                   </tr>
                 );
