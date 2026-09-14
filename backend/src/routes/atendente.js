@@ -251,17 +251,47 @@ router.get("/clientes/:id/metricas", async (req, res) => {
   res.json(metricas);
 });
 
+// Troca o cliente de profissional a qualquer momento — não depende de pacote encerrado nem do
+// cliente estar na fila de reativação (isso é diferente da troca que o próprio cliente faz pelo
+// app). Pensada pra recepção conseguir mover clientes que estavam soltos ou com outra
+// profissional, inclusive pro login do próprio Dono quando ele também atende pacientes (ver Fase
+// 13, "Dono também é Profissional"). Também reativa o cliente se ele estava com situação excluída.
 router.put("/clientes/:id/vincular-profissional", async (req, res) => {
   const { profissionalId } = req.body;
+  if (!profissionalId) return res.status(400).json({ erro: "Escolha a profissional que vai atender esse cliente." });
+
+  const antes = await prisma.cliente.findUnique({
+    where: { id: req.params.id },
+    include: { profissionalAtual: { include: { user: { select: { nome: true } } } } },
+  });
+  if (!antes) return res.status(404).json({ erro: "Cliente não encontrado." });
+  const nomeProfissionalAntiga = antes.profissionalAtual?.user?.nome || null;
+
   const cliente = await prisma.cliente.update({
     where: { id: req.params.id },
-    data: { profissionalAtualId: profissionalId },
+    data: { profissionalAtualId: profissionalId, situacao: "ATIVO" },
     include: { user: true, profissionalAtual: { include: { user: true } } },
   });
+
+  await prisma.historicoCliente.create({
+    data: {
+      clienteId: cliente.id,
+      tipo: "TROCOU_PROFISSIONAL",
+      nomeCliente: cliente.user.nome,
+      whatsapp: cliente.whatsappCadastro,
+      profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+      motivo: nomeProfissionalAntiga
+        ? `Trocado(a) de ${nomeProfissionalAntiga} pela recepção.`
+        : "Vinculado(a) a uma profissional pela recepção.",
+    },
+  });
+
   if (cliente.profissionalAtual?.user) {
     await notificar(cliente.profissionalAtual.user.id, {
       titulo: "Novo cliente pra você!",
-      mensagem: `${cliente.user.nome} foi vinculado(a) a você pela recepção.`,
+      mensagem: `${cliente.user.nome} foi vinculado(a) a você pela recepção${
+        nomeProfissionalAntiga ? ` (estava com ${nomeProfissionalAntiga})` : ""
+      }.`,
       tipo: "cliente",
     });
   }
