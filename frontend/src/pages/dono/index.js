@@ -197,6 +197,7 @@ function ClientesParaReativar({ rotaBase }) {
                 {profissionais.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.user.nome}
+                    {p.user.role === "DONO" ? " (Dono)" : ""}
                   </option>
                 ))}
               </select>
@@ -381,7 +382,12 @@ function Profissionais() {
         <div key={p.id} className="card">
           <div className="flex justify-between items-start">
             <div>
-              <p className="font-semibold">{p.user.nome}</p>
+              <p className="font-semibold flex items-center gap-1.5 flex-wrap">
+                {p.user.nome}
+                {p.user.role === "DONO" && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Dono</span>
+                )}
+              </p>
               <p className="text-sm text-renascer-ink/60">{p.titulo} · {p._count.clientes} clientes · {p._count.agendamentos} sessões</p>
             </div>
             <span className={`badge ${p.user.ativo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
@@ -438,7 +444,10 @@ function Clientes() {
                   <StatusCliente status={c.statusCliente} />
                   {c.user.nome}
                 </td>
-                <td>{c.profissionalAtual?.user?.nome || "-"}</td>
+                <td>
+                  {c.profissionalAtual?.user?.nome || "-"}
+                  {c.profissionalAtual?.user?.role === "DONO" ? " (Dono)" : ""}
+                </td>
                 <td>{c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes}` : "-"}</td>
                 <td>{c.pacotes[0]?.status || "-"}</td>
               </tr>,
@@ -453,7 +462,10 @@ function Clientes() {
                     <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
                     <TrocarProfissionalCliente
                       clienteId={c.id}
-                      profissionalAtualNome={c.profissionalAtual?.user?.nome}
+                      profissionalAtualNome={
+                        c.profissionalAtual?.user?.nome &&
+                        c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "")
+                      }
                       profissionais={profissionais}
                       rotaBase="/dono"
                       onTrocou={carregar}
@@ -1014,6 +1026,7 @@ function Usuarios() {
               {profissionais.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.user.nome}
+                  {p.user.role === "DONO" ? " (Dono)" : ""}
                 </option>
               ))}
             </select>
