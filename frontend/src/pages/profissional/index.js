@@ -101,7 +101,7 @@ const FORM_CADASTRO_VAZIO = {
   horaFixa: "",
 };
 
-function AbaCadastrarCliente() {
+export function AbaCadastrarCliente() {
   const [total, setTotal] = useState(null);
   const [form, setForm] = useState(FORM_CADASTRO_VAZIO);
   const [resultado, setResultado] = useState(null);
@@ -252,7 +252,7 @@ function AbaCadastrarCliente() {
 }
 
 // ---------------- AGENDA (estilo Trello por dia) ----------------
-function AbaAgenda() {
+export function AbaAgenda() {
   const [colunas, setColunas] = useState(null);
   const [colunaSobre, setColunaSobre] = useState(null);
   const [erro, setErro] = useState("");
@@ -650,7 +650,7 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
 }
 
 // ---------------- CLIENTES (lista + chat + relatórios) ----------------
-function AbaClientes() {
+export function AbaClientes() {
   const [clientes, setClientes] = useState([]);
   const [selecionadoId, setSelecionadoId] = useState(null);
 
@@ -1092,7 +1092,7 @@ function RelatoriosCliente({ clienteId }) {
 }
 
 // ---------------- FINANCEIRO ----------------
-function AbaFinanceiro() {
+export function AbaFinanceiro() {
   const [resumo, setResumo] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [valorCalc, setValorCalc] = useState("");
@@ -1406,7 +1406,7 @@ function AbaNotificacoes() {
 }
 
 // ---------------- CONFIGURAÇÃO / PERFIL + DISPONIBILIDADE ----------------
-function AbaConfig() {
+export function AbaConfig() {
   const [perfil, setPerfil] = useState(null);
   const [disponibilidades, setDisponibilidades] = useState([]);
 
