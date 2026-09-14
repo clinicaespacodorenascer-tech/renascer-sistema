@@ -117,6 +117,53 @@ router.get("/clientes", async (req, res) => {
   );
 });
 
+// Troca o cliente de profissional a qualquer momento — não depende de pacote encerrado nem do
+// cliente estar na fila de reativação. Pensada pro dono conseguir mover clientes que estavam
+// soltos ou com outra profissional, inclusive pro próprio login dele quando também atende
+// pacientes (ver Fase 13, "Dono também é Profissional"). Também reativa o cliente se ele estava
+// com situação excluída.
+router.put("/clientes/:id/vincular-profissional", async (req, res) => {
+  const { profissionalId } = req.body;
+  if (!profissionalId) return res.status(400).json({ erro: "Escolha a profissional que vai atender esse cliente." });
+
+  const antes = await prisma.cliente.findUnique({
+    where: { id: req.params.id },
+    include: { profissionalAtual: { include: { user: { select: { nome: true } } } } },
+  });
+  if (!antes) return res.status(404).json({ erro: "Cliente não encontrado." });
+  const nomeProfissionalAntiga = antes.profissionalAtual?.user?.nome || null;
+
+  const cliente = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { profissionalAtualId: profissionalId, situacao: "ATIVO" },
+    include: { user: true, profissionalAtual: { include: { user: true } } },
+  });
+
+  await prisma.historicoCliente.create({
+    data: {
+      clienteId: cliente.id,
+      tipo: "TROCOU_PROFISSIONAL",
+      nomeCliente: cliente.user.nome,
+      whatsapp: cliente.whatsappCadastro,
+      profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+      motivo: nomeProfissionalAntiga
+        ? `Trocado(a) de ${nomeProfissionalAntiga} pelo Dono.`
+        : "Vinculado(a) a uma profissional pelo Dono.",
+    },
+  });
+
+  if (cliente.profissionalAtual?.user) {
+    await notificar(cliente.profissionalAtual.user.id, {
+      titulo: "Novo cliente pra você!",
+      mensagem: `${cliente.user.nome} foi vinculado(a) a você${
+        nomeProfissionalAntiga ? ` (estava com ${nomeProfissionalAntiga})` : ""
+      }.`,
+      tipo: "cliente",
+    });
+  }
+  res.json(cliente);
+});
+
 // ---------- Fila de reativação (clientes que não renovaram e foram removidos da lista de
 // alguma profissional) — o dono também consegue reativar direto por aqui, igual a atendente.
 router.get("/clientes-reativar", async (req, res) => {
@@ -417,7 +464,7 @@ router.post("/repasses/:profissionalId/lancar", async (req, res) => {
 
 // ---------- Gestão de usuários (criar login de profissional/atendente/dono) ----------
 router.post("/usuarios", async (req, res) => {
-  const { nome, email, telefone, senha, role, dadosProfissional, profissionalAtualId } = req.body;
+  const { nome, email, telefone, senha, role, dadosProfissional, profissionalAtualId, tambemProfissional } = req.body;
   if (!["PROFISSIONAL", "ATENDENTE", "DONO", "CLIENTE"].includes(role)) {
     return res.status(400).json({ erro: "Papel inválido." });
   }
@@ -427,6 +474,12 @@ router.post("/usuarios", async (req, res) => {
 
   const hash = await bcrypt.hash(senha, 10);
 
+  // Um Dono também pode nascer já com agenda própria de atendimento (quando marca a opção "também
+  // atende pacientes") — nesse caso cria o cadastro de Profissional vinculado ao MESMO login, sem
+  // trocar o papel principal dele (continua entrando como Dono; o acesso extra é liberado no
+  // middleware `permitir`, ver backend/src/middleware/auth.js).
+  const criaPerfilProfissional = role === "PROFISSIONAL" || (role === "DONO" && tambemProfissional);
+
   const user = await prisma.user.create({
     data: {
       nome,
@@ -434,14 +487,18 @@ router.post("/usuarios", async (req, res) => {
       telefone,
       senha: hash,
       role,
-      ...(role === "PROFISSIONAL" && {
+      ...(criaPerfilProfissional && {
         profissional: {
           create: {
-            titulo: dadosProfissional?.titulo || "Profissional",
+            titulo: dadosProfissional?.titulo || (role === "DONO" ? "Psicoterapeuta" : "Profissional"),
             registro: dadosProfissional?.registro || null,
             bio: dadosProfissional?.bio || null,
             abordagens: dadosProfissional?.abordagens || null,
-            percentualRepasse: dadosProfissional?.percentualRepasse ?? 50,
+            // Um Dono que também atende (mesma pessoa que já é sócia da clínica) recebe 100% do
+            // valor de qualquer pagamento ligado a ele — não existe "repasse" nesse caso, porque
+            // o dinheiro já é da própria clínica de qualquer jeito. Profissionais contratadas
+            // continuam no padrão de 50%.
+            percentualRepasse: dadosProfissional?.percentualRepasse ?? (role === "DONO" ? 100 : 50),
           },
         },
       }),
@@ -480,9 +537,46 @@ router.post("/usuarios", async (req, res) => {
   res.json({ id: user.id, email: user.email, role: user.role, cliente: user.cliente || undefined });
 });
 
+// Ativa a agenda de atendimento (cadastro de Profissional) pra um login que já existe — sem
+// trocar o papel principal dele. Serve tanto pra um Dono ativar isso no PRÓPRIO login (Elismael
+// também é psicoterapeuta) quanto pra ativar no de outro Dono. Idempotente: se esse usuário já
+// tiver um cadastro de Profissional, só devolve o que já existe, sem duplicar nem dar erro.
+router.post("/usuarios/:id/tornar-profissional", async (req, res) => {
+  const alvo = await prisma.user.findUnique({ where: { id: req.params.id }, include: { profissional: true } });
+  if (!alvo) return res.status(404).json({ erro: "Usuário não encontrado." });
+  if (alvo.profissional) {
+    return res.json({ ok: true, jaExistia: true, profissional: alvo.profissional });
+  }
+
+  const { titulo, registro, bio, abordagens, percentualRepasse } = req.body || {};
+  const profissional = await prisma.profissional.create({
+    data: {
+      userId: alvo.id,
+      titulo: titulo || "Psicoterapeuta",
+      registro: registro || null,
+      bio: bio || null,
+      abordagens: abordagens || null,
+      // Sem repasse: quem ativa isso é um Dono (sócio da clínica), então o valor de qualquer
+      // pagamento ligado a ele já é 100% da própria Renascer — não faz sentido "repassar" pra
+      // ele mesmo. Continua sendo possível ajustar isso depois, na tela de Disponibilidade
+      // (ela reaproveita o mesmo perfil de Profissional), se um dia precisar.
+      percentualRepasse: percentualRepasse ?? 100,
+    },
+  });
+  res.json({ ok: true, jaExistia: false, profissional });
+});
+
 router.get("/usuarios", async (req, res) => {
   const usuarios = await prisma.user.findMany({
-    select: { id: true, nome: true, email: true, role: true, ativo: true, criadoEm: true },
+    select: {
+      id: true,
+      nome: true,
+      email: true,
+      role: true,
+      ativo: true,
+      criadoEm: true,
+      profissional: { select: { id: true } },
+    },
     orderBy: { criadoEm: "desc" },
   });
   res.json(usuarios);
