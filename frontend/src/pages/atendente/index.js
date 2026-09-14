@@ -104,6 +104,7 @@ function ClientesParaReativar({ rotaBase }) {
                 {profissionais.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.user.nome}
+                    {p.user.role === "DONO" ? " (Dono)" : ""}
                   </option>
                 ))}
               </select>
@@ -157,8 +158,11 @@ function ProfissionaisEAgendar() {
               className="w-16 h-16 rounded-full object-cover border border-renascer/20"
             />
             <div className="flex-1">
-              <p className="font-semibold">
+              <p className="font-semibold flex items-center gap-1.5 flex-wrap">
                 {p.user.nome} {p.idade ? `· ${p.idade} anos` : ""}
+                {p.user.role === "DONO" && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Dono</span>
+                )}
               </p>
               <p className="text-sm text-renascer-ink/60">{p.titulo}{p.registro ? ` · ${p.registro}` : ""}</p>
               {p.abordagens && <p className="text-xs text-renascer-ink/50">Abordagem: {p.abordagens}</p>}
@@ -465,6 +469,7 @@ function Clientes() {
             {profissionais.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.user.nome}
+                {p.user.role === "DONO" ? " (Dono)" : ""}
               </option>
             ))}
           </select>
@@ -548,7 +553,10 @@ function Clientes() {
                     {c.user.nome}
                   </td>
                   <td>{c.user.email}</td>
-                  <td>{c.profissionalAtual?.user?.nome || "-"}</td>
+                  <td>
+                    {c.profissionalAtual?.user?.nome || "-"}
+                    {c.profissionalAtual?.user?.role === "DONO" ? " (Dono)" : ""}
+                  </td>
                 </tr>,
               ];
               if (expandido === c.id) {
@@ -561,7 +569,10 @@ function Clientes() {
                       <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />
                       <TrocarProfissionalCliente
                         clienteId={c.id}
-                        profissionalAtualNome={c.profissionalAtual?.user?.nome}
+                        profissionalAtualNome={
+                          c.profissionalAtual?.user?.nome &&
+                          c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "")
+                        }
                         profissionais={profissionais}
                         rotaBase="/atendente"
                         onTrocou={carregar}
