@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import Layout from "../../components/Layout";
-import api from "../../lib/api";
+import api, { atualizarUsuarioLocal } from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
 import StatusCliente from "../../components/StatusCliente";
+import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
+// Reaproveita os mesmos componentes da área da Profissional (agenda, clientes, cadastro,
+// financeiro, perfil/disponibilidade) pro Dono conseguir atender pacientes pelo próprio login,
+// sem duplicar esse código todo — o backend libera as rotas de /profissional/* pra quem tem um
+// cadastro de Profissional vinculado, mesmo entrando como Dono (ver PATCH em
+// backend/src/middleware/auth.js).
+import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig } from "../profissional/index";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -28,6 +35,7 @@ export default function AreaDono() {
     { id: "usuarios", label: "Usuários" },
     { id: "suporte", label: "Suporte escalado" },
     { id: "financaPessoal", label: "Financeiro pessoal" },
+    { id: "atender", label: "Atender pacientes" },
   ];
 
   return (
@@ -42,7 +50,85 @@ export default function AreaDono() {
       {aba === "usuarios" && <Usuarios />}
       {aba === "suporte" && <SuporteEscalado />}
       {aba === "financaPessoal" && <AbaFinancaPessoal />}
+      {aba === "atender" && <AbaAtenderPacientes user={user} />}
     </Layout>
+  );
+}
+
+// ---------------- ATENDER PACIENTES (Dono que também é profissional/terapeuta) ----------------
+// Dá pro Dono ganhar uma agenda própria de atendimento sem precisar de um segundo login: ele
+// ativa uma vez (cria o cadastro de Profissional vinculado ao mesmo login) e passa a ver, aqui
+// dentro da própria área de Dono, exatamente as mesmas ferramentas que uma profissional tem —
+// agenda, cadastro de cliente, lista de clientes e financeiro. A recepção também passa a ver
+// esse Dono na lista de profissionais pra agendar clientes com ele, automaticamente.
+function AbaAtenderPacientes({ user }) {
+  const [temPerfil, setTemPerfil] = useState(!!user?.profissional);
+  const [ativando, setAtivando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [sub, setSub] = useState("agenda");
+
+  async function ativar() {
+    setAtivando(true);
+    setErro("");
+    try {
+      const { data } = await api.post(`/dono/usuarios/${user.id}/tornar-profissional`, {});
+      atualizarUsuarioLocal({ profissional: data.profissional });
+      setTemPerfil(true);
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível ativar o atendimento agora.");
+    } finally {
+      setAtivando(false);
+    }
+  }
+
+  if (!temPerfil) {
+    return (
+      <div className="card max-w-xl">
+        <h2 className="font-semibold mb-2">Você também atende pacientes?</h2>
+        <p className="text-sm text-renascer-ink/60 mb-4">
+          Ative essa opção pra ganhar uma agenda própria de atendimento, igual a qualquer
+          profissional — poder cadastrar seus pacientes, ver seus horários e seu financeiro, tudo
+          sem sair do seu login de dono. A recepção também vai passar a te ver na lista de
+          profissionais pra poder agendar clientes com você.
+        </p>
+        <button className="btn-primary" onClick={ativar} disabled={ativando}>
+          {ativando ? "Ativando..." : "Ativar minha agenda de atendimento"}
+        </button>
+        {erro && <p className="text-sm text-red-600 mt-2">{erro}</p>}
+      </div>
+    );
+  }
+
+  const SUB_ABAS = [
+    { id: "agenda", label: "Agenda" },
+    { id: "cadastrar", label: "Cadastrar cliente" },
+    { id: "clientes", label: "Clientes" },
+    { id: "financeiro", label: "Financeiro" },
+    { id: "config", label: "Disponibilidade" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 overflow-x-auto border-b border-renascer/10 pb-1">
+        {SUB_ABAS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSub(s.id)}
+            className={`whitespace-nowrap px-3 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              sub === s.id ? "text-renascer bg-renascer-light/60" : "text-renascer-ink/55 hover:text-renascer-ink"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "agenda" && <AbaAgenda />}
+      {sub === "cadastrar" && <AbaCadastrarCliente />}
+      {sub === "clientes" && <AbaClientes />}
+      {sub === "financeiro" && <AbaFinanceiro />}
+      {sub === "config" && <AbaConfig />}
+    </div>
   );
 }
 
@@ -317,11 +403,13 @@ function Profissionais() {
 
 function Clientes() {
   const [lista, setLista] = useState([]);
+  const [profissionais, setProfissionais] = useState([]);
   const [expandido, setExpandido] = useState(null);
 
   async function carregar() {
-    const { data } = await api.get("/dono/clientes");
-    setLista(data);
+    const [c, p] = await Promise.all([api.get("/dono/clientes"), api.get("/dono/profissionais")]);
+    setLista(c.data);
+    setProfissionais(p.data);
   }
   useEffect(() => {
     carregar();
@@ -363,6 +451,13 @@ function Clientes() {
                     <ContratoCliente clienteId={c.id} />
                     <NotificacaoECliente cliente={c} onExcluido={carregar} />
                     <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
+                    <TrocarProfissionalCliente
+                      clienteId={c.id}
+                      profissionalAtualNome={c.profissionalAtual?.user?.nome}
+                      profissionais={profissionais}
+                      rotaBase="/dono"
+                      onTrocou={carregar}
+                    />
                   </td>
                 </tr>
               );
@@ -827,9 +922,18 @@ function RepassesProfissionais() {
 function Usuarios() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
-  const [form, setForm] = useState({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL", profissionalAtualId: "" });
+  const [form, setForm] = useState({
+    nome: "",
+    email: "",
+    telefone: "",
+    senha: "",
+    role: "PROFISSIONAL",
+    profissionalAtualId: "",
+    tambemProfissional: false,
+  });
   const [msg, setMsg] = useState("");
   const [editando, setEditando] = useState(null);
+  const [ativandoId, setAtivandoId] = useState(null);
 
   async function carregar() {
     const [u, p] = await Promise.all([api.get("/dono/usuarios"), api.get("/dono/profissionais")]);
@@ -845,7 +949,15 @@ function Usuarios() {
     try {
       await api.post("/dono/usuarios", form);
       setMsg("Usuário criado com sucesso!");
-      setForm({ nome: "", email: "", telefone: "", senha: "", role: "PROFISSIONAL", profissionalAtualId: "" });
+      setForm({
+        nome: "",
+        email: "",
+        telefone: "",
+        senha: "",
+        role: "PROFISSIONAL",
+        profissionalAtualId: "",
+        tambemProfissional: false,
+      });
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao criar usuário.");
@@ -859,6 +971,21 @@ function Usuarios() {
       carregar();
     } catch (e) {
       alert(e?.response?.data?.erro || "Erro ao excluir usuário.");
+    }
+  }
+
+  // Ativa a agenda de atendimento pra outro Dono (mesma ação que o próprio Dono usa na aba
+  // "Atender pacientes" pra ativar no login dele) — usado aqui pra ativar no login de OUTRO
+  // dono direto pela lista de usuários, sem precisar entrar com o login dele.
+  async function ativarAtendimento(u) {
+    setAtivandoId(u.id);
+    try {
+      await api.post(`/dono/usuarios/${u.id}/tornar-profissional`, {});
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Não foi possível ativar o atendimento pra esse login.");
+    } finally {
+      setAtivandoId(null);
     }
   }
 
@@ -891,6 +1018,16 @@ function Usuarios() {
               ))}
             </select>
           )}
+          {form.role === "DONO" && (
+            <label className="flex items-center gap-2 text-sm text-renascer-ink/70 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.tambemProfissional}
+                onChange={(e) => setForm({ ...form, tambemProfissional: e.target.checked })}
+              />
+              Esse dono também atende pacientes (ganha uma agenda própria de profissional, sem repasse)
+            </label>
+          )}
         </div>
         <button className="btn-primary mt-3" onClick={criar}>
           Criar login
@@ -922,6 +1059,18 @@ function Usuarios() {
                   <td>{u.role}</td>
                   <td>{u.ativo ? "Ativo" : "Inativo"}</td>
                   <td className="text-right whitespace-nowrap">
+                    {u.role === "DONO" && !u.profissional && (
+                      <button
+                        className="text-renascer text-xs underline mr-3"
+                        disabled={ativandoId === u.id}
+                        onClick={() => ativarAtendimento(u)}
+                      >
+                        {ativandoId === u.id ? "Ativando..." : "Ativar atendimento"}
+                      </button>
+                    )}
+                    {u.role === "DONO" && u.profissional && (
+                      <span className="text-xs text-renascer-ink/40 mr-3">também atende pacientes</span>
+                    )}
                     <button className="text-renascer text-xs underline mr-3" onClick={() => setEditando(editando === u.id ? null : u.id)}>
                       {editando === u.id ? "Fechar" : "Editar"}
                     </button>
