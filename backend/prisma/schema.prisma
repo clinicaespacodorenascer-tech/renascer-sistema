@@ -95,6 +95,7 @@ enum TipoEventoHistorico {
   RENOVOU
   EXCLUIDO
   REATIVADO
+  TROCOU_PROFISSIONAL
 }
 
 enum TemaTarefa {
