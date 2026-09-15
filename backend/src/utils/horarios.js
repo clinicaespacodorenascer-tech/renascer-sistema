@@ -38,4 +38,16 @@ function horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao }) {
   return horarios.filter((horaInicio) => !haConflito({ horaInicio, duracao, agendamentosDoDia }));
 }
 
-module.exports = { diaSemanaDeData, horariosLivres, haConflito, DURACAO_MINUTOS };
+// Combina a data do agendamento (guardada como meia-noite UTC do dia certo — ver
+// `diaSemanaDeData` acima) com o horário HH:mm (sempre horário de Bahia/Brasília, UTC-3, sem
+// horário de verão desde 2019) num instante real e exato — sem depender do fuso horário
+// configurado no servidor. Sem isso, `data.setHours(hora, minuto)` usa o fuso LOCAL do processo
+// Node (o Railway roda em UTC por padrão), o que jogava todo horário marcado 3h mais cedo do que
+// o horário real e fazia avisos automáticos (sessão não iniciada, lembrete de sessão) disparar
+// horas antes da hora, ou pra sessões que ainda nem começaram.
+function horarioAgendamentoParaData(data, horaInicio) {
+  const diaISO = new Date(data).toISOString().slice(0, 10); // "AAAA-MM-DD", sempre em UTC
+  return new Date(`${diaISO}T${horaInicio}:00-03:00`);
+}
+
+module.exports = { diaSemanaDeData, horariosLivres, haConflito, DURACAO_MINUTOS, horarioAgendamentoParaData };
