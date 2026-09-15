@@ -797,7 +797,9 @@ router.get("/clientes", async (req, res) => {
   const clientes = await prisma.cliente.findMany({
     where: { profissionalAtualId: profissionalId },
     include: {
-      user: { select: { nome: true, email: true, telefone: true, fotoUrl: true } },
+      // "ultimoAcessoEm" vai junto pra profissional conseguir ver se o cliente está online
+      // agora ou há quanto tempo foi visto por último — o cliente nunca vê isso de volta.
+      user: { select: { nome: true, email: true, telefone: true, fotoUrl: true, ultimoAcessoEm: true } },
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
     },
   });
