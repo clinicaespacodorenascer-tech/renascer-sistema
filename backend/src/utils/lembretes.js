@@ -1,6 +1,6 @@
 const prisma = require("../lib/prisma");
 const { enviarEmail } = require("./email");
-const { notificar, notificarDonos } = require("./notificar");
+const { notificar, notificarDonos, notificarAtendentes } = require("./notificar");
 
 // Lembrete de sessão: 1 dia antes e ~6h antes, por e-mail E por aviso dentro do app/notificação
 // push pro cliente (usa os mesmos campos de controle pra não mandar duas vezes).
@@ -143,6 +143,50 @@ async function verificarResumoDiarioProfissionais() {
   }
 }
 
+// Aviso pro dono e pra atendente quando uma profissional não inicia a sessão marcada — "iniciar"
+// aqui é o mesmo momento em que ela entra na videochamada (rota /agenda/:id/iniciar-chamada, que
+// já existia desde antes) e cria/atualiza o registro de ChamadaVideo com `iniciadaEm`. Dá uma
+// margem de tolerância (GRACE_MINUTOS) antes de considerar "não iniciou", pra não avisar por
+// atraso de 2 minutos ou algo assim; e só manda uma vez por agendamento
+// (`avisoNaoIniciadoEnviado`).
+const GRACE_MINUTOS_SESSAO_NAO_INICIADA = 15;
+
+async function verificarSessoesNaoIniciadas() {
+  const agora = new Date();
+  const inicioHoje = new Date();
+  inicioHoje.setHours(0, 0, 0, 0);
+  const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
+
+  const candidatos = await prisma.agendamento.findMany({
+    where: {
+      status: { in: ["AGENDADO", "CONFIRMADO"] },
+      avisoNaoIniciadoEnviado: false,
+      data: { gte: inicioHoje, lt: inicioAmanha },
+    },
+    include: {
+      profissional: { include: { user: true } },
+      cliente: { include: { user: true } },
+      chamadaVideo: true,
+    },
+  });
+
+  for (const ag of candidatos) {
+    if (ag.chamadaVideo?.iniciadaEm) continue; // já iniciou — nada a avisar
+
+    const [hora, minuto] = ag.horaInicio.split(":").map(Number);
+    const horarioMarcado = new Date(ag.data);
+    horarioMarcado.setHours(hora, minuto, 0, 0);
+    const minutosDeAtraso = (agora.getTime() - horarioMarcado.getTime()) / 1000 / 60;
+
+    if (minutosDeAtraso < GRACE_MINUTOS_SESSAO_NAO_INICIADA) continue;
+
+    const mensagem = `${ag.profissional.user.nome} não iniciou a sessão de ${ag.cliente.user.nome}, marcada para ${ag.horaInicio} (já passou ${Math.round(minutosDeAtraso)} min).`;
+    await notificarDonos({ titulo: "Sessão não iniciada", mensagem, tipo: "sistema" });
+    await notificarAtendentes({ titulo: "Sessão não iniciada", mensagem, tipo: "sistema" });
+    await prisma.agendamento.update({ where: { id: ag.id }, data: { avisoNaoIniciadoEnviado: true } });
+  }
+}
+
 async function verificarLembretes() {
   try {
     await verificarLembretesDeSessao();
@@ -158,6 +202,11 @@ async function verificarLembretes() {
     await verificarResumoDiarioProfissionais();
   } catch (e) {
     console.error("Erro ao verificar resumo diário das profissionais:", e);
+  }
+  try {
+    await verificarSessoesNaoIniciadas();
+  } catch (e) {
+    console.error("Erro ao verificar sessões não iniciadas:", e);
   }
 }
 
