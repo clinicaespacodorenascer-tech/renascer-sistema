@@ -59,6 +59,14 @@ router.get("/notificacoes/nao-lidas/total", async (req, res) => {
   res.json({ total });
 });
 
+// Marca todas de uma vez como lidas — usado pelo pop-up que já mostra o resumo das notificações
+// novas assim que a pessoa entra no app (ver AvisoEntrada no frontend do cliente); depois de
+// mostrado o resumo, não faz sentido continuar contando como "não lida".
+router.put("/notificacoes/marcar-todas-lidas", async (req, res) => {
+  await prisma.notificacao.updateMany({ where: { userId: req.user.id, lida: false }, data: { lida: true } });
+  res.json({ ok: true });
+});
+
 // Foto de perfil — qualquer papel logado (Cliente, Atendente, Dono ou Profissional) pode trocar
 // a própria foto por aqui. A Profissional já tinha esse campo dentro da tela de "Perfil"
 // completo dela (que também mexe em título, bio etc.); esse endpoint é só a foto, isolado, pra
