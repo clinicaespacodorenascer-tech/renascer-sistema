@@ -1,15 +1,21 @@
 const prisma = require("../lib/prisma");
 const { enviarEmail } = require("./email");
 const { notificar, notificarDonos, notificarAtendentes } = require("./notificar");
+const { horarioAgendamentoParaData } = require("./horarios");
 
 // Lembrete de sessão: 1 dia antes e ~6h antes, por e-mail E por aviso dentro do app/notificação
 // push pro cliente (usa os mesmos campos de controle pra não mandar duas vezes).
 async function verificarLembretesDeSessao() {
   const agora = Date.now();
+  // O filtro de banco olha também "desde ontem": `data` só guarda o DIA (meia-noite UTC), sem
+  // hora, então filtrar direto por `gte: new Date()` perderia as sessões de hoje assim que
+  // passasse da meia-noite UTC (21h de Bahia/Brasília na noite anterior) — o filtro fino de
+  // verdade é o `horasAte` calculado abaixo, com o horário exato.
+  const desde = new Date(agora - 24 * 60 * 60 * 1000);
   const agendamentos = await prisma.agendamento.findMany({
     where: {
       status: { in: ["AGENDADO", "CONFIRMADO"] },
-      data: { gte: new Date() },
+      data: { gte: desde },
       OR: [{ lembrete24hEmailEm: null }, { lembrete6hEmailEm: null }],
     },
     include: {
@@ -19,7 +25,8 @@ async function verificarLembretesDeSessao() {
   });
 
   for (const ag of agendamentos) {
-    const horasAte = (new Date(ag.data).getTime() - agora) / 1000 / 60 / 60;
+    const horarioReal = horarioAgendamentoParaData(ag.data, ag.horaInicio).getTime();
+    const horasAte = (horarioReal - agora) / 1000 / 60 / 60;
     const destino = ag.cliente.notifEmail || ag.cliente.user.email;
     const dataFormatada = new Date(ag.data).toLocaleDateString("pt-BR");
 
@@ -173,9 +180,7 @@ async function verificarSessoesNaoIniciadas() {
   for (const ag of candidatos) {
     if (ag.chamadaVideo?.iniciadaEm) continue; // já iniciou — nada a avisar
 
-    const [hora, minuto] = ag.horaInicio.split(":").map(Number);
-    const horarioMarcado = new Date(ag.data);
-    horarioMarcado.setHours(hora, minuto, 0, 0);
+    const horarioMarcado = horarioAgendamentoParaData(ag.data, ag.horaInicio);
     const minutosDeAtraso = (agora.getTime() - horarioMarcado.getTime()) / 1000 / 60;
 
     if (minutosDeAtraso < GRACE_MINUTOS_SESSAO_NAO_INICIADA) continue;
