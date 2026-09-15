@@ -129,6 +129,8 @@ model User {
   cpf           String?
   fotoUrl       String?
   ativo         Boolean  @default(true)
+  ultimoAcessoEm DateTime? // atualizado (com limite de 1x/min) a cada request autenticado — usado
+                           // pra mostrar "online agora" / "visto há X min" pra quem tem permissão
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
 
@@ -356,6 +358,9 @@ model Agendamento {
   // Controle dos lembretes automáticos por e-mail (pra não mandar duas vezes)
   lembrete24hEmailEm DateTime?
   lembrete6hEmailEm  DateTime?
+  // Controle do aviso "profissional não iniciou a sessão" (dono/atendente) — evita mandar mais
+  // de uma vez pro mesmo agendamento. O "iniciou ou não" em si é lido de chamadaVideo.iniciadaEm.
+  avisoNaoIniciadoEnviado Boolean @default(false)
 
   chamadaVideo   ChamadaVideo?
 
