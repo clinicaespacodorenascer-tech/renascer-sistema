@@ -5,6 +5,8 @@ import { useAuth } from "../../lib/useAuth";
 import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
 import StatusCliente from "../../components/StatusCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
+import IndicadorPresenca from "../../components/IndicadorPresenca";
+import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
 // Reaproveita os mesmos componentes da área da Profissional (agenda, clientes, cadastro,
 // financeiro, perfil/disponibilidade) pro Dono conseguir atender pacientes pelo próprio login,
 // sem duplicar esse código todo — o backend libera as rotas de /profissional/* pra quem tem um
@@ -27,6 +29,7 @@ export default function AreaDono() {
   const ABAS = [
     { id: "dashboard", label: "Visão geral" },
     { id: "profissionais", label: "Profissionais" },
+    { id: "agenda", label: "Agenda geral" },
     { id: "clientes", label: "Clientes" },
     { id: "reativar", label: "Reativar clientes" },
     { id: "historico", label: "Histórico" },
@@ -42,6 +45,7 @@ export default function AreaDono() {
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "dashboard" && <Dashboard />}
       {aba === "profissionais" && <Profissionais />}
+      {aba === "agenda" && <AgendaGeralDono />}
       {aba === "clientes" && <Clientes />}
       {aba === "reativar" && <ClientesParaReativar rotaBase="/dono" />}
       {aba === "historico" && <HistoricoClientes />}
@@ -389,6 +393,7 @@ function Profissionais() {
                 )}
               </p>
               <p className="text-sm text-renascer-ink/60">{p.titulo} · {p._count.clientes} clientes · {p._count.agendamentos} sessões</p>
+              <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
             </div>
             <span className={`badge ${p.user.ativo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
               {p.user.ativo ? "Ativa" : "Inativa"}
@@ -403,6 +408,61 @@ function Profissionais() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------- AGENDA GERAL (todas as profissionais) ----------------
+// Mesma ideia da agenda geral que a atendente já tem — o dono também consegue ver, sessão por
+// sessão, se a profissional já entrou na videochamada (sessão de fato em andamento), se já
+// terminou, ou se já passou da hora marcada sem ter iniciado (⚠️ Não iniciada — o mesmo critério
+// do aviso automático que a gente manda pra ele e pra recepção).
+function AgendaGeralDono() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    api.get("/dono/agenda-geral").then((r) => setLista(r.data));
+  }, []);
+  return (
+    <div className="card overflow-x-auto">
+      <p className="text-xs text-renascer-ink/50 mb-2">
+        Sessões de hoje em diante, de todas as profissionais. "Em atendimento agora" aparece assim que
+        ela entra na videochamada; "Não iniciada" aparece se já passou 15 minutos do horário marcado
+        sem ela ter entrado.
+      </p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-renascer-ink/50">
+            <th>Data</th>
+            <th>Profissional</th>
+            <th>Cliente</th>
+            <th>Sessão</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lista.map((a) => {
+            const sessao = statusSessao(a);
+            return (
+              <tr key={a.id} className="border-t border-renascer/10">
+                <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
+                <td>{a.profissional.user.nome}</td>
+                <td>{a.cliente.user.nome}</td>
+                <td>
+                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
+                    {sessao.texto}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+          {lista.length === 0 && (
+            <tr>
+              <td colSpan={4} className="text-center text-renascer-ink/40 py-4">
+                Nenhuma sessão marcada a partir de agora.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
