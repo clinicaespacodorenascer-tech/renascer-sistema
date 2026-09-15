@@ -332,7 +332,7 @@ router.get("/profissionais", async (req, res) => {
     include: {
       // "role" vai junto pra recepção conseguir identificar, na lista, qual profissional é
       // também um login de Dono (ex: o próprio Elismael atendendo) — mostra um selo "Dono".
-      user: { select: { nome: true, ativo: true, fotoUrl: true, role: true } },
+      user: { select: { nome: true, ativo: true, fotoUrl: true, role: true, ultimoAcessoEm: true } },
       disponibilidades: {
         where: { ativo: true },
         include: { ocupadoPorCliente: { select: { user: { select: { nome: true } } } } },
@@ -583,12 +583,16 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
 });
 
 // ---------- Ferramentas básicas: agenda geral (somente leitura) ----------
+// "chamadaVideo" vai junto pra dar pra ver, sessão por sessão, se a profissional já entrou na
+// videochamada (aí sim a sessão está de fato acontecendo) ou ainda não — mesmo registro que já
+// existia desde a Fase 1/videochamada, só que agora também aparece pra atendente e pro dono.
 router.get("/agenda-geral", async (req, res) => {
   const agendamentos = await prisma.agendamento.findMany({
     where: { data: { gte: new Date() } },
     include: {
       profissional: { include: { user: { select: { nome: true } } } },
       cliente: { include: { user: { select: { nome: true } } } },
+      chamadaVideo: true,
     },
     orderBy: { data: "asc" },
     take: 100,
