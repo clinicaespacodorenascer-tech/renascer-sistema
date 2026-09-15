@@ -25,6 +25,17 @@ async function autenticar(req, res, next) {
     }
 
     req.user = user;
+
+    // Presença ("online agora" / "visto há X min"): atualiza o carimbo de último acesso em
+    // praticamente toda request autenticada, sem precisar de nenhuma chamada nova no frontend —
+    // o sininho de notificações (Layout.js) já faz uma chamada a cada 60s pra todo mundo
+    // logado, então isso já funciona como um "heartbeat" de presença de graça. Limitado a 1x por
+    // minuto por usuário pra não gerar um UPDATE a cada request; e nunca bloqueia a resposta —
+    // dispara e segue, sem `await` e sem derrubar a request se falhar.
+    if (!user.ultimoAcessoEm || Date.now() - user.ultimoAcessoEm.getTime() > 60 * 1000) {
+      prisma.user.update({ where: { id: user.id }, data: { ultimoAcessoEm: new Date() } }).catch(() => {});
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ erro: "Token inválido ou expirado." });
