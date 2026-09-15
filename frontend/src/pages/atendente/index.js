@@ -7,6 +7,8 @@ import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
+import IndicadorPresenca from "../../components/IndicadorPresenca";
+import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -166,6 +168,7 @@ function ProfissionaisEAgendar() {
               </p>
               <p className="text-sm text-renascer-ink/60">{p.titulo}{p.registro ? ` · ${p.registro}` : ""}</p>
               {p.abordagens && <p className="text-xs text-renascer-ink/50">Abordagem: {p.abordagens}</p>}
+              <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
             </div>
           </div>
 
@@ -731,17 +734,26 @@ function AgendaGeral() {
             <th>Profissional</th>
             <th>Cliente</th>
             <th>Status</th>
+            <th>Sessão</th>
           </tr>
         </thead>
         <tbody>
-          {lista.map((a) => (
-            <tr key={a.id} className="border-t border-renascer/10">
-              <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
-              <td>{a.profissional.user.nome}</td>
-              <td>{a.cliente.user.nome}</td>
-              <td>{a.status}</td>
-            </tr>
-          ))}
+          {lista.map((a) => {
+            const sessao = statusSessao(a);
+            return (
+              <tr key={a.id} className="border-t border-renascer/10">
+                <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
+                <td>{a.profissional.user.nome}</td>
+                <td>{a.cliente.user.nome}</td>
+                <td>{a.status}</td>
+                <td>
+                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
+                    {sessao.texto}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
