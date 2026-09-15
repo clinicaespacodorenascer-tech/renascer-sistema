@@ -7,6 +7,7 @@ export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
@@ -50,14 +51,25 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
-            <input
-              className="input"
-              type="password"
-              placeholder="Senha"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <input
+                className="input pr-11"
+                type={mostrarSenha ? "text" : "password"}
+                placeholder="Senha"
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarSenha((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-renascer-ink/40 hover:text-renascer-ink/70 text-sm"
+                aria-label={mostrarSenha ? "Esconder senha" : "Mostrar senha"}
+                title={mostrarSenha ? "Esconder senha" : "Mostrar senha"}
+              >
+                {mostrarSenha ? "🙈" : "👁️"}
+              </button>
+            </div>
             {erro && <p className="text-red-600 text-sm">{erro}</p>}
             <button className="btn-primary w-full" disabled={carregando}>
               {carregando ? "Entrando..." : "Entrar"}
