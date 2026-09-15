@@ -97,7 +97,7 @@ router.get("/profissionais", async (req, res) => {
     include: {
       // "role" vai junto pra dar pra identificar, na lista, qual profissional é também um
       // login de Dono (ex: o próprio Elismael atendendo) — mostra um selo "Dono".
-      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true, role: true } },
+      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true, role: true, ultimoAcessoEm: true } },
       clientes: { include: { user: { select: { nome: true } } } },
       disponibilidades: true,
       _count: { select: { clientes: true, agendamentos: true } },
@@ -278,6 +278,24 @@ router.delete("/clientes/:id", async (req, res) => {
   } catch (e) {
     res.status(400).json({ erro: e.message || "Erro ao excluir cliente." });
   }
+});
+
+// ---------- Agenda geral (todas as profissionais) — mesma rota que a atendente tem, pro dono
+// também conseguir ver, sessão por sessão, se a profissional já entrou na videochamada (sessão
+// de fato em andamento) ou ainda não. "chamadaVideo" é o mesmo registro usado desde a
+// videochamada da Fase 1.
+router.get("/agenda-geral", async (req, res) => {
+  const agendamentos = await prisma.agendamento.findMany({
+    where: { data: { gte: new Date() } },
+    include: {
+      profissional: { include: { user: { select: { nome: true } } } },
+      cliente: { include: { user: { select: { nome: true } } } },
+      chamadaVideo: true,
+    },
+    orderBy: { data: "asc" },
+    take: 100,
+  });
+  res.json(agendamentos);
 });
 
 // ---------- Financeiro consolidado ----------
