@@ -137,9 +137,9 @@ router.put("/agenda/:id/status", async (req, res) => {
       where: { id: agendamento.pacoteId },
       data: { sessoesUsadas: { increment: 1 } },
     });
+    const cliente = await prisma.cliente.findUnique({ where: { id: pacote.clienteId }, include: { user: true } });
 
     if (precisaAvisoRenovacao(pacote)) {
-      const cliente = await prisma.cliente.findUnique({ where: { id: pacote.clienteId }, include: { user: true } });
       await notificar(cliente.userId, {
         titulo: "Seu pacote está terminando",
         mensagem: `Você já usou ${pacote.sessoesUsadas} de ${pacote.totalSessoes} sessões. Que tal renovar pra não perder seu horário fixo?`,
@@ -168,6 +168,53 @@ router.put("/agenda/:id/status", async (req, res) => {
       });
     } else if (pacote.totalSessoes > 1 && restantes === 1) {
       await prisma.pacote.update({ where: { id: pacote.id }, data: { avisoPopupNivel: "AMARELO", popupVisualizadoEm: null } });
+    }
+
+    // Gera automaticamente a próxima sessão — mesmo dia da semana e mesmo horário, 7 dias depois
+    // — desde que ainda sobre sessão no pacote (vale pra qualquer pacote, de qualquer duração).
+    // Se o pacote acabou agora (restantes <= 0), não dá pra gerar sem uma renovação, então só
+    // fica o aviso de renovação acima mesmo. Confere antes se já não existe uma sessão futura
+    // marcada pra esse mesmo dia/horário, pra nunca duplicar (ex: a profissional já tinha
+    // reagendado manualmente antes de marcar "Realizada").
+    if (restantes > 0) {
+      const proximaData = new Date(agendamento.data);
+      proximaData.setDate(proximaData.getDate() + 7);
+
+      const jaExiste = await prisma.agendamento.findFirst({
+        where: {
+          profissionalId,
+          clienteId: agendamento.clienteId,
+          data: proximaData,
+          horaInicio: agendamento.horaInicio,
+          status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        },
+      });
+
+      if (!jaExiste) {
+        await prisma.agendamento.create({
+          data: {
+            profissionalId,
+            clienteId: agendamento.clienteId,
+            pacoteId: pacote.id,
+            data: proximaData,
+            diaSemana: agendamento.diaSemana,
+            horaInicio: agendamento.horaInicio,
+            duracao: agendamento.duracao,
+          },
+        });
+
+        const dataFormatada = proximaData.toLocaleDateString("pt-BR");
+        await notificar(cliente.userId, {
+          titulo: "Sua próxima sessão já está marcada",
+          mensagem: `Sua próxima sessão com ${req.user.nome} ficou marcada para ${dataFormatada} às ${agendamento.horaInicio}.`,
+          tipo: "sessao",
+        });
+        await notificar(req.user.id, {
+          titulo: "Próxima sessão gerada",
+          mensagem: `A próxima sessão de ${cliente.user?.nome || "seu cliente"} foi marcada automaticamente para ${dataFormatada} às ${agendamento.horaInicio}.`,
+          tipo: "sessao",
+        });
+      }
     }
   }
 
