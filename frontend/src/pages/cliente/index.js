@@ -3,6 +3,8 @@ import Layout from "../../components/Layout";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { linkWhatsapp } from "../../lib/whatsapp";
+import { abrirImagem } from "../../lib/comprovante";
+import { inscreverPush, statusPermissao } from "../../lib/push";
 
 export default function AreaCliente() {
   const { user, carregando } = useAuth("CLIENTE");
@@ -31,10 +33,12 @@ export default function AreaCliente() {
     { id: "suporte", label: "Suporte" },
     { id: "materiais", label: "Materiais" },
     { id: "duvidas", label: "Dúvidas" },
+    { id: "contrato", label: "Meu contrato" },
   ];
 
   return (
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      <AvisoEntrada onIrParaAvisos={() => setAba("avisos")} />
       {aba === "painel" && <AbaPainel />}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "financeiro" && <AbaFinanceiro />}
@@ -46,7 +50,62 @@ export default function AreaCliente() {
       {aba === "suporte" && <AbaSuporte />}
       {aba === "materiais" && <AbaMateriais />}
       {aba === "duvidas" && <AbaDuvidas />}
+      {aba === "contrato" && <AbaContrato contrato={contrato.contrato} />}
     </Layout>
+  );
+}
+
+// ---------------- MEU CONTRATO (nome/CPF informados, data do aceite e as fotos anexadas) ----------------
+function AbaContrato({ contrato }) {
+  if (!contrato) {
+    return (
+      <div className="card">
+        <p className="text-sm text-renascer-ink/50">Nenhum contrato encontrado.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold mb-1">Seu contrato</h2>
+      <p className="text-xs text-renascer-ink/50 mb-2">
+        Esses são os dados e as fotos que você enviou quando aceitou o contrato do Espaço do Renascer.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <p>
+          <span className="text-renascer-ink/50">Nome informado:</span> {contrato.nomeCompleto}
+        </p>
+        <p>
+          <span className="text-renascer-ink/50">CPF:</span> {contrato.cpf}
+        </p>
+        <p className="sm:col-span-2">
+          <span className="text-renascer-ink/50">Aceito em:</span>{" "}
+          {contrato.aceitoEm ? new Date(contrato.aceitoEm).toLocaleString("pt-BR") : "-"}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-4 pt-2">
+        <button
+          type="button"
+          className="flex flex-col items-center gap-1"
+          onClick={() => abrirImagem(contrato.fotoDocumentoUrl, "Foto do documento")}
+          title="Ver em tamanho grande"
+        >
+          <img src={contrato.fotoDocumentoUrl} alt="Foto do documento" className="w-24 h-24 object-cover rounded-lg border border-renascer/20" />
+          <span className="text-xs text-renascer underline">Foto do documento</span>
+        </button>
+        {contrato.fotoRostoUrl && (
+          <button
+            type="button"
+            className="flex flex-col items-center gap-1"
+            onClick={() => abrirImagem(contrato.fotoRostoUrl, "Foto do rosto")}
+            title="Ver em tamanho grande"
+          >
+            <img src={contrato.fotoRostoUrl} alt="Foto do rosto" className="w-24 h-24 object-cover rounded-lg border border-renascer/20" />
+            <span className="text-xs text-renascer underline">Foto do rosto</span>
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -112,6 +171,119 @@ function TelaContrato({ textoContrato, onAceito }) {
           {erro && <p className="text-red-600 text-sm">{erro}</p>}
           <button className="btn-primary w-full" onClick={aceitar} disabled={enviando}>
             {enviando ? "Registrando..." : "Aceitar e continuar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- POP-UP DE ENTRADA: resumo de novidades + convite pra ativar notificação ----------------
+// Aparece assim que o cliente entra no app (uma vez por sessão, não a cada troca de aba) sempre
+// que existir alguma notificação não lida (mensagem da profissional, aviso de renovação, sessão
+// do dia etc.) e/ou a notificação push do aparelho ainda não tiver sido ativada. Pedido do
+// Elismael: deixar isso explícito na entrada, em vez de depender só do sininho no cabeçalho, que
+// muita gente nunca chega a abrir.
+function AvisoEntrada({ onIrParaAvisos }) {
+  const [pronto, setPronto] = useState(false);
+  const [visivel, setVisivel] = useState(false);
+  const [naoLidas, setNaoLidas] = useState([]);
+  const [statusPush, setStatusPush] = useState("default");
+  const [ativando, setAtivando] = useState(false);
+  const [avisoPush, setAvisoPush] = useState("");
+
+  useEffect(() => {
+    async function carregar() {
+      try {
+        const { data: lista } = await api.get("/comum/notificacoes");
+        const pendentes = lista.filter((n) => !n.lida);
+        const status = statusPermissao();
+        setNaoLidas(pendentes);
+        setStatusPush(status);
+        setVisivel(pendentes.length > 0 || status === "default");
+      } finally {
+        setPronto(true);
+      }
+    }
+    carregar();
+  }, []);
+
+  async function fechar() {
+    setVisivel(false);
+    if (naoLidas.length > 0) {
+      try {
+        await api.put("/comum/notificacoes/marcar-todas-lidas");
+      } catch (e) {
+        // não é crítico — na próxima abertura o sininho ainda mostra certinho o que tá lido ou não
+      }
+    }
+  }
+
+  async function ativar() {
+    setAtivando(true);
+    setAvisoPush("");
+    const resultado = await inscreverPush();
+    setAtivando(false);
+    if (resultado.ok) setStatusPush("granted");
+    else setAvisoPush(resultado.motivo || "Não foi possível ativar agora. Tente de novo em alguns instantes.");
+  }
+
+  if (!pronto || !visivel) return null;
+  const temNovidades = naoLidas.length > 0;
+  const pushPendente = statusPush !== "granted";
+
+  // z-40 (não z-50): se o pop-up de renovação (Fase 4) também estiver de pé nesse momento, ele
+  // fica por cima — assim que a pessoa fechar ele, esse aqui já aparece por baixo, em sequência,
+  // em vez dos dois se sobrepondo ao mesmo tempo.
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+      <div className="max-w-md w-full rounded-2xl p-6 shadow-2xl bg-white">
+        {temNovidades && (
+          <>
+            <p className="text-xs uppercase tracking-wide text-renascer/70 mb-1">
+              {naoLidas.length === 1 ? "Você tem 1 novidade" : `Você tem ${naoLidas.length} novidades`}
+            </p>
+            <h3 className="text-lg font-bold text-renascer-ink mb-3">Enquanto você esteve fora...</h3>
+            <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
+              {naoLidas.slice(0, 4).map((n) => (
+                <div key={n.id} className="border border-renascer/10 rounded-lg p-2.5 bg-renascer-light/40">
+                  <p className="font-medium text-sm">{n.titulo}</p>
+                  <p className="text-xs text-renascer-ink/60 mt-0.5">{n.mensagem}</p>
+                </div>
+              ))}
+              {naoLidas.length > 4 && <p className="text-xs text-renascer-ink/50">e mais {naoLidas.length - 4}...</p>}
+            </div>
+          </>
+        )}
+
+        {pushPendente && (
+          <div className={temNovidades ? "border-t border-renascer/10 pt-3" : ""}>
+            {!temNovidades && <h3 className="text-lg font-bold text-renascer-ink mb-2">Não perca nenhum aviso</h3>}
+            <p className="text-sm text-renascer-ink/70 mb-2">
+              Ative as notificações no seu aparelho pra saber na hora quando chegar uma mensagem da sua
+              profissional, um aviso de renovação ou de sessão — mesmo com o app fechado.
+            </p>
+            {avisoPush && <p className="text-xs text-red-600 mb-2">{avisoPush}</p>}
+            <button className="btn-primary w-full mb-2" onClick={ativar} disabled={ativando}>
+              {ativando ? "Ativando..." : "🔔 Ativar notificações no aparelho"}
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 mt-1">
+          {temNovidades && (
+            <button
+              className="text-sm text-renascer underline"
+              onClick={() => {
+                onIrParaAvisos?.();
+                fechar();
+              }}
+            >
+              Ver todos os avisos
+            </button>
+          )}
+          <button className="text-sm text-renascer-ink/50 underline ml-auto" onClick={fechar}>
+            {pushPendente ? "Agora não" : "Fechar"}
           </button>
         </div>
       </div>
@@ -201,16 +373,15 @@ function PopupRenovacao({ pacoteAtivo, onFechar }) {
             : `Você já usou ${pacoteAtivo.sessoesUsadas} de ${pacoteAtivo.totalSessoes} sessões. Garanta sua renovação antes de acabar.`}
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
-          
-            <button
-  className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
-  onClick={() => {
-    window.open(linkWhatsapp(mensagem), "_blank");
-    onFechar?.();
-  }}
->
-  💬 Renovar agora no WhatsApp
-</button>
+          <button
+            className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
+            onClick={() => {
+              window.open(linkWhatsapp(mensagem), "_blank");
+              onFechar?.();
+            }}
+          >
+            💬 Renovar agora no WhatsApp
+          </button>
           <button className="text-sm underline opacity-80 hover:opacity-100" onClick={onFechar}>
             Lembrar depois
           </button>
