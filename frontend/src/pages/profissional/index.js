@@ -7,6 +7,7 @@ import { verComprovante, verComprovanteRepasse } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
+import IndicadorPresenca from "../../components/IndicadorPresenca";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -685,6 +686,7 @@ export function AbaClientes() {
               <p className="text-xs text-renascer-ink/50">
                 {c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes} sessões` : "sem pacote ativo"}
               </p>
+              <IndicadorPresenca ultimoAcessoEm={c.user.ultimoAcessoEm} className="mt-0.5" />
             </button>
           ))}
           {clientes.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum cliente ainda.</p>}
