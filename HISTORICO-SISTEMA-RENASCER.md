@@ -1686,3 +1686,50 @@ formulário que abre o WhatsApp, aviso pra atendente ("Pedidos da Renascer IA").
 (tela Hoje, perguntas de entrada, alívio rápido, primeira jornada), Etapa 4 (assinatura via Mercado
 Pago), Etapa 5 (memória da IA, resumo pra profissional, lembretes, demais jornadas), Etapa 6
 (áudio).
+
+---
+
+# Fase 25 -- Correção: fundo branco quadrado atrás da logo em todo o sistema (entregue em 12/10/2026)
+
+O Elismael reportou (com print da tela de cadastro da Renascer IA) que a logo aparecia dentro de
+um quadrado branco, em vez de flutuar livre sobre o fundo da página -- pediu para corrigir em
+TODAS as telas do sistema (cabeçalho/menu, login, e as telas da Renascer IA), não só numa tela
+específica.
+
+## Causa
+
+A Fase 23 tinha registrado que "a logo já estava certa" porque o arquivo
+`frontend/public/logo.png` parecia ser a mesma imagem enviada pelo Elismael -- só que, nessa
+checagem, ninguém tinha conferido se o arquivo realmente tinha fundo transparente. Na prática, o
+`frontend/public/logo.png` que está no repositório é uma versão sem transparência (modo RGB puro,
+sem canal alfa) -- fundo branco sólido "gravado" dentro da própria imagem. Como o componente
+`Logo.js` (usado por `Layout.js`, `login.js`, `ia/index.js` e `ia/cadastro.js` -- ou seja, por
+TODAS as telas que mostram a logo) sempre aponta para esse mesmo arquivo único, o quadrado branco
+aparecia em qualquer lugar do sistema, sempre que o fundo da página não fosse também branco.
+
+## Correção
+
+- `frontend/public/logo.png` foi reprocessado para remover o fundo branco e ganhar transparência
+  de verdade (canal alfa), preservando as cores, os traços e o padrão sutil de rede neural que já
+  faziam parte do desenho original -- testado visualmente sobre fundo claro, fundo escuro e fundo
+  quadriculado antes do envio, sem nenhuma borda ou "auréola" branca sobrando ao redor das letras.
+- Como é o ÚNICO arquivo de imagem que todas as telas usam (através do componente `Logo.js`),
+  trocar só esse arquivo já resolve o quadrado branco em todo lugar de uma vez: menu lateral e
+  cabeçalho do sistema de gestão (dono, atendente, profissional, cliente), tela de login, e as
+  telas da Renascer IA (cadastro e conversa) -- sem precisar editar nenhum arquivo de código.
+- Os ícones do aplicativo instalável (PWA -- `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`)
+  NÃO foram alterados nesta fase: esses têm fundo de propósito (o sistema do celular/computador
+  aplica um formato por cima do ícone, e um ícone transparente costuma ficar feio nesse caso) --
+  se o Elismael achar que esses também precisam de ajuste, é só avisar.
+
+## Arquivo alterado
+
+- `frontend/public/logo.png` (substituído -- é uma imagem, não tem como mostrar o "código"
+  alterado, mas o arquivo é mais leve que parece: mesma logo oficial, só com o fundo branco
+  removido).
+
+## Pendência / aguardando teste do usuário
+
+- Confirmar visualmente, depois do deploy, que a logo aparece sem o quadrado branco no menu do
+  sistema, na tela de login e nas telas da Renascer IA (`/ia/cadastro` e `/ia`).
+
