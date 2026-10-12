@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+/* Fase 23 (redesign visual): trocada a fonte do sistema inteiro para Manrope — a mesma fonte
+   usada em todas as telas da Renascer IA — pra unificar a identidade visual dos dois produtos. */
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
 
 html,
 body {
@@ -12,7 +14,7 @@ body {
 
 body {
   @apply text-renascer-ink;
-  background: radial-gradient(1200px 600px at 105% -10%, rgba(198, 161, 91, 0.10), transparent 60%),
+  background: radial-gradient(1200px 600px at 105% -10%, rgba(79, 168, 222, 0.1), transparent 60%),
     radial-gradient(1000px 550px at -10% 0%, rgba(0, 80, 150, 0.07), transparent 55%), #f5f8fb;
   min-height: 100vh;
 }
