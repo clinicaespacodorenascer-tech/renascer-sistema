@@ -17,6 +17,7 @@ enum Role {
   ATENDENTE
   PROFISSIONAL
   CLIENTE
+  USUARIO_IA // Renascer IA: cadastro público, aberto a qualquer pessoa, não só cliente da clínica
 }
 
 enum DiaSemana {
@@ -131,6 +132,12 @@ model User {
   ativo         Boolean  @default(true)
   ultimoAcessoEm DateTime? // atualizado (com limite de 1x/min) a cada request autenticado — usado
                            // pra mostrar "online agora" / "visto há X min" pra quem tem permissão
+  // Renascer IA: quando a pessoa aceitou os avisos/termos no cadastro público (18+, termos de uso,
+  // privacidade) — obrigatório antes de liberar a conversa com a IA.
+  aceitouTermosIAEm DateTime?
+  // Renascer IA: quando a pessoa tocou em "Agora não" na sugestão de sessão — a IA só volta a
+  // sugerir depois dessa data (regra do Elismael: não ficar chato sugerindo toda hora).
+  sessaoIADispensadaAte DateTime?
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
 
@@ -142,6 +149,7 @@ model User {
   notificacoes  Notificacao[]
   mensagensEnviadas Mensagem[] @relation("MensagensEnviadas")
   pushSubscriptions PushSubscription[]
+  conversasIA   ConversaIA[]
 
   @@map("users")
 }
@@ -691,4 +699,46 @@ model NotaPessoal {
   criadoEm  DateTime @default(now())
 
   @@map("notas_pessoais")
+}
+
+// ---------- RENASCER IA (etapa 1 — base grátis) ----------
+// App de IA (Claude) dentro do mesmo sistema, aberto a qualquer pessoa (não só cliente da
+// clínica), separado do resto da gestão. Ver especificação completa no documento de planejamento
+// do projeto (claude/renascer-ia-especificacao.md). A conversa é dado sensível (LGPD): nunca
+// aparece pra dono, atendente ou profissional — só quem conversou acessa a própria conversa.
+
+enum AutorMensagemIA {
+  USUARIO
+  IA
+}
+
+// Uma linha por mensagem (da pessoa ou da IA) — a conversa de cada usuário é só a lista das
+// próprias linhas dele em ordem de data, sem precisar de um modelo "Conversa" à parte.
+model ConversaIA {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  autor          AutorMensagemIA
+  texto          String          @db.Text
+  sinalizouCrise Boolean         @default(false) // true quando essa mensagem (da pessoa) acionou o cartão de crise
+  criadoEm       DateTime        @default(now())
+
+  @@index([userId, criadoEm])
+  @@map("conversas_ia")
+}
+
+// Configuração única das travas de custo (uma linha só, id fixo "config"), editável pelo Dono no
+// painel "Renascer IA". gastoMesAtualReais soma uma estimativa a cada mensagem respondida pela IA;
+// zera sozinho quando mesReferencia (ex: "2026-10") não bate mais com o mês atual.
+model ConfiguracaoIA {
+  id                      String   @id @default("config")
+  tetoMensalReais         Float    @default(150)
+  limiteGratisDia         Int      @default(15)
+  limiteGratisDiaReduzido Int      @default(5) // vale pro grátis quando o teto mensal é atingido
+  limiteAssinanteDia      Int      @default(100)
+  gastoMesAtualReais      Float    @default(0)
+  mesReferencia           String   @default("")
+  atualizadoEm            DateTime @updatedAt
+
+  @@map("configuracao_ia")
 }

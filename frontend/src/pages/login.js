@@ -75,6 +75,12 @@ export default function Login() {
               {carregando ? "Entrando..." : "Entrar"}
             </button>
           </form>
+          <p className="text-center text-renascer-ink/50 text-sm mt-5">
+            Ainda não tem conta?{" "}
+            <button type="button" onClick={() => router.push("/ia/cadastro")} className="text-renascer font-semibold underline">
+              Conhecer a Renascer IA
+            </button>
+          </p>
         </div>
         <p className="text-center text-white/40 text-xs mt-6 tracking-wide">Espaço do Renascer · acolhimento e cuidado</p>
       </div>

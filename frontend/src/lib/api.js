@@ -40,7 +40,10 @@ export function sair() {
 }
 
 export function rotaPorPapel(role) {
-  return { PROFISSIONAL: "/profissional", CLIENTE: "/cliente", DONO: "/dono", ATENDENTE: "/atendente" }[role] || "/login";
+  return (
+    { PROFISSIONAL: "/profissional", CLIENTE: "/cliente", DONO: "/dono", ATENDENTE: "/atendente", USUARIO_IA: "/ia" }[role] ||
+    "/login"
+  );
 }
 
 export default api;

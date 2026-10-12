@@ -7,6 +7,7 @@ const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { parseValorMonetario } = require("../utils/financeiro");
+const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
 
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
@@ -665,6 +666,53 @@ router.post("/suporte-gerencia/:id/responder", async (req, res) => {
 router.put("/suporte-gerencia/:id/resolver", async (req, res) => {
   await prisma.ticketSuporte.update({ where: { id: req.params.id }, data: { status: "RESOLVIDO" } });
   res.json({ ok: true });
+});
+
+// ---------- Renascer IA (etapa 1 — base grátis): gasto, usuários e travas de custo ----------
+router.get("/renascer-ia", async (req, res) => {
+  const [config, usuariosGratis] = await Promise.all([
+    obterConfiguracaoIA(),
+    prisma.user.count({ where: { role: "USUARIO_IA" } }),
+  ]);
+
+  res.json({
+    gastoMesAtualReais: config.gastoMesAtualReais,
+    tetoMensalReais: config.tetoMensalReais,
+    limiteGratisDia: config.limiteGratisDia,
+    limiteGratisDiaReduzido: config.limiteGratisDiaReduzido,
+    limiteAssinanteDia: config.limiteAssinanteDia,
+    usuariosGratis,
+    // A assinatura (plano completo pago) ainda não foi construída — chega numa etapa futura da
+    // Renascer IA. Por enquanto esses dois números ficam zerados, só pra não quebrar a tela.
+    assinantes: 0,
+    assinaturasNoMesReais: 0,
+    assinaturaDisponivel: false,
+  });
+});
+
+router.put("/renascer-ia/configuracao", async (req, res) => {
+  const { tetoMensalReais, limiteGratisDia, limiteAssinanteDia } = req.body;
+
+  const dados = {};
+  if (tetoMensalReais !== undefined) {
+    const valor = Number(tetoMensalReais);
+    if (!Number.isFinite(valor) || valor < 0) return res.status(400).json({ erro: "Teto mensal inválido." });
+    dados.tetoMensalReais = valor;
+  }
+  if (limiteGratisDia !== undefined) {
+    const valor = Number(limiteGratisDia);
+    if (!Number.isInteger(valor) || valor < 1) return res.status(400).json({ erro: "Limite do grátis inválido." });
+    dados.limiteGratisDia = valor;
+  }
+  if (limiteAssinanteDia !== undefined) {
+    const valor = Number(limiteAssinanteDia);
+    if (!Number.isInteger(valor) || valor < 1) return res.status(400).json({ erro: "Limite do assinante inválido." });
+    dados.limiteAssinanteDia = valor;
+  }
+
+  await obterConfiguracaoIA(); // garante que a linha "config" já existe antes do update
+  const config = await prisma.configuracaoIA.update({ where: { id: "config" }, data: dados });
+  res.json(config);
 });
 
 module.exports = router;

@@ -9,6 +9,7 @@ const donoRoutes = require("./routes/dono");
 const atendenteRoutes = require("./routes/atendente");
 const comumRoutes = require("./routes/comum");
 const financaPessoalRoutes = require("./routes/financaPessoal");
+const iaRoutes = require("./routes/ia");
 const { verificarLembretes } = require("./utils/lembretes");
 
 const app = express();
@@ -26,6 +27,7 @@ app.use("/api/dono", donoRoutes);
 app.use("/api/atendente", atendenteRoutes);
 app.use("/api/comum", comumRoutes);
 app.use("/api/financa-pessoal", financaPessoalRoutes);
+app.use("/api/ia", iaRoutes);
 
 app.use((req, res) => res.status(404).json({ erro: "Rota não encontrada." }));
 

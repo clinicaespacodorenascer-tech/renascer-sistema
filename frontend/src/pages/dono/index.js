@@ -39,6 +39,7 @@ export default function AreaDono() {
     { id: "suporte", label: "Suporte escalado" },
     { id: "financaPessoal", label: "Financeiro pessoal" },
     { id: "atender", label: "Atender pacientes" },
+    { id: "renascerIA", label: "Renascer IA" },
   ];
 
   return (
@@ -55,6 +56,7 @@ export default function AreaDono() {
       {aba === "suporte" && <SuporteEscalado />}
       {aba === "financaPessoal" && <AbaFinancaPessoal />}
       {aba === "atender" && <AbaAtenderPacientes user={user} />}
+      {aba === "renascerIA" && <AbaRenascerIA />}
     </Layout>
   );
 }
@@ -2016,6 +2018,143 @@ function NotasFinancaPessoal() {
             </div>
           ))}
           {notas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma anotação ainda.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- RENASCER IA (etapa 1 — base grátis): gasto, usuários e travas de custo ----------------
+// Mostra só o que já existe nesta etapa: quanto já foi gasto com a IA no mês (contra o teto), quantos
+// usuários grátis já baixaram o app, e os campos pra editar as travas (teto mensal, limite diário do
+// grátis e do assinante). "Assinantes" e "Assinaturas no mês" aparecem zerados por enquanto — a
+// assinatura (plano completo pago) é uma etapa futura da Renascer IA, ainda não construída.
+function AbaRenascerIA() {
+  const [dados, setDados] = useState(null);
+  const [teto, setTeto] = useState("");
+  const [limiteGratis, setLimiteGratis] = useState("");
+  const [limiteAssinante, setLimiteAssinante] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/renascer-ia");
+    setDados(data);
+    setTeto(String(data.tetoMensalReais));
+    setLimiteGratis(String(data.limiteGratisDia));
+    setLimiteAssinante(String(data.limiteAssinanteDia));
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setMensagem("");
+    try {
+      await api.put("/dono/renascer-ia/configuracao", {
+        tetoMensalReais: Number(teto),
+        limiteGratisDia: Number(limiteGratis),
+        limiteAssinanteDia: Number(limiteAssinante),
+      });
+      setMensagem("Limites salvos.");
+      carregar();
+    } catch (e) {
+      setMensagem(e?.response?.data?.erro || "Não foi possível salvar agora.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (!dados) return <p className="text-renascer-ink/50">Carregando...</p>;
+
+  const percentualGasto = dados.tetoMensalReais > 0 ? Math.min(100, (dados.gastoMesAtualReais / dados.tetoMensalReais) * 100) : 0;
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div>
+        <h2 className="text-lg font-bold text-renascer-ink">Renascer IA</h2>
+        <p className="text-sm text-renascer-ink/60">Gasto, usuários e travas de custo deste mês.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="card space-y-2">
+          <p className="text-xs font-bold text-renascer-ink/60">Gasto com a IA no mês</p>
+          <p className="text-2xl font-extrabold text-renascer-ink">
+            R$ {dados.gastoMesAtualReais.toFixed(2)}{" "}
+            <span className="text-sm font-semibold text-renascer-ink/50">de R$ {dados.tetoMensalReais.toFixed(2)}</span>
+          </p>
+          <div className="h-2 rounded-full bg-renascer-light overflow-hidden">
+            <div className="h-full bg-renascer" style={{ width: `${percentualGasto}%` }} />
+          </div>
+        </div>
+        <div className="card space-y-1">
+          <p className="text-xs font-bold text-renascer-ink/60">Usuários grátis</p>
+          <p className="text-2xl font-extrabold text-renascer-ink">{dados.usuariosGratis}</p>
+        </div>
+        <div className="card space-y-1 opacity-60">
+          <p className="text-xs font-bold text-renascer-ink/60">Assinantes</p>
+          <p className="text-2xl font-extrabold text-renascer-ink">—</p>
+          <p className="text-xs text-renascer-ink/50">Chega na próxima etapa (assinatura)</p>
+        </div>
+        <div className="card space-y-1 opacity-60">
+          <p className="text-xs font-bold text-renascer-ink/60">Assinaturas no mês</p>
+          <p className="text-2xl font-extrabold text-renascer-ink">—</p>
+          <p className="text-xs text-renascer-ink/50">Chega na próxima etapa (assinatura)</p>
+        </div>
+      </div>
+
+      <div className="card space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-sm text-renascer-ink">Teto mensal de gasto com a IA</p>
+            <p className="text-xs text-renascer-ink/55">Ao atingir, o grátis cai para o limite reduzido até o mês virar.</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold">R$</span>
+            <input className="input !w-28" value={teto} onChange={(e) => setTeto(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
+          <div>
+            <p className="font-semibold text-sm text-renascer-ink">Limite de mensagens por dia</p>
+            <p className="text-xs text-renascer-ink/55">O limite do assinante ainda não é usado nesta etapa.</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-sm font-semibold">
+              Grátis
+              <input className="input !w-20" value={limiteGratis} onChange={(e) => setLimiteGratis(e.target.value)} />
+            </label>
+            <label className="flex items-center gap-1.5 text-sm font-semibold">
+              Assinante
+              <input className="input !w-20" value={limiteAssinante} onChange={(e) => setLimiteAssinante(e.target.value)} />
+            </label>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
+          <div>
+            <p className="font-semibold text-sm text-renascer-ink">Uma conta por WhatsApp e por e-mail</p>
+            <p className="text-xs text-renascer-ink/55">O mesmo WhatsApp ou e-mail não consegue criar duas contas.</p>
+          </div>
+          <span className="badge bg-green-100 text-green-800">Ativa</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
+          <div>
+            <p className="font-semibold text-sm text-renascer-ink">Tamanho máximo de cada resposta</p>
+            <p className="text-xs text-renascer-ink/55">Nenhuma resposta da IA sai muito grande, pra não sair caro.</p>
+          </div>
+          <span className="badge bg-green-100 text-green-800">Ativa</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" onClick={salvar} disabled={salvando}>
+            {salvando ? "Salvando..." : "Salvar limites"}
+          </button>
+          {mensagem && <span className="text-sm text-renascer-ink/60">{mensagem}</span>}
         </div>
       </div>
     </div>
