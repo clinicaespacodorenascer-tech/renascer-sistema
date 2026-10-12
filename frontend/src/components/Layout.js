@@ -5,7 +5,7 @@ import { inscreverPush, statusPermissao, tentarReinscreverSilenciosamente } from
 
 // Avatar que qualquer papel (Cliente, Atendente, Dono ou Profissional) pode clicar pra trocar a
 // própria foto — antes só a Profissional tinha isso, na tela de perfil dela. Aqui é a mesma foto
-// (mesmo campo fotoUrl do usuário), só que direto pelo cabeçalho, disponível pra todo mundo.
+// (mesmo campo fotoUrl do usuário), só que direto pelo cabeçalho/menu, disponível pra todo mundo.
 function AvatarEditavel({ user }) {
   const inputRef = useRef(null);
   const [foto, setFoto] = useState(user?.fotoUrl || null);
@@ -182,6 +182,198 @@ function SininhoNotificacoes() {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Fase 23 — redesign visual: ícones do menu lateral.
+//
+// As abas de cada papel (ex: { id: "clientes", label: "Clientes" }) já existiam antes e continuam
+// exatamente iguais — nenhuma página precisou ser alterada. Pra não ter que editar os 4 painéis
+// (Dono, Profissional, Atendente, Cliente) só pra adicionar um ícone em cada aba, o Layout decide
+// sozinho qual ícone mostrar a partir do "id" da aba, com um ícone genérico de reserva pra
+// qualquer aba nova que apareça no futuro e ainda não esteja nesta lista.
+// ---------------------------------------------------------------------------------------------
+const FORMAS_ICONE = {
+  casa: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5" />,
+  pessoas: (
+    <>
+      <circle cx="8.5" cy="8" r="3" />
+      <path d="M2 20c0-3.3 2.9-6 6.5-6s6.5 2.7 6.5 6" />
+      <circle cx="17" cy="8.5" r="2.3" />
+      <path d="M16 14.2c2.7.5 4.5 2.6 4.5 5.3" />
+    </>
+  ),
+  maleta: (
+    <>
+      <rect x="2.5" y="7.5" width="19" height="12" rx="2" />
+      <path d="M8 7.5V5.8A2.3 2.3 0 0 1 10.3 3.5h3.4A2.3 2.3 0 0 1 16 5.8V7.5" />
+      <path d="M2.5 13h19" />
+    </>
+  ),
+  fone: (
+    <>
+      <path d="M4 12.5v-1a8 8 0 0 1 16 0v1" />
+      <rect x="2.5" y="12.5" width="4.5" height="6" rx="1.5" />
+      <rect x="17" y="12.5" width="4.5" height="6" rx="1.5" />
+    </>
+  ),
+  pessoaMais: (
+    <>
+      <circle cx="9" cy="8" r="3.3" />
+      <path d="M2.5 20.5c0-3.6 2.9-6.3 6.5-6.3s6.5 2.7 6.5 6.3" />
+      <path d="M18.5 7v6M15.5 10h6" />
+    </>
+  ),
+  atualizar: (
+    <>
+      <path d="M3 11a9 9 0 0 1 15.3-5.8L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 13a9 9 0 0 1-15.3 5.8L3 16" />
+      <path d="M3 21v-5h5" />
+    </>
+  ),
+  calendario: (
+    <>
+      <rect x="2.8" y="4.5" width="18.4" height="16.5" rx="2.3" />
+      <path d="M2.8 9.5h18.4M7.5 2.5v4M16.5 2.5v4" />
+    </>
+  ),
+  relogio: (
+    <>
+      <circle cx="12" cy="12" r="9.3" />
+      <path d="M12 7v5l3.3 2" />
+    </>
+  ),
+  carteira: (
+    <>
+      <rect x="2.5" y="6" width="19" height="13.5" rx="2.3" />
+      <path d="M2.5 10.5h19" />
+      <circle cx="16.5" cy="14.5" r="1.2" />
+    </>
+  ),
+  grafico: (
+    <>
+      <path d="M3 21h18" />
+      <rect x="5" y="12" width="3.4" height="8" rx="0.8" />
+      <rect x="10.3" y="7.5" width="3.4" height="12.5" rx="0.8" />
+      <rect x="15.6" y="3.5" width="3.4" height="16.5" rx="0.8" />
+    </>
+  ),
+  alvo: (
+    <>
+      <circle cx="12" cy="12" r="9.3" />
+      <circle cx="12" cy="12" r="5.2" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  moeda: (
+    <>
+      <circle cx="12" cy="12" r="9.3" />
+      <path d="M12 7.3v9.4M9.6 9.4c0-1.3 1.1-2.1 2.4-2.1s2.4.8 2.4 1.9c0 2.8-4.8 1.4-4.8 4 0 1.2 1.1 2 2.4 2s2.4-.8 2.4-2.1" />
+    </>
+  ),
+  bloco: (
+    <>
+      <rect x="4" y="2.5" width="16" height="19" rx="2" />
+      <path d="M8 7.5h8M8 11.5h8M8 15.5h5" />
+    </>
+  ),
+  sino: (
+    <>
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </>
+  ),
+  balao: (
+    <>
+      <path d="M3 5.5h18v11H8.5L4 20.5V16.5H3z" />
+      <path d="M7.5 10h9M7.5 13h6" />
+    </>
+  ),
+  check: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M8 12.5l2.5 2.5L16.5 9" />
+    </>
+  ),
+  arquivo: (
+    <>
+      <path d="M6 2.5h8l5 5v13.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z" />
+      <path d="M14 2.5V8h5" />
+      <path d="M8.5 13h7M8.5 16.5h7" />
+    </>
+  ),
+  pasta: <path d="M2.5 6.5a1.5 1.5 0 0 1 1.5-1.5h5l2 2.5h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18z" />,
+  ajuda: (
+    <>
+      <circle cx="12" cy="12" r="9.3" />
+      <path d="M9.2 9.3a2.8 2.8 0 1 1 4.2 2.4c-.9.6-1.4 1.1-1.4 2.1" />
+      <circle cx="12" cy="17.2" r="0.15" fill="currentColor" stroke="currentColor" strokeWidth="1.6" />
+    </>
+  ),
+  filtro: (
+    <>
+      <path d="M4 5.5h16M7 12h10M10 18.5h4" />
+    </>
+  ),
+  ponto: <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />,
+};
+
+const MAPA_ICONE_POR_ABA = {
+  dashboard: "casa",
+  painel: "casa",
+  clientes: "pessoas",
+  usuarios: "pessoas",
+  profissionais: "maleta",
+  atender: "fone",
+  cadastrar: "pessoaMais",
+  reativar: "atualizar",
+  agenda: "calendario",
+  historico: "relogio",
+  financeiro: "carteira",
+  repasses: "carteira",
+  resumo: "grafico",
+  lancamentos: "grafico",
+  metas: "alvo",
+  poupanca: "moeda",
+  notas: "bloco",
+  diario: "bloco",
+  notificacoes: "sino",
+  avisos: "sino",
+  chat: "balao",
+  tarefas: "check",
+  relatorios: "arquivo",
+  contrato: "arquivo",
+  materiais: "pasta",
+  duvidas: "ajuda",
+  suporte: "ajuda",
+  config: "filtro",
+};
+
+function IconeAba({ id, className }) {
+  const forma = FORMAS_ICONE[MAPA_ICONE_POR_ABA[id]] || FORMAS_ICONE.ponto;
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {forma}
+    </svg>
+  );
+}
+
+const ROTULO_PAINEL = {
+  DONO: "Painel do Dono",
+  PROFISSIONAL: "Painel do Profissional",
+  CLIENTE: "Área do Cliente",
+  ATENDENTE: "Painel do Atendente",
+};
+
 export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, children }) {
   const [menuAberto, setMenuAberto] = useState(false);
 
@@ -193,13 +385,66 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
   return (
     <div className="min-h-screen">
       <div className="h-[3px] bg-gold-line" />
-      <header className="bg-white/85 backdrop-blur-md border-b border-renascer-ink/[0.06] shadow-[0_1px_0_rgba(0,80,150,0.04)] sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+
+      {/* Menu lateral fixo (computador) — Fase 23: antes o menu de categorias era uma fileira de
+          abas horizontais embaixo do cabeçalho; agora é uma barra lateral fixa à esquerda, no
+          mesmo estilo do painel da Renascer IA, sempre visível enquanto a pessoa navega. */}
+      {abas.length > 0 && (
+        <aside className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 md:w-64 bg-white border-r border-renascer-ink/[0.06] z-20">
+          <div className="p-5 border-b border-renascer-ink/[0.06] flex items-center gap-3">
+            <Logo size={40} />
+            <div className="min-w-0">
+              <p className="font-bold text-sm text-renascer-ink leading-tight truncate">Espaço do Renascer</p>
+              {user && <p className="text-xs text-renascer-ink/55 truncate">{ROTULO_PAINEL[user.role] || "Painel"}</p>}
+            </div>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1" aria-label="Menu principal">
+            {abas.map((aba) => {
+              const ativa = abaAtiva === aba.id;
+              return (
+                <button
+                  key={aba.id}
+                  onClick={() => onTrocarAba(aba.id)}
+                  className={`flex items-center gap-3 w-full min-h-[46px] px-3 rounded-xl text-sm transition-colors ${
+                    ativa ? "bg-gold-light text-gold-dark font-bold" : "text-renascer-ink/60 font-semibold hover:bg-renascer-light hover:text-renascer-ink"
+                  }`}
+                >
+                  <IconeAba id={aba.id} className="shrink-0" />
+                  <span className="truncate text-left">{aba.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {user && (
+            <div className="p-3 border-t border-renascer-ink/[0.06] space-y-2">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="flex items-center gap-2 min-w-0">
+                  <AvatarEditavel user={user} />
+                  <span className="text-xs text-renascer-ink/70 truncate">
+                    Olá, <strong className="text-renascer-ink">{user.nome}</strong>
+                  </span>
+                </span>
+                <SininhoNotificacoes />
+              </div>
+              <button onClick={sair} className="btn-secondary w-full !py-2 text-sm">
+                Sair
+              </button>
+            </div>
+          )}
+        </aside>
+      )}
+
+      {/* Cabeçalho (celular) — a barra lateral acima some em telas pequenas; no celular continua
+          existindo um cabeçalho fixo no topo com o menu em gaveta, igual já funcionava antes. */}
+      <header className="md:hidden bg-white/85 backdrop-blur-md border-b border-renascer-ink/[0.06] shadow-[0_1px_0_rgba(0,80,150,0.04)] sticky top-0 z-20">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {abas.length > 0 && (
               <button
                 onClick={() => setMenuAberto(true)}
-                className="md:hidden -ml-1 p-2 rounded-lg hover:bg-renascer-light transition-colors"
+                className="-ml-1 p-2 rounded-lg hover:bg-renascer-light transition-colors"
                 aria-label="Abrir menu"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -209,7 +454,7 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
                 </svg>
               </button>
             )}
-            <Logo size={52} />
+            <Logo size={44} />
           </div>
           <div className="flex items-center gap-3">
             {user && <SininhoNotificacoes />}
@@ -226,29 +471,9 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
             </button>
           </div>
         </div>
-        {abas.length > 0 && (
-          <nav className="hidden md:flex max-w-6xl mx-auto px-4 gap-1 overflow-x-auto">
-            {abas.map((aba) => (
-              <button
-                key={aba.id}
-                onClick={() => onTrocarAba(aba.id)}
-                className={`relative whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors ${
-                  abaAtiva === aba.id ? "text-renascer" : "text-renascer-ink/55 hover:text-renascer-ink"
-                }`}
-              >
-                {aba.label}
-                <span
-                  className={`absolute left-3 right-3 -bottom-px h-[2.5px] rounded-full bg-gold transition-opacity ${
-                    abaAtiva === aba.id ? "opacity-100" : "opacity-0"
-                  }`}
-                />
-              </button>
-            ))}
-          </nav>
-        )}
       </header>
 
-      {/* Menu lateral (celular) — abre pra pegar as categorias sem precisar rolar a barra de cima */}
+      {/* Menu em gaveta (celular) — abre pra pegar as categorias sem precisar rolar a barra de cima */}
       {menuAberto && (
         <div className="fixed inset-0 z-30 md:hidden">
           <div className="absolute inset-0 bg-renascer-deep/70 backdrop-blur-sm" onClick={() => setMenuAberto(false)} />
@@ -271,17 +496,21 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
               </div>
             )}
             <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
-              {abas.map((aba) => (
-                <button
-                  key={aba.id}
-                  onClick={() => irPara(aba.id)}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    abaAtiva === aba.id ? "bg-renascer-light text-renascer border-l-2 border-gold" : "text-renascer-ink/70 hover:bg-renascer-light"
-                  }`}
-                >
-                  {aba.label}
-                </button>
-              ))}
+              {abas.map((aba) => {
+                const ativa = abaAtiva === aba.id;
+                return (
+                  <button
+                    key={aba.id}
+                    onClick={() => irPara(aba.id)}
+                    className={`flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                      ativa ? "bg-gold-light text-gold-dark font-bold" : "text-renascer-ink/70 font-medium hover:bg-renascer-light"
+                    }`}
+                  >
+                    <IconeAba id={aba.id} className="shrink-0" />
+                    <span className="truncate">{aba.label}</span>
+                  </button>
+                );
+              })}
             </nav>
             <div className="p-3 border-t border-renascer-ink/[0.06]">
               <button onClick={sair} className="btn-secondary w-full">
@@ -292,7 +521,10 @@ export default function Layout({ user, abas = [], abaAtiva, onTrocarAba, childre
         </div>
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      {/* Conteúdo — no computador, empurrado pra direita pra abrir espaço pra barra lateral fixa */}
+      <div className={abas.length > 0 ? "md:pl-64" : ""}>
+        <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      </div>
     </div>
   );
 }
