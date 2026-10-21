@@ -170,6 +170,13 @@ model User {
   ativo         Boolean  @default(true)
   ultimoAcessoEm DateTime? // atualizado (com limite de 1x/min) a cada request autenticado — usado
                            // pra mostrar "online agora" / "visto há X min" pra quem tem permissão
+  // Fase 33 — Secretaria/Supervisão: calculados junto com ultimoAcessoEm (mesmo bloco, sem
+  // chamada nova no front). sessaoAtivaDesde é o início da sessão contínua atual (reseta quando
+  // fica mais de alguns minutos sem nenhum request); tempoOnlineHojeSegundos é o acumulado de
+  // tempo ativo HOJE (zera sozinho quando tempoOnlineHojeData deixa de ser o dia de hoje).
+  sessaoAtivaDesde DateTime?
+  tempoOnlineHojeSegundos Int @default(0)
+  tempoOnlineHojeData DateTime?
   // Renascer IA: quando a pessoa aceitou os avisos/termos no cadastro público (18+, termos de uso,
   // privacidade) — obrigatório antes de liberar a conversa com a IA.
   aceitouTermosIAEm DateTime?
@@ -401,6 +408,11 @@ model HistoricoCliente {
   pacoteResumo     String?             // ex: "50min - 4 sessão(ões)"
   profissionalNome String?
   motivo           String?
+  // Fase 33 — id do login (User) que realizou a ação, quando dá pra saber. Opcional e sem
+  // relação (é só uma "foto" do autor, igual aos outros campos daqui) — alimenta a tela de
+  // Supervisão de setor (ex.: quantas reativações a Secretaria X fez hoje). Registros antigos
+  // (antes da Fase 33) ficam null e não entram em nenhuma conta de "hoje" por atendente.
+  realizadoPorId   String?
 
   criadoEm         DateTime            @default(now())
 

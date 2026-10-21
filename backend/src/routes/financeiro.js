@@ -246,6 +246,7 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       nomeCliente: cliente.user.nome,
       whatsapp: cliente.whatsappCadastro,
       profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+      realizadoPorId: req.user.id,
     },
   });
   if (cliente.profissionalAtual?.user) {

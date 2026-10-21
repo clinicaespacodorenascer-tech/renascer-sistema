@@ -2270,3 +2270,87 @@ separados (ex: "Estratégias", "Tarefas", "Futuro da plataforma").
   mapa inteiro.
 - Próximas partes do pedido maior: Secretaria/Supervisão da Atendente (Dono) e o redesign visual
   lote a lote das telas que já existem.
+
+# Fase 33 — Secretaria: Supervisão de setor (Dono acompanhando a Atendente) (entregue em 21/10/2026)
+
+## Contexto do pedido
+
+Do canvas de 26 telas ("Novo Layout — Espaço do Renascer"), a tela `Secretaria-Supervisao.dc.html`
+mostra o Dono acompanhando um login da recepção (ex.: Maria): se está online agora e há quanto
+tempo, quanto tempo ficou ativa no dia, quantos clientes cadastrou, quantas reativações fez,
+quantos chamados de suporte respondeu, um gráfico de cadastros dos últimos 7 dias e um feed de
+"Atividade de hoje".
+
+## O que foi construído
+
+- **Presença e tempo online** — reaproveitado o mesmo carimbo `User.ultimoAcessoEm` que já existia
+  (atualizado, no máximo 1x por minuto, em praticamente toda request autenticada — ver
+  `middleware/auth.js`). Nesse mesmo bloco, sem nenhuma chamada nova no frontend, passaram a ser
+  calculados também:
+  - `sessaoAtivaDesde`: quando a sessão contínua atual começou (reseta quando a pessoa fica mais
+    de ~6 minutos sem usar o sistema e depois volta — aí conta como uma sessão nova).
+  - `tempoOnlineHojeSegundos` + `tempoOnlineHojeData`: quanto tempo, somado, essa pessoa ficou
+    "ativa" hoje (zera sozinho quando o dia muda).
+  - "Online agora" na tela de supervisão = o último acesso foi há até 3 minutos.
+  - Isso é uma aproximação (baseada em uso do app, não numa conexão permanente de verdade) — mesmo
+    princípio que já valia pro indicador de presença que já existia noutras telas.
+- **Atribuição de ações a um login específico** — o modelo `HistoricoCliente` (linha do tempo do
+  cliente: entrou/renovou/saiu/reativado/trocou de profissional) ganhou um campo novo e opcional
+  `realizadoPorId`, preenchido em toda rota que já criava esses registros (em `dono.js`,
+  `atendente.js`, `profissional.js` e `financeiro.js`) com o id de quem fez a ação. Sem isso não
+  dava pra saber, por exemplo, quantas reativações a Maria especificamente fez hoje (só dava pra
+  saber que alguém reativou). Registros antigos (de antes dessa fase) ficam com esse campo vazio e
+  simplesmente não entram em nenhuma conta de "hoje" — não é um problema, porque essas contas são
+  sempre do dia atual.
+- **Indicadores do dia da Atendente**: clientes cadastrados hoje (`Cliente.cadastradoPorId` +
+  `criadoEm`), reativações hoje (`HistoricoCliente` tipo REATIVADO + `realizadoPorId`) e suportes
+  atendidos hoje (tickets distintos em que essa pessoa mandou mensagem hoje, via `Mensagem`).
+- **Gráfico "Cadastros por dia — últimos 7 dias"** e **feed "Atividade de hoje"** (junta cadastros,
+  reativações e suportes respondidos num único feed, do mais recente pro mais antigo).
+- **Onde abrir**: não é uma aba nova no menu — fica dentro da aba "Usuários" já existente. Toda
+  linha de um login com papel Atendente ganhou um botão "Supervisão" que abre o painel ali mesmo,
+  embaixo da linha (mesmo padrão já usado pelo botão "Editar"). Só funciona pra logins da
+  Secretaria (Atendente) por enquanto — Profissional e Setor Financeiro podem ganhar o próprio
+  painel depois, se fizer sentido.
+- Feita dentro do visual atual (mesmas cores/fontes do resto do painel do Dono hoje), pelo mesmo
+  motivo da Fase 32 (Mapas mentais): evitar misturar dois estilos na mesma tela antes do redesign
+  geral.
+
+## Arquivos alterados/criados
+
+- `backend/prisma/schema.prisma` (aditivo) — 3 campos novos em `User` (`sessaoAtivaDesde`,
+  `tempoOnlineHojeSegundos`, `tempoOnlineHojeData`) e 1 campo novo em `HistoricoCliente`
+  (`realizadoPorId`).
+- `backend/src/middleware/auth.js` — a mesma atualização de presença (`autenticar()`) passou a
+  também calcular o acumulado de tempo online de hoje e o início da sessão contínua.
+- `backend/src/routes/dono.js` — rota nova `GET /dono/usuarios/:id/supervisao`, que devolve tudo
+  que a tela precisa (presença, indicadores, gráfico, feed de atividade) pra um login Atendente.
+- `backend/src/routes/dono.js`, `atendente.js`, `profissional.js`, `financeiro.js` — todo lugar que
+  já criava um registro em `HistoricoCliente` passou a gravar também `realizadoPorId: req.user.id`.
+- `frontend/src/pages/dono/index.js` — botão "Supervisão" na linha de cada Atendente (dentro da aba
+  Usuários) + componente novo `SupervisaoSecretaria` (badge de presença, 4 cartões de indicador,
+  gráfico de barras e feed de atividade).
+
+## O que foi testado nesta sessão
+
+- `node --check` em todos os arquivos de backend alterados — sem erro de sintaxe.
+- Contagem de chaves/parênteses/colchetes no `schema.prisma` e no `dono/index.js` — todos
+  equilibrados.
+- Revisão manual de cada ponto onde `HistoricoCliente` é criado, confirmando que `realizadoPorId`
+  foi adicionado em todos (dono, atendente, profissional, financeiro) sem alterar o resto do
+  comportamento de cada rota.
+- Como nas fases anteriores, não foi possível rodar `npx prisma validate` nem `npx next build`
+  neste ambiente (mesma limitação de rede/sandbox já registrada nas Fases 22, 28, 30, 31 e 32).
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: mudança aditiva no schema — o Railway cria os campos novos sozinho, sem
+  comando manual.
+- Entrar como Dono, abrir "Usuários", achar um login da Secretaria e clicar em "Supervisão": 1)
+  conferir se aparece "Online agora" quando a atendente estiver de fato usando o sistema; 2)
+  cadastrar um cliente ou reativar um cliente usando o login da atendente, e checar se o indicador
+  do dia correspondente sobe; 3) responder um chamado de suporte com o login dela e checar
+  "Suportes atendidos".
+- Importante: o "tempo online hoje" e o "online agora" só começam a acumular depois do deploy
+  dessa fase — não existe isso retroativo pra hoje antes do deploy.
+- Próxima parte do pedido maior: redesign visual lote a lote das telas que já existem (Fase 34+).

@@ -162,6 +162,7 @@ router.put("/clientes/:id/vincular-profissional", async (req, res) => {
       motivo: nomeProfissionalAntiga
         ? `Trocado(a) de ${nomeProfissionalAntiga} pelo Dono.`
         : "Vinculado(a) a uma profissional pelo Dono.",
+      realizadoPorId: req.user.id,
     },
   });
 
@@ -212,6 +213,7 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       nomeCliente: cliente.user.nome,
       whatsapp: cliente.whatsappCadastro,
       profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+      realizadoPorId: req.user.id,
     },
   });
   if (cliente.profissionalAtual?.user) {
@@ -550,7 +552,7 @@ router.post("/usuarios", async (req, res) => {
 
   if (role === "CLIENTE" && user.cliente) {
     await prisma.historicoCliente.create({
-      data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
+      data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, realizadoPorId: req.user.id },
     });
     await notificarDonos({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`, tipo: "cliente" }, req.user.id);
     await notificarAtendentes({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) por ${req.user.nome}.`, tipo: "cliente" });
@@ -652,6 +654,117 @@ router.delete("/usuarios/:id", async (req, res) => {
   } catch (e) {
     res.status(400).json({ erro: e.message || "Erro ao excluir usuário." });
   }
+});
+
+// ---------- Secretaria — Supervisão de setor (Fase 33) ----------
+// Painel do Dono acompanhando um login da recepção (Atendente): se está online agora e desde
+// quando, quanto tempo ficou ativa hoje, quantos clientes cadastrou, quantas reativações fez e
+// quantos chamados de suporte respondeu — tudo "hoje" e um gráfico dos últimos 7 dias de
+// cadastro. Por enquanto só existe pra logins da Secretaria (role ATENDENTE); outros papéis
+// (Profissional, Financeiro) podem ganhar sua própria versão depois, se fizer sentido.
+//
+// "Online agora"/tempo online usam os mesmos carimbos (ultimoAcessoEm, sessaoAtivaDesde,
+// tempoOnlineHojeSegundos) que o middleware de autenticação já atualiza em toda request —
+// nenhuma chamada nova precisa existir no frontend da atendente pra isso funcionar.
+const LIMIAR_ONLINE_AGORA_MS = 3 * 60 * 1000; // até 3min sem request ainda mostra como "online agora"
+const LABELS_DIA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+router.get("/usuarios/:id/supervisao", async (req, res) => {
+  const usuario = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    include: { atendente: true },
+  });
+  if (!usuario || usuario.role !== "ATENDENTE" || !usuario.atendente) {
+    return res
+      .status(404)
+      .json({ erro: "Supervisão disponível, por enquanto, só pra logins da Secretaria (Atendente)." });
+  }
+  const atendenteId = usuario.atendente.id;
+  const hoje = inicioDoDia();
+
+  const onlineAgora = !!usuario.ultimoAcessoEm && Date.now() - usuario.ultimoAcessoEm.getTime() <= LIMIAR_ONLINE_AGORA_MS;
+  const tempoOnlineHojeSegundos =
+    usuario.tempoOnlineHojeData && usuario.tempoOnlineHojeData.getTime() === hoje.getTime()
+      ? usuario.tempoOnlineHojeSegundos
+      : 0;
+
+  // Janela dos últimos 7 dias (hoje incluso) pro gráfico de cadastros por dia
+  const diasJanela = [];
+  for (let i = 6; i >= 0; i--) diasJanela.push(new Date(hoje.getTime() - i * 24 * 60 * 60 * 1000));
+
+  const [clientesCadastradosHoje, cadastrosNaJanela, reativacoesHojeLista, suportesHojeLista] = await Promise.all([
+    prisma.cliente.count({ where: { cadastradoPorId: atendenteId, criadoEm: { gte: hoje } } }),
+    prisma.cliente.findMany({
+      where: { cadastradoPorId: atendenteId, criadoEm: { gte: diasJanela[0] } },
+      select: {
+        criadoEm: true,
+        user: { select: { nome: true } },
+        profissionalAtual: { select: { user: { select: { nome: true } } } },
+      },
+    }),
+    prisma.historicoCliente.findMany({
+      where: { tipo: "REATIVADO", realizadoPorId: usuario.id, criadoEm: { gte: hoje } },
+      select: { criadoEm: true, nomeCliente: true },
+    }),
+    // Um registro por ticket respondido hoje por essa atendente (distinct por ticket, pega a
+    // mensagem mais recente dela em cada um) — alimenta o indicador e o feed de atividade.
+    prisma.mensagem.findMany({
+      where: { remetenteId: usuario.id, ticketId: { not: null }, criadoEm: { gte: hoje } },
+      distinct: ["ticketId"],
+      orderBy: { criadoEm: "desc" },
+      select: { criadoEm: true, ticket: { select: { cliente: { select: { user: { select: { nome: true } } } } } } },
+    }),
+  ]);
+
+  const cadastrosPorDia = diasJanela.map((data) => {
+    const total = cadastrosNaJanela.filter(
+      (c) =>
+        c.criadoEm.getFullYear() === data.getFullYear() &&
+        c.criadoEm.getMonth() === data.getMonth() &&
+        c.criadoEm.getDate() === data.getDate()
+    ).length;
+    return { data: data.toISOString().slice(0, 10), label: LABELS_DIA_SEMANA[data.getDay()], total };
+  });
+
+  const cadastrosHojeDetalhe = cadastrosNaJanela.filter(
+    (c) =>
+      c.criadoEm.getFullYear() === hoje.getFullYear() &&
+      c.criadoEm.getMonth() === hoje.getMonth() &&
+      c.criadoEm.getDate() === hoje.getDate()
+  );
+
+  // Atividade de hoje: junta cadastros + reativações + suportes respondidos num feed só, do
+  // mais recente pro mais antigo.
+  const atividades = [
+    ...cadastrosHojeDetalhe.map((c) => ({
+      quando: c.criadoEm,
+      texto: `Cadastrou ${c.user.nome}${c.profissionalAtual?.user?.nome ? ` (${c.profissionalAtual.user.nome})` : ""}`,
+    })),
+    ...reativacoesHojeLista.map((h) => ({ quando: h.criadoEm, texto: `Reativou ${h.nomeCliente}` })),
+    ...suportesHojeLista.map((m) => ({
+      quando: m.criadoEm,
+      texto: `Respondeu suporte de ${m.ticket?.cliente?.user?.nome || "cliente"}`,
+    })),
+  ]
+    .sort((a, b) => b.quando.getTime() - a.quando.getTime())
+    .slice(0, 20)
+    .map((a) => ({ texto: a.texto, hora: a.quando.toTimeString().slice(0, 5) }));
+
+  res.json({
+    usuario: { id: usuario.id, nome: usuario.nome },
+    presenca: {
+      onlineAgora,
+      onlineDesde: onlineAgora ? usuario.sessaoAtivaDesde : null,
+      tempoOnlineHojeSegundos,
+    },
+    indicadores: {
+      clientesCadastradosHoje,
+      reativacoesHoje: reativacoesHojeLista.length,
+      suportesAtendidosHoje: suportesHojeLista.length,
+    },
+    cadastrosPorDia,
+    atividades,
+  });
 });
 
 // ---------- Suporte escalado à gerência (visão dos donos) ----------

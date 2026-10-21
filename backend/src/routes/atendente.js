@@ -8,6 +8,7 @@ const { notificar, notificarDonos, notificarAtendentes } = require("../utils/not
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
+const { inicioDoDia, fimDoDia, periodoDoMes } = require("../utils/meuDia");
 
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
@@ -30,6 +31,7 @@ router.post("/clientes", async (req, res) => {
     imagemBase64,
     mimeType,
     observacao,
+    canalOrigem,
   } = req.body;
   // Na prática é sempre a profissional quem recebe o pagamento do cliente (Pix/cartão dela) e
   // depois repassa a parte da Renascer — por isso todo lançamento feito aqui já nasce como
@@ -56,6 +58,9 @@ router.post("/clientes", async (req, res) => {
           profissionalAtualId: profissionalAtualId || null,
           cadastradoPorId: atendenteId,
           whatsappCadastro: telefone || null,
+          // Origem do lead (Fase 30) — opcional, só pra alimentar os indicadores reais de
+          // marketing (leads/novos clientes por canal, CAC). Nunca trava o cadastro se não vier.
+          canalOrigem: canalOrigem || null,
         },
       },
     },
@@ -63,7 +68,7 @@ router.post("/clientes", async (req, res) => {
   });
 
   await prisma.historicoCliente.create({
-    data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null },
+    data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, realizadoPorId: req.user.id },
   });
 
   // Avisa a gestão (donos + outras atendentes) que entrou cliente novo, e a profissional
@@ -174,6 +179,7 @@ router.put("/clientes/:id/situacao", async (req, res) => {
     whatsapp: cliente.whatsappCadastro || cliente.user.telefone,
     pacoteResumo,
     profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+    realizadoPorId: req.user.id,
   };
 
   if (acao === "RENOVOU") {
@@ -232,6 +238,7 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       nomeCliente: cliente.user.nome,
       whatsapp: cliente.whatsappCadastro,
       profissionalNome: cliente.profissionalAtual?.user?.nome || null,
+      realizadoPorId: req.user.id,
     },
   });
   if (cliente.profissionalAtual?.user) {
@@ -283,6 +290,7 @@ router.put("/clientes/:id/vincular-profissional", async (req, res) => {
       motivo: nomeProfissionalAntiga
         ? `Trocado(a) de ${nomeProfissionalAntiga} pela recepção.`
         : "Vinculado(a) a uma profissional pela recepção.",
+      realizadoPorId: req.user.id,
     },
   });
 
@@ -611,6 +619,63 @@ router.get("/suporte-gerencia", async (req, res) => {
     orderBy: { criadoEm: "desc" },
   });
   res.json(tickets);
+});
+
+// ======================================================================================
+// ---------- "MEU DIA" (Fase 30) — recorte operacional pra Atendente: só o que já é dela
+// em outras partes do sistema (agenda, reativação, clientes novos) + o registro de
+// marketing, que ela também pode lançar. Nunca financeiro consolidado da clínica — isso
+// continua só na visão do Dono.
+// ======================================================================================
+
+router.get("/meu-dia/indicadores", async (req, res) => {
+  const hojeInicio = inicioDoDia();
+  const hojeFim = fimDoDia();
+  const { inicio: inicioMes, fim: fimMes } = periodoDoMes();
+
+  const [agendamentosHoje, clientesEsperandoReativacao, clientesNovosHoje, clientesNovosMes, registrosMarketingMes] =
+    await Promise.all([
+      prisma.agendamento.findMany({
+        where: { data: { gte: hojeInicio, lt: hojeFim } },
+        select: { status: true },
+      }),
+      prisma.cliente.count({ where: { situacao: "EXCLUIDO", profissionalAtualId: null } }),
+      prisma.cliente.count({ where: { criadoEm: { gte: hojeInicio, lt: hojeFim } } }),
+      prisma.cliente.count({ where: { criadoEm: { gte: inicioMes, lt: fimMes } } }),
+      prisma.registroMarketing.count({ where: { criadoPorId: req.user.id, data: { gte: inicioMes, lt: fimMes } } }),
+    ]);
+
+  const porStatusHoje = {};
+  for (const ag of agendamentosHoje) porStatusHoje[ag.status] = (porStatusHoje[ag.status] || 0) + 1;
+
+  res.json({
+    agendaHoje: { total: agendamentosHoje.length, porStatus: porStatusHoje },
+    clientesEsperandoReativacao,
+    clientesNovosHoje,
+    clientesNovosMes,
+    registrosMarketingMeusMes: registrosMarketingMes,
+  });
+});
+
+// Mesmo registro de marketing que o Dono usa (RegistroMarketing é um log só, de quem quer que
+// registre) — a atendente também pode lançar o que postou/respondeu no dia.
+router.get("/meu-dia/marketing", async (req, res) => {
+  const lista = await prisma.registroMarketing.findMany({ orderBy: { data: "desc" }, take: 200 });
+  res.json(lista);
+});
+
+router.post("/meu-dia/marketing", async (req, res) => {
+  const { tipo, descricao, link } = req.body;
+  if (!tipo || !descricao) return res.status(400).json({ erro: "Informe o tipo e a descrição." });
+  const registro = await prisma.registroMarketing.create({
+    data: { criadoPorId: req.user.id, tipo, descricao, link: link || null },
+  });
+  res.json(registro);
+});
+
+router.delete("/meu-dia/marketing/:id", async (req, res) => {
+  await prisma.registroMarketing.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
 });
 
 module.exports = router;

@@ -1015,6 +1015,7 @@ function Usuarios() {
   const [msg, setMsg] = useState("");
   const [editando, setEditando] = useState(null);
   const [ativandoId, setAtivandoId] = useState(null);
+  const [supervisionandoId, setSupervisionandoId] = useState(null); // Fase 33 — Secretaria/Supervisão
 
   async function carregar() {
     const [u, p] = await Promise.all([api.get("/dono/usuarios"), api.get("/dono/profissionais")]);
@@ -1154,6 +1155,14 @@ function Usuarios() {
                     {u.role === "DONO" && u.profissional && (
                       <span className="text-xs text-renascer-ink/40 mr-3">também atende pacientes</span>
                     )}
+                    {u.role === "ATENDENTE" && (
+                      <button
+                        className="text-renascer text-xs underline mr-3"
+                        onClick={() => setSupervisionandoId(supervisionandoId === u.id ? null : u.id)}
+                      >
+                        {supervisionandoId === u.id ? "Fechar supervisão" : "Supervisão"}
+                      </button>
+                    )}
                     <button className="text-renascer text-xs underline mr-3" onClick={() => setEditando(editando === u.id ? null : u.id)}>
                       {editando === u.id ? "Fechar" : "Editar"}
                     </button>
@@ -1168,6 +1177,15 @@ function Usuarios() {
                   <tr key={`${u.id}-editar`} className="border-t border-renascer/10 bg-renascer-light/20">
                     <td colSpan={5} className="py-2">
                       <EditarUsuario usuario={u} onSalvo={() => { setEditando(null); carregar(); }} />
+                    </td>
+                  </tr>
+                );
+              }
+              if (supervisionandoId === u.id) {
+                linhas.push(
+                  <tr key={`${u.id}-supervisao`} className="border-t border-renascer/10 bg-renascer-light/20">
+                    <td colSpan={5} className="py-3">
+                      <SupervisaoSecretaria usuarioId={u.id} nome={u.nome} />
                     </td>
                   </tr>
                 );
@@ -1212,6 +1230,120 @@ function EditarUsuario({ usuario, onSalvo }) {
         Salvar alterações
       </button>
       {msg && <p className="text-sm">{msg}</p>}
+    </div>
+  );
+}
+
+// ---------- Secretaria — Supervisão de setor (Fase 33) ----------
+// Painel do Dono acompanhando um login da recepção: presença (online agora/tempo online hoje),
+// indicadores do dia (cadastros, reativações, suportes) e um gráfico dos últimos 7 dias. Aberto
+// direto da lista de Usuários, clicando em "Supervisão" na linha de um login Atendente.
+
+function formatarTempoOnline(segundos) {
+  const totalMin = Math.round((segundos || 0) / 60);
+  const h = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+  if (h === 0) return `${min}min`;
+  return `${h}h ${min}min`;
+}
+
+function formatarHaQuanto(iso) {
+  if (!iso) return "";
+  const minutos = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutos < 60) return `há ${minutos}min`;
+  const h = Math.floor(minutos / 60);
+  const min = minutos % 60;
+  return `há ${h}h ${min}min`;
+}
+
+function SupervisaoSecretaria({ usuarioId, nome }) {
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    let ativo = true;
+    setDados(null);
+    setErro("");
+    api
+      .get(`/dono/usuarios/${usuarioId}/supervisao`)
+      .then(({ data }) => {
+        if (ativo) setDados(data);
+      })
+      .catch((e) => {
+        if (ativo) setErro(e?.response?.data?.erro || "Não foi possível carregar a supervisão.");
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [usuarioId]);
+
+  if (erro) return <p className="text-sm text-red-600">{erro}</p>;
+  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando supervisão de {nome}...</p>;
+
+  const { presenca, indicadores, cadastrosPorDia, atividades } = dados;
+  const maxCadastro = Math.max(1, ...cadastrosPorDia.map((d) => d.total));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm font-semibold">Supervisão de {nome}</p>
+        <span
+          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
+            presenca.onlineAgora ? "bg-emerald-100 text-emerald-700" : "bg-renascer-ink/10 text-renascer-ink/50"
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full ${presenca.onlineAgora ? "bg-emerald-500 animate-pulse" : "bg-renascer-ink/30"}`} />
+          {presenca.onlineAgora ? `Online agora · ${formatarHaQuanto(presenca.onlineDesde)}` : "Offline no momento"}
+        </span>
+      </div>
+
+      <div className="grid sm:grid-cols-4 gap-3">
+        <div className="bg-white border border-renascer/10 rounded-lg p-3">
+          <p className="text-xs text-renascer-ink/50 mb-1">Tempo online hoje</p>
+          <p className="font-semibold text-lg tabular-nums">{formatarTempoOnline(presenca.tempoOnlineHojeSegundos)}</p>
+        </div>
+        <div className="bg-white border border-renascer/10 rounded-lg p-3">
+          <p className="text-xs text-renascer-ink/50 mb-1">Clientes cadastrados hoje</p>
+          <p className="font-semibold text-lg tabular-nums">{indicadores.clientesCadastradosHoje}</p>
+        </div>
+        <div className="bg-white border border-renascer/10 rounded-lg p-3">
+          <p className="text-xs text-renascer-ink/50 mb-1">Reativações hoje</p>
+          <p className="font-semibold text-lg tabular-nums">{indicadores.reativacoesHoje}</p>
+        </div>
+        <div className="bg-white border border-renascer/10 rounded-lg p-3">
+          <p className="text-xs text-renascer-ink/50 mb-1">Suportes atendidos</p>
+          <p className="font-semibold text-lg tabular-nums">{indicadores.suportesAtendidosHoje}</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-renascer/10 rounded-lg p-3">
+        <p className="text-sm font-semibold mb-2">Cadastros por dia — últimos 7 dias</p>
+        <div className="flex items-end gap-2 h-24">
+          {cadastrosPorDia.map((d) => (
+            <div key={d.data} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+              <div
+                className="w-full max-w-[26px] bg-renascer rounded-t"
+                style={{ height: `${Math.max(4, (d.total / maxCadastro) * 100)}%` }}
+                title={`${d.total} cadastro(s)`}
+              />
+              <span className="text-[10px] text-renascer-ink/50 font-semibold">{d.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white border border-renascer/10 rounded-lg p-3">
+        <p className="text-sm font-semibold mb-2">Atividade de hoje</p>
+        {atividades.length === 0 && (
+          <p className="text-xs text-renascer-ink/40">Nenhuma atividade registrada hoje ainda.</p>
+        )}
+        {atividades.map((a, i) => (
+          <div key={i} className="flex justify-between py-1.5 border-t border-renascer/10 first:border-t-0">
+            <span className="text-sm text-renascer-ink/80">{a.texto}</span>
+            <span className="text-xs text-renascer-ink/40">{a.hora}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

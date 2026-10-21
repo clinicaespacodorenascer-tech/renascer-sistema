@@ -8,6 +8,7 @@ const { notificar, notificarDonos, notificarAtendentes, precisaAvisoRenovacao } 
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const { haConflito, diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
+const { inicioDoDia, fimDoDia, periodoDoMes, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -742,7 +743,7 @@ router.post("/clientes", async (req, res) => {
 
   const clienteId = user.cliente.id;
   await prisma.historicoCliente.create({
-    data: { clienteId, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, profissionalNome: req.user.nome },
+    data: { clienteId, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, profissionalNome: req.user.nome, realizadoPorId: req.user.id },
   });
   await notificarDonos({
     titulo: "Novo cliente cadastrado",
@@ -876,6 +877,7 @@ router.put("/clientes/:id/situacao", async (req, res) => {
     whatsapp: cliente.whatsappCadastro || cliente.user.telefone,
     pacoteResumo,
     profissionalNome: req.user.nome,
+    realizadoPorId: req.user.id,
   };
 
   if (acao === "RENOVOU") {
@@ -1073,6 +1075,47 @@ router.post("/clientes/:id/tarefas", async (req, res) => {
   const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id } });
   await notificar(cliente.userId, { titulo: "Nova tarefa de apoio", mensagem: "Sua profissional te enviou uma nova tarefa.", tipo: "tarefa" });
   res.json(atribuicao);
+});
+
+// ======================================================================================
+// ---------- "MEU DIA" (Fase 30) — recorte da Profissional: só os dados dela mesma, que já
+// são visíveis em outras abas (agenda, financeiro) — nunca o consolidado da clínica.
+// ======================================================================================
+router.get("/meu-dia/indicadores", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const hojeInicio = inicioDoDia();
+  const hojeFim = fimDoDia();
+  const { inicio: inicioMes, fim: fimMes } = periodoDoMes();
+
+  const [agendamentosHoje, pendenteRepasse, taxaFaltasMes, tempoRespostaMes, pacotesAtivos] = await Promise.all([
+    prisma.agendamento.findMany({ where: { profissionalId, data: { gte: hojeInicio, lt: hojeFim } }, select: { status: true } }),
+    prisma.transacaoFinanceira.aggregate({
+      where: { profissionalId, recebidoPor: "PROFISSIONAL", repassado: false },
+      _sum: { valorRenascer: true },
+    }),
+    calcularTaxaFaltas({ inicio: inicioMes, fim: fimMes, profissionalId }),
+    calcularTempoRespostaMedio({ inicio: inicioMes, fim: fimMes, profissionalId }),
+    prisma.pacote.findMany({
+      where: { profissionalId, status: "ATIVO" },
+      select: { sessoesUsadas: true, totalSessoes: true },
+    }),
+  ]);
+
+  const porStatusHoje = {};
+  for (const ag of agendamentosHoje) porStatusHoje[ag.status] = (porStatusHoje[ag.status] || 0) + 1;
+
+  // Perto de renovar = mesmo critério do semáforo amarelo (utils/statusCliente.js): já usou
+  // todas as sessões menos 1 (ou todas, se o pacote for de 1 sessão só).
+  const clientesPertoDeRenovar = pacotesAtivos.filter((p) => p.totalSessoes - p.sessoesUsadas <= 1).length;
+
+  res.json({
+    agendaHoje: { total: agendamentosHoje.length, porStatus: porStatusHoje },
+    totalPendenteRepassar: pendenteRepasse._sum.valorRenascer || 0,
+    taxaFaltasMes,
+    tempoRespostaMedioMes: tempoRespostaMes,
+    totalPacotesAtivos: pacotesAtivos.length,
+    clientesPertoDeRenovar,
+  });
 });
 
 module.exports = router;

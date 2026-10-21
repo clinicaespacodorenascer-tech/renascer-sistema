@@ -33,8 +33,30 @@ async function autenticar(req, res, next) {
     // logado, então isso já funciona como um "heartbeat" de presença de graça. Limitado a 1x por
     // minuto por usuário pra não gerar um UPDATE a cada request; e nunca bloqueia a resposta —
     // dispara e segue, sem `await` e sem derrubar a request se falhar.
+    //
+    // Fase 33 — Secretaria/Supervisão: no mesmo bloco (sem nenhuma chamada nova), também vai
+    // somando quanto tempo essa pessoa ficou "ativa" hoje (tempoOnlineHojeSegundos) e quando
+    // começou a sessão contínua atual (sessaoAtivaDesde). Regra simples: se o último acesso foi
+    // há pouco (até LIMIAR_SESSAO_CONTINUA_MS), considera que é a mesma sessão e soma o intervalo
+    // ao acumulado de hoje; se foi há mais tempo que isso (ou é o primeiro acesso), entende que
+    // começou uma sessão nova agora. O acumulado de hoje zera sozinho quando o dia muda.
+    const LIMIAR_SESSAO_CONTINUA_MS = 6 * 60 * 1000; // até 6min sem request ainda conta como "a mesma sessão"
     if (!user.ultimoAcessoEm || Date.now() - user.ultimoAcessoEm.getTime() > 60 * 1000) {
-      prisma.user.update({ where: { id: user.id }, data: { ultimoAcessoEm: new Date() } }).catch(() => {});
+      const agora = new Date();
+      const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+      const acumuladoEraHoje =
+        user.tempoOnlineHojeData && user.tempoOnlineHojeData.getTime() === hoje.getTime();
+      let tempoOnlineHojeSegundos = acumuladoEraHoje ? user.tempoOnlineHojeSegundos || 0 : 0;
+
+      const dados = { ultimoAcessoEm: agora, tempoOnlineHojeData: hoje };
+      if (user.ultimoAcessoEm && agora.getTime() - user.ultimoAcessoEm.getTime() <= LIMIAR_SESSAO_CONTINUA_MS) {
+        tempoOnlineHojeSegundos += Math.round((agora.getTime() - user.ultimoAcessoEm.getTime()) / 1000);
+      } else {
+        dados.sessaoAtivaDesde = agora; // começou uma sessão contínua nova
+      }
+      dados.tempoOnlineHojeSegundos = tempoOnlineHojeSegundos;
+
+      prisma.user.update({ where: { id: user.id }, data: dados }).catch(() => {});
     }
 
     next();
