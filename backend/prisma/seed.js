@@ -120,6 +120,40 @@ async function main() {
     });
   }
 
+  // ---------- Formulário "Estudo de Clima" com a equipe (Fase 28) ----------
+  // Id fixo de propósito: o seed roda de novo em todo deploy (ver railway.json), e o `upsert`
+  // com `update: {}` garante que, depois de criado uma vez, nem o formulário nem as perguntas
+  // são recriadas ou duplicadas nos deploys seguintes -- só cria na primeira vez.
+  await prisma.formulario.upsert({
+    where: { id: "formulario-estudo-clima-equipe-2026" },
+    update: {},
+    create: {
+      id: "formulario-estudo-clima-equipe-2026",
+      titulo: "Estudo de Clima -- Espaço do Renascer",
+      descricao:
+        "Oi, pessoal! Tudo bem? \u{1F49B}\n\n" +
+        "Quero dar um passo importante pro Espaço do Renascer e preciso muito de vocês nisso.\n\n" +
+        "Nos próximos meses vou reestruturar a plataforma para ela crescer de forma mais organizada. " +
+        "E quem vive o dia a dia aqui são vocês. Por isso quero ouvir, com toda sinceridade, o que vocês pensam.\n\n" +
+        "Preencham as perguntas abaixo com toda sinceridade. Não existe resposta certa ou errada -- crítica aqui " +
+        "é presente, é o que vai fazer a gente crescer junto.\n\n" +
+        "Gratidão por fazerem parte disso \u{1F64F}\nElismael",
+      criadoPorId: dono1.id,
+      perguntas: {
+        create: [
+          { ordem: 0, texto: "O que está funcionando bem hoje e não podemos perder?", tipo: "TEXTO_LONGO" },
+          { ordem: 1, texto: "O que mais te incomoda ou atrapalha na parceria?", tipo: "TEXTO_LONGO" },
+          { ordem: 2, texto: "Como você avalia os pacientes que chegam até você (quantidade e perfil)?", tipo: "TEXTO_LONGO" },
+          { ordem: 3, texto: "Como está o agendamento e a comunicação com o atendimento?", tipo: "TEXTO_LONGO" },
+          { ordem: 4, texto: "O modelo de divisão dos valores faz sentido pra você? Por quê?", tipo: "TEXTO_LONGO" },
+          { ordem: 5, texto: "O que você sente falta (apoio, materiais, divulgação, treinamentos, encontros)?", tipo: "TEXTO_LONGO" },
+          { ordem: 6, texto: "Se você fosse dono(a) do Espaço por um dia, o que mudaria primeiro?", tipo: "TEXTO_LONGO" },
+          { ordem: 7, texto: "De 0 a 10, quanto você indicaria essa parceria para um colega terapeuta?", tipo: "ESCALA", opcoes: "0-10" },
+        ],
+      },
+    },
+  });
+
   console.log("Seed concluído.");
   console.log("Login padrão de todos os usuários de teste: senha 'Renascer@2026'");
   console.log({

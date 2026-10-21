@@ -1733,3 +1733,195 @@ aparecia em qualquer lugar do sistema, sempre que o fundo da página não fosse 
 - Confirmar visualmente, depois do deploy, que a logo aparece sem o quadrado branco no menu do
   sistema, na tela de login e nas telas da Renascer IA (`/ia/cadastro` e `/ia`).
 
+---
+
+# Fase 26 -- Link da Renascer IA dentro do painel do Dono + tela não ficar presa em "Carregando..." (entregue em 12/10/2026)
+
+Dois pedidos do Elismael juntos: (1) ele reportou (com print) que a aba "Renascer IA" do painel do
+Dono ficava presa em "Carregando..." para sempre; (2) ele pediu para também conseguir pegar o link
+de cadastro da Renascer IA de dentro do painel do Dono, sem precisar lembrar o endereço de cor.
+
+## Causa do "Carregando..." para sempre
+
+A função que busca os dados dessa aba (`GET /dono/renascer-ia`) não tinha nenhum tratamento de
+erro -- se a chamada falhasse por qualquer motivo (instabilidade, sessão expirada, etc.), a tela
+ficava esperando pra sempre um resultado que nunca chegava, sem avisar nada pro Elismael nem dar
+um jeito de tentar de novo. É a mesma categoria de cuidado já aplicada antes na chamada da IA de
+verdade (Fase 24) -- proteger toda chamada de rede pra nunca travar a tela sem explicação.
+
+## O que foi corrigido/adicionado
+
+- A busca dos dados agora tem tratamento de erro: se não conseguir carregar, aparece uma mensagem
+  clara explicando isso e um botão "Tentar de novo", em vez de ficar preso pra sempre em
+  "Carregando...".
+- Card novo no topo da aba "Renascer IA" do Dono: "Link para divulgar a Renascer IA", mostrando o
+  endereço completo (`/ia/cadastro`, no mesmo domínio que o Elismael estiver acessando) e um botão
+  "Copiar link" -- copia pra área de transferência com um aviso "Copiado!", pronto pra colar no
+  WhatsApp ou onde quiser divulgar.
+
+## Arquivo alterado
+
+- `frontend/src/pages/dono/index.js` (substituído): só a função `AbaRenascerIA` foi alterada --
+  nada mais da tela do Dono foi tocado.
+
+## Pendência / aguardando teste do usuário
+
+- Confirmar, depois do deploy, que a aba "Renascer IA" do Dono carrega normalmente (gasto,
+  usuários, limites) -- se continuar presa em "Carregando..." ou mostrar a mensagem de erro,
+  avisar a mensagem exata que aparece, pra investigar a causa raiz do lado do servidor.
+- Testar o botão "Copiar link" e confirmar que o link colado abre a tela de cadastro da Renascer
+  IA corretamente.
+
+---
+
+# Fase 27 -- Primeira rodada de segurança: freio contra tentativa de adivinhar senha, cabeçalhos de proteção (entregue em 17/10/2026)
+
+O Elismael perguntou se o sistema é criptografado de ponta a ponta, se alguém conseguiria invadir
+hoje, e pediu pra fechar as vulnerabilidades pensando na LGPD (dados de saúde). Resposta dada na
+hora, registrada aqui pra não se perder: o sistema NÃO é criptografado de ponta a ponta (isso é só
+pra apps tipo WhatsApp -- um sistema de prontuário PRECISA que o servidor leia os dados pra
+funcionar), mas toda informação que viaja entre o aparelho e o servidor já vai protegida por HTTPS
+(criptografia "em trânsito"), senha de todo mundo já é guardada criptografada (bcrypt) e cada
+papel só acessa o que tem permissão -- isso já estava certo desde o início. Os pontos fracos reais,
+identificados nessa conversa, viraram um plano em ordem de prioridade; esta fase entrega os dois
+primeiros, que são só backend e não mexem em nenhuma tela.
+
+## O que foi corrigido nesta fase
+
+- **Freio contra adivinhar senha (força bruta)**: antes, não existia NENHUM limite de quantas vezes
+  alguém podia tentar logar errado seguidas vezes -- um programa automatizado podia tentar milhares
+  de senhas sem o sistema notar ou bloquear. Agora, `POST /api/auth/login` aceita no máximo 15
+  tentativas por IP a cada 15 minutos; passou disso, a resposta vira "Muitas tentativas seguidas.
+  Aguarde alguns minutos e tente de novo." -- não afeta ninguém no uso normal (uma pessoa não erra a
+  senha 15 vezes em 15 minutos à toa).
+- **Mesmo freio no cadastro público da Renascer IA** (`POST /api/ia/cadastro`): limite de 10
+  tentativas por IP a cada 15 minutos, pra não dar pra criar contas em massa automaticamente.
+- **Freio geral mais largo em toda a API** (600 requisições por IP a cada 15 minutos): uma rede de
+  segurança básica contra um ataque de sobrecarga, sem afetar o uso real de ninguém (é bem mais que
+  qualquer uso humano normal do sistema).
+- **Cabeçalhos de proteção padrão** (biblioteca `helmet`): ativa um conjunto de proteções do
+  navegador contra alguns ataques conhecidos (ex: um site malicioso tentando se passar pela nossa
+  API). Como a API só devolve dado (JSON), não tela, isso não muda nada visualmente em lugar
+  nenhum.
+- **Brecha fechada no CORS**: antes, se a variável `FRONTEND_URL` não estivesse configurada no
+  Railway, a API aceitava pedido de QUALQUER site (`origin: "*"`) -- agora, sem essa variável
+  configurada, o padrão passa a ser só o endereço oficial do sistema
+  (`https://renascer-sistema.vercel.app`), em vez de liberar geral.
+- Ajuste técnico necessário pros freios funcionarem certo: `app.set("trust proxy", 1")` -- o
+  Railway coloca a API atrás de um proxy, e sem essa linha o sistema de freio podia achar que todo
+  mundo que acessa é "o mesmo computador" (o que quebraria a contagem por pessoa).
+
+## O que FICA de pendência, pra uma próxima rodada (ainda não resolvido)
+
+- **Backup do banco de dados**: ainda não está confirmado se o Railway tem uma rotina de backup
+  automático ativada pro banco Postgres do sistema. Isso não se resolve por código -- é uma
+  configuração direto no painel do Railway (plano/serviço de banco). Preciso que o Elismael
+  confira isso no painel (ou me diga o plano do Railway que está usando) pra eu orientar certo.
+- **Verificação em duas etapas (2FA)** pra login de Dono e Profissional (quem vê mais dado
+  sensível) -- ainda não existe.
+- **Criptografia a mais pros campos mais sensíveis** dentro do próprio banco (CPF, prontuário,
+  evolução) -- hoje ficam protegidos por quem pode acessar, mas não "embaralhados" dentro do banco
+  além disso.
+- **Parte jurídica da LGPD** (política de privacidade, base legal de cada dado, um responsável
+  formal pelos dados/encarregado, fluxo de exclusão de dados a pedido do cliente) -- isso não é
+  código, precisa do setor jurídico do Elismael.
+
+## Arquivos alterados
+
+- `backend/package.json`: duas dependências novas (`helmet`, `express-rate-limit`).
+- `backend/src/server.js`: freios de tentativa, cabeçalhos de proteção, ajuste de proxy e correção
+  do CORS -- tudo dentro do mesmo arquivo que já configura a API, nenhuma rota de negócio foi
+  tocada.
+
+## Teste feito antes de entregar
+
+Simulação isolada (fora do sistema de verdade, só pra validar o comportamento do freio): 5
+tentativas seguidas de login contra um servidor de teste com o mesmo código -- as 3 primeiras
+passaram normal, a 4ª e a 5ª foram bloqueadas com a mensagem de espera, confirmando que o freio
+funciona exatamente como esperado antes de aplicar o valor final (15) no sistema de verdade.
+
+## Pendência / aguardando teste do usuário
+
+- Confirmar que login, cadastro da Renascer IA e o uso normal do sistema continuam funcionando
+  normalmente depois do deploy (o freio é alto o bastante pra nunca incomodar o uso real).
+- Me dizer se o Railway já tem backup automático do banco configurado, pra eu documentar isso e
+  partir pro próximo item da lista de segurança.
+
+---
+
+# Fase 28 -- Categoria "Formulários": pesquisas com link público (estudo de clima da equipe) (entregue em 20/10/2026)
+
+O Elismael pediu uma nova categoria chamada "Formulários": o Dono cria um formulário com
+perguntas (ex: uma pesquisa de clima com a equipe, depois uma pesquisa de satisfação com os
+clientes), o sistema gera um link único pra esse formulário, e qualquer pessoa que receber o
+link -- profissional ou cliente -- consegue preencher nome, e-mail e as respostas SEM precisar
+ter login no sistema. Assim que alguém envia, a resposta aparece listada dentro do formulário,
+pro Dono ver quem respondeu e o que respondeu.
+
+Essa fase entrega a primeira versão funcionando, já com o primeiro formulário pronto pra usar: o
+"Estudo de Clima" com a equipe, com as 8 perguntas que o Elismael mandou (o texto de introdução
+foi adaptado -- a frase pedindo pra responder até uma data foi removida, já que agora é um link
+que ele manda direto, sem prazo fixo escrito).
+
+## Como funciona
+
+- **Categoria "Formulários" nova** no menu do Dono: lista todos os formulários criados, cada um
+  com seu link público (com botão de copiar), quantas respostas já chegaram, um jeito de ativar
+  ou desativar o link (desativar fecha o formulário pra novas respostas sem apagar as que já
+  chegaram) e de excluir (isso sim apaga tudo daquele formulário, com confirmação antes).
+- **Criar um novo formulário**: título, um texto de introdução (opcional, aparece antes das
+  perguntas) e as perguntas, uma por uma -- cada pergunta tem um texto e um tipo: resposta curta
+  (uma linha), texto longo (várias linhas), múltipla escolha (o Dono digita as opções) ou escala
+  de 0 a 10 (nota, tipo NPS -- o mesmo formato da última pergunta do estudo de clima). Dá pra
+  marcar cada pergunta como obrigatória ou não.
+- **Link público pra responder** (`/formularios/{link}`): tela própria, sem precisar de login,
+  parecida com a do cadastro da Renascer IA -- mostra o título, a introdução e as perguntas, pede
+  nome e e-mail de quem está respondendo, e ao enviar mostra uma tela de agradecimento. Se o
+  formulário foi desativado ou o link está errado, mostra um aviso em vez de dar erro.
+- **Ver respostas**: dentro de cada formulário, um botão "Ver respostas" mostra a lista de quem
+  respondeu -- nome, e-mail, data/hora e a resposta de cada pergunta, uma abaixo da outra.
+- **Primeiro formulário já vem pronto**: o "Estudo de Clima" com a equipe, com as 8 perguntas que
+  o Elismael mandou, já criado automaticamente no deploy (o Elismael só precisa abrir a aba
+  Formulários, copiar o link e mandar pra quem quiser responder -- não precisa criar nada na
+  mão). Se ele quiser mudar alguma pergunta depois, pode editar normalmente pela tela (criar um
+  novo formulário com o texto ajustado, ou pedir pra eu ajustar o texto original).
+
+## Uso planejado (avisado pelo Elismael, ainda não construído nesta fase)
+
+Uma segunda pesquisa, parecida, pra mandar pros clientes avaliarem o atendimento e os
+profissionais -- ainda sem as perguntas definidas; entra numa próxima fase quando o Elismael
+mandar o conteúdo.
+
+## Arquivos novos ou alterados
+
+- `backend/prisma/schema.prisma`: 3 modelos novos (`Formulario`, `PerguntaFormulario`,
+  `RespostaFormulario`) e 1 enum novo (`TipoPerguntaFormulario`) -- mudança só de "adicionar",
+  não apaga nem muda nada que já existia; aplica sozinha no próximo deploy.
+- `backend/src/routes/formulario.js` **(novo)**: rotas públicas (ver formulário e enviar
+  resposta, sem login) e rotas só do Dono (criar, editar, excluir, listar e ver respostas).
+- `backend/src/server.js`: liga as rotas novas (`/api/formularios`) e aplica o mesmo freio contra
+  spam que já existe nas outras rotas públicas (máximo de respostas por IP a cada 15 minutos).
+- `backend/prisma/seed.js`: cria automaticamente o primeiro formulário ("Estudo de Clima") com
+  as 8 perguntas, de um jeito que não duplica nada se o seed rodar de novo em deploys futuros.
+- `frontend/src/pages/dono/index.js`: aba nova "Formulários" no menu do Dono (listar, criar,
+  copiar link, ativar/desativar, excluir, ver respostas).
+- `frontend/src/pages/formularios/[token].js` **(novo)**: a tela pública onde qualquer pessoa
+  preenche e envia as respostas pelo link.
+
+Essa entrega vem junto com a Fase 27 (segurança -- freio contra tentativa de adivinhar senha,
+cabeçalhos de proteção, correção do CORS), porque o Elismael avisou que ainda não tinha aplicado
+aquela atualização e preferiu subir as duas juntas.
+
+## Teste feito antes de entregar
+
+- `node -c` em todos os arquivos novos/alterados do backend (sem erro de sintaxe).
+- Checagem de chaves/parênteses balanceados no `schema.prisma` inteiro depois da edição.
+- Validação de JSX (Babel) nos dois arquivos de frontend alterados/criados.
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: abrir a aba Formulários, confirmar que o "Estudo de Clima" já aparece
+  pronto, copiar o link e testar preenchendo numa aba anônima (sem estar logado) pra confirmar
+  que a resposta chega certinho na lista.
+- Me avisar quando tiver o conteúdo da segunda pesquisa (clientes) pra eu criar do mesmo jeito.
+

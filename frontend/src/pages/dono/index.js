@@ -40,6 +40,7 @@ export default function AreaDono() {
     { id: "financaPessoal", label: "Financeiro pessoal" },
     { id: "atender", label: "Atender pacientes" },
     { id: "renascerIA", label: "Renascer IA" },
+    { id: "formularios", label: "Formulários" },
   ];
 
   return (
@@ -57,6 +58,7 @@ export default function AreaDono() {
       {aba === "financaPessoal" && <AbaFinancaPessoal />}
       {aba === "atender" && <AbaAtenderPacientes user={user} />}
       {aba === "renascerIA" && <AbaRenascerIA />}
+      {aba === "formularios" && <AbaFormularios />}
     </Layout>
   );
 }
@@ -2031,22 +2033,42 @@ function NotasFinancaPessoal() {
 // assinatura (plano completo pago) é uma etapa futura da Renascer IA, ainda não construída.
 function AbaRenascerIA() {
   const [dados, setDados] = useState(null);
+  const [erroCarregar, setErroCarregar] = useState("");
   const [teto, setTeto] = useState("");
   const [limiteGratis, setLimiteGratis] = useState("");
   const [limiteAssinante, setLimiteAssinante] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState("");
+  const [linkCopiado, setLinkCopiado] = useState(false);
+
+  const linkCadastroIA = typeof window !== "undefined" ? `${window.location.origin}/ia/cadastro` : "";
 
   useEffect(() => {
     carregar();
   }, []);
 
   async function carregar() {
-    const { data } = await api.get("/dono/renascer-ia");
-    setDados(data);
-    setTeto(String(data.tetoMensalReais));
-    setLimiteGratis(String(data.limiteGratisDia));
-    setLimiteAssinante(String(data.limiteAssinanteDia));
+    setErroCarregar("");
+    try {
+      const { data } = await api.get("/dono/renascer-ia");
+      setDados(data);
+      setTeto(String(data.tetoMensalReais));
+      setLimiteGratis(String(data.limiteGratisDia));
+      setLimiteAssinante(String(data.limiteAssinanteDia));
+    } catch (e) {
+      setErroCarregar(e?.response?.data?.erro || "Não foi possível carregar os dados da Renascer IA agora.");
+    }
+  }
+
+  function copiarLinkIA() {
+    if (!linkCadastroIA) return;
+    navigator.clipboard
+      .writeText(linkCadastroIA)
+      .then(() => {
+        setLinkCopiado(true);
+        setTimeout(() => setLinkCopiado(false), 2500);
+      })
+      .catch(() => setMensagem("Não deu pra copiar automaticamente — copie o link manualmente."));
   }
 
   async function salvar() {
@@ -2067,6 +2089,20 @@ function AbaRenascerIA() {
     }
   }
 
+  if (!dados && erroCarregar) {
+    return (
+      <div className="space-y-3 max-w-xl">
+        <h2 className="text-lg font-bold text-renascer-ink">Renascer IA</h2>
+        <div className="card space-y-3 border border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{erroCarregar}</p>
+          <button className="btn-primary" onClick={carregar}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!dados) return <p className="text-renascer-ink/50">Carregando...</p>;
 
   const percentualGasto = dados.tetoMensalReais > 0 ? Math.min(100, (dados.gastoMesAtualReais / dados.tetoMensalReais) * 100) : 0;
@@ -2076,6 +2112,21 @@ function AbaRenascerIA() {
       <div>
         <h2 className="text-lg font-bold text-renascer-ink">Renascer IA</h2>
         <p className="text-sm text-renascer-ink/60">Gasto, usuários e travas de custo deste mês.</p>
+      </div>
+
+      <div className="card space-y-2">
+        <p className="font-semibold text-sm text-renascer-ink">Link para divulgar a Renascer IA</p>
+        <p className="text-xs text-renascer-ink/55">
+          Mande esse link pra qualquer pessoa conhecer e se cadastrar na Renascer IA — não precisa já ser cliente da clínica.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <code className="text-xs sm:text-sm bg-renascer-light px-3 py-2 rounded-lg break-all text-renascer-ink/80">
+            {linkCadastroIA}
+          </code>
+          <button className="btn-primary !py-1.5" onClick={copiarLinkIA} type="button">
+            {linkCopiado ? "Copiado!" : "Copiar link"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2157,6 +2208,339 @@ function AbaRenascerIA() {
           {mensagem && <span className="text-sm text-renascer-ink/60">{mensagem}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------- FORMULÁRIOS (pesquisas com link público) (Fase 28) ----------------
+// O Dono cria um formulário com perguntas, o sistema gera um link único (ex: Estudo de clima,
+// pesquisa de satisfação do cliente) que pode ser mandado pra qualquer pessoa — profissional ou
+// cliente, sem precisar de login — e as respostas aparecem aqui, agrupadas por formulário.
+const TIPO_PERGUNTA_LABEL = {
+  TEXTO_CURTO: "Resposta curta",
+  TEXTO_LONGO: "Texto longo",
+  MULTIPLA_ESCOLHA: "Múltipla escolha",
+  ESCALA: "Escala (nota)",
+};
+
+function novaPerguntaVazia() {
+  return { texto: "", tipo: "TEXTO_LONGO", obrigatoria: true, opcoesTexto: "0-10" };
+}
+
+function AbaFormularios() {
+  const [lista, setLista] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erroCarregar, setErroCarregar] = useState("");
+  const [mensagem, setMensagem] = useState("");
+
+  const [criarAberto, setCriarAberto] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [perguntas, setPerguntas] = useState([novaPerguntaVazia()]);
+  const [criando, setCriando] = useState(false);
+  const [erroCriar, setErroCriar] = useState("");
+
+  const [linkCopiadoId, setLinkCopiadoId] = useState(null);
+  const [verRespostasId, setVerRespostasId] = useState(null);
+  const [respostas, setRespostas] = useState([]);
+  const [carregandoRespostas, setCarregandoRespostas] = useState(false);
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function carregar() {
+    setErroCarregar("");
+    try {
+      const { data } = await api.get("/formularios");
+      setLista(data);
+    } catch (e) {
+      setErroCarregar(e?.response?.data?.erro || "Não foi possível carregar os formulários agora.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  function linkPublico(f) {
+    return typeof window !== "undefined" ? `${window.location.origin}/formularios/${f.linkToken}` : "";
+  }
+
+  function copiarLink(f) {
+    navigator.clipboard
+      .writeText(linkPublico(f))
+      .then(() => {
+        setLinkCopiadoId(f.id);
+        setTimeout(() => setLinkCopiadoId(null), 2500);
+      })
+      .catch(() => setMensagem("Não deu pra copiar automaticamente — copie o link manualmente."));
+  }
+
+  function atualizarPergunta(i, patch) {
+    setPerguntas((atual) => atual.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  }
+  function adicionarPergunta() {
+    setPerguntas((atual) => [...atual, novaPerguntaVazia()]);
+  }
+  function removerPergunta(i) {
+    setPerguntas((atual) => atual.filter((_, idx) => idx !== i));
+  }
+
+  async function criarFormulario() {
+    setErroCriar("");
+    if (!titulo.trim()) {
+      setErroCriar("Dê um título ao formulário (ex: Estudo de clima).");
+      return;
+    }
+    if (perguntas.length === 0 || perguntas.some((p) => !p.texto.trim())) {
+      setErroCriar("Toda pergunta precisa de um texto. Remova as perguntas em branco.");
+      return;
+    }
+    setCriando(true);
+    try {
+      await api.post("/formularios", {
+        titulo,
+        descricao,
+        perguntas: perguntas.map((p) => ({
+          texto: p.texto,
+          tipo: p.tipo,
+          obrigatoria: p.obrigatoria,
+          opcoes:
+            p.tipo === "MULTIPLA_ESCOLHA"
+              ? p.opcoesTexto.split(",").map((o) => o.trim()).filter(Boolean).join("|")
+              : p.tipo === "ESCALA"
+              ? p.opcoesTexto.trim() || "0-10"
+              : null,
+        })),
+      });
+      setTitulo("");
+      setDescricao("");
+      setPerguntas([novaPerguntaVazia()]);
+      setCriarAberto(false);
+      setMensagem("Formulário criado com sucesso!");
+      carregar();
+    } catch (e) {
+      setErroCriar(e?.response?.data?.erro || "Não foi possível criar o formulário agora.");
+    } finally {
+      setCriando(false);
+    }
+  }
+
+  async function alternarAtivo(f) {
+    try {
+      await api.put(`/formularios/${f.id}`, { ativo: !f.ativo });
+      carregar();
+    } catch (e) {
+      setMensagem(e?.response?.data?.erro || "Não foi possível atualizar o formulário agora.");
+    }
+  }
+
+  async function excluir(f) {
+    if (!window.confirm(`Excluir o formulário "${f.titulo}"? Isso apaga também todas as respostas já recebidas. Não tem como desfazer.`))
+      return;
+    try {
+      await api.delete(`/formularios/${f.id}`);
+      if (verRespostasId === f.id) setVerRespostasId(null);
+      carregar();
+    } catch (e) {
+      setMensagem(e?.response?.data?.erro || "Não foi possível excluir o formulário agora.");
+    }
+  }
+
+  async function abrirRespostas(f) {
+    if (verRespostasId === f.id) {
+      setVerRespostasId(null);
+      return;
+    }
+    setVerRespostasId(f.id);
+    setCarregandoRespostas(true);
+    try {
+      const { data } = await api.get(`/formularios/${f.id}/respostas`);
+      setRespostas(data);
+    } catch (e) {
+      setMensagem(e?.response?.data?.erro || "Não foi possível carregar as respostas agora.");
+    } finally {
+      setCarregandoRespostas(false);
+    }
+  }
+
+  if (carregando) return <p className="text-renascer-ink/50">Carregando...</p>;
+
+  if (erroCarregar && lista.length === 0) {
+    return (
+      <div className="space-y-3 max-w-xl">
+        <h2 className="text-lg font-bold text-renascer-ink">Formulários</h2>
+        <div className="card space-y-3 border border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{erroCarregar}</p>
+          <button className="btn-primary" onClick={carregar}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-renascer-ink">Formulários</h2>
+          <p className="text-sm text-renascer-ink/60">
+            Crie uma pesquisa (ex: estudo de clima, satisfação do cliente) e gere um link pra qualquer pessoa responder,
+            sem precisar de login.
+          </p>
+        </div>
+        <button className="btn-primary" onClick={() => setCriarAberto((v) => !v)}>
+          {criarAberto ? "Cancelar" : "Criar novo formulário"}
+        </button>
+      </div>
+
+      {mensagem && <p className="text-sm text-renascer-ink/60">{mensagem}</p>}
+
+      {criarAberto && (
+        <div className="card space-y-4">
+          <div className="space-y-3">
+            <input className="input" placeholder="Título (ex: Estudo de clima)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+            <textarea
+              className="input"
+              rows={3}
+              placeholder="Texto de introdução (opcional) — mostrado antes das perguntas"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-3">
+            {perguntas.map((p, i) => (
+              <div key={i} className="border border-renascer-ink/10 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-renascer-ink/50">Pergunta {i + 1}</p>
+                  {perguntas.length > 1 && (
+                    <button type="button" className="text-xs text-red-600 underline" onClick={() => removerPergunta(i)}>
+                      Remover
+                    </button>
+                  )}
+                </div>
+                <input
+                  className="input"
+                  placeholder="Texto da pergunta"
+                  value={p.texto}
+                  onChange={(e) => atualizarPergunta(i, { texto: e.target.value })}
+                />
+                <div className="flex items-center gap-3 flex-wrap">
+                  <select className="input !w-auto" value={p.tipo} onChange={(e) => atualizarPergunta(i, { tipo: e.target.value })}>
+                    {Object.entries(TIPO_PERGUNTA_LABEL).map(([valor, label]) => (
+                      <option key={valor} value={valor}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="flex items-center gap-1.5 text-sm text-renascer-ink/70">
+                    <input
+                      type="checkbox"
+                      checked={p.obrigatoria}
+                      onChange={(e) => atualizarPergunta(i, { obrigatoria: e.target.checked })}
+                    />
+                    Obrigatória
+                  </label>
+                  {p.tipo === "MULTIPLA_ESCOLHA" && (
+                    <input
+                      className="input !w-auto flex-1 min-w-[200px]"
+                      placeholder="Opções separadas por vírgula"
+                      value={p.opcoesTexto}
+                      onChange={(e) => atualizarPergunta(i, { opcoesTexto: e.target.value })}
+                    />
+                  )}
+                  {p.tipo === "ESCALA" && (
+                    <input
+                      className="input !w-28"
+                      placeholder="0-10"
+                      value={p.opcoesTexto}
+                      onChange={(e) => atualizarPergunta(i, { opcoesTexto: e.target.value })}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary text-sm" onClick={adicionarPergunta}>
+              + Adicionar pergunta
+            </button>
+          </div>
+
+          {erroCriar && <p className="text-red-600 text-sm">{erroCriar}</p>}
+
+          <button className="btn-primary" onClick={criarFormulario} disabled={criando}>
+            {criando ? "Criando..." : "Criar formulário"}
+          </button>
+        </div>
+      )}
+
+      {lista.length === 0 && (
+        <div className="card">
+          <p className="text-sm text-renascer-ink/50">Nenhum formulário criado ainda.</p>
+        </div>
+      )}
+
+      {lista.map((f) => (
+        <div key={f.id} className="card space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-semibold text-renascer-ink">{f.titulo}</p>
+              <p className="text-xs text-renascer-ink/50">
+                {f.totalRespostas} resposta(s) · criado em {new Date(f.criadoEm).toLocaleDateString("pt-BR")}
+              </p>
+            </div>
+            <span className={`badge ${f.ativo ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"}`}>
+              {f.ativo ? "Ativo" : "Desativado"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <code className="text-xs sm:text-sm bg-renascer-light px-3 py-2 rounded-lg break-all text-renascer-ink/80">
+              {linkPublico(f)}
+            </code>
+            <button className="btn-primary !py-1.5" onClick={() => copiarLink(f)} type="button">
+              {linkCopiadoId === f.id ? "Copiado!" : "Copiar link"}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap text-sm border-t border-renascer-ink/[0.06] pt-3">
+            <button className="btn-secondary" onClick={() => abrirRespostas(f)}>
+              {verRespostasId === f.id ? "Fechar respostas" : "Ver respostas"}
+            </button>
+            <button className="text-renascer-ink/60 underline" onClick={() => alternarAtivo(f)}>
+              {f.ativo ? "Desativar" : "Reativar"}
+            </button>
+            <button className="text-red-600 underline" onClick={() => excluir(f)}>
+              Excluir
+            </button>
+          </div>
+
+          {verRespostasId === f.id && (
+            <div className="border-t border-renascer-ink/[0.06] pt-3 space-y-3">
+              {carregandoRespostas && <p className="text-sm text-renascer-ink/50">Carregando respostas...</p>}
+              {!carregandoRespostas && respostas.length === 0 && (
+                <p className="text-sm text-renascer-ink/50">Ainda não tem nenhuma resposta.</p>
+              )}
+              {!carregandoRespostas &&
+                respostas.map((r) => (
+                  <div key={r.id} className="border border-renascer-ink/10 rounded-xl p-3 space-y-1.5">
+                    <p className="text-sm font-semibold text-renascer-ink">
+                      {r.nome} <span className="text-renascer-ink/50 font-normal">· {r.email}</span>
+                    </p>
+                    <p className="text-xs text-renascer-ink/40">{new Date(r.enviadoEm).toLocaleString("pt-BR")}</p>
+                    <div className="space-y-1.5 pt-1">
+                      {r.respostas.map((item, idx) => (
+                        <p key={idx} className="text-sm text-renascer-ink/80">
+                          <span className="font-semibold text-renascer-ink/60">{item.pergunta}:</span> {item.resposta || "—"}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

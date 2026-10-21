@@ -150,6 +150,7 @@ model User {
   mensagensEnviadas Mensagem[] @relation("MensagensEnviadas")
   pushSubscriptions PushSubscription[]
   conversasIA   ConversaIA[]
+  formularios   Formulario[] // formulários (pesquisas) que esse usuário criou
 
   @@map("users")
 }
@@ -741,4 +742,65 @@ model ConfiguracaoIA {
   atualizadoEm            DateTime @updatedAt
 
   @@map("configuracao_ia")
+}
+
+// ---------- Formulários (pesquisas com link público) ----------
+// Categoria nova pedida pelo Elismael: o Dono cria um formulário (ex: "Estudo de clima"), o
+// sistema gera um link único que pode ser mandado pra qualquer pessoa (profissional ou cliente,
+// não precisa ter login no sistema), ela preenche nome, e-mail e as respostas, e ao enviar isso
+// aparece listado pro Dono dentro do formulário. Pensado pra funcionar como pesquisa de
+// satisfação/clima — simples, só o essencial pra essa primeira entrega.
+
+enum TipoPerguntaFormulario {
+  TEXTO_CURTO // resposta de uma linha
+  TEXTO_LONGO // resposta de texto livre, várias linhas
+  MULTIPLA_ESCOLHA // escolhe uma entre as opções cadastradas (campo "opcoes")
+  ESCALA // nota numérica (ex: 0 a 10, tipo NPS) — faixa guardada no campo "opcoes"
+}
+
+model Formulario {
+  id          String   @id @default(cuid())
+  titulo      String
+  descricao   String?  @db.Text // texto de introdução mostrado antes das perguntas (opcional)
+  linkToken   String   @unique @default(cuid()) // usado na URL pública, ex: /formularios/{linkToken}
+  ativo       Boolean  @default(true) // desativar fecha o link sem apagar as respostas já recebidas
+  criadoPorId String?
+  criadoPor   User?    @relation(fields: [criadoPorId], references: [id])
+  criadoEm    DateTime @default(now())
+
+  perguntas PerguntaFormulario[]
+  respostas RespostaFormulario[]
+
+  @@index([criadoPorId])
+  @@map("formularios")
+}
+
+model PerguntaFormulario {
+  id           String                 @id @default(cuid())
+  formularioId String
+  formulario   Formulario             @relation(fields: [formularioId], references: [id], onDelete: Cascade)
+  ordem        Int
+  texto        String
+  tipo         TipoPerguntaFormulario
+  opcoes       String? // MULTIPLA_ESCOLHA: lista separada por "|"; ESCALA: "min-max" (ex: "0-10")
+  obrigatoria  Boolean                @default(true)
+
+  @@index([formularioId])
+  @@map("perguntas_formulario")
+}
+
+// Uma linha por pessoa que respondeu. As respostas em si ficam num único campo de texto (JSON
+// com { perguntaId: resposta }) em vez de uma tabela à parte — suficiente pro volume esperado
+// (pesquisas, não um formulário de uso diário em massa) e mais simples de listar pro Dono.
+model RespostaFormulario {
+  id               String     @id @default(cuid())
+  formularioId     String
+  formulario       Formulario @relation(fields: [formularioId], references: [id], onDelete: Cascade)
+  nomeRespondente  String
+  emailRespondente String
+  respostasJson    String     @db.Text
+  enviadoEm        DateTime   @default(now())
+
+  @@index([formularioId])
+  @@map("respostas_formulario")
 }
