@@ -2638,3 +2638,53 @@ Profissionais, Fase 37) — não é um campo novo no banco, é só visual.
 
 Repasses, Usuários, Suporte escalado, Formulários, Meu dia, Mapas mentais e Secretaria do Dono —
 sem parar.
+
+# Fase 39 — Redesign visual (lote 2, parte 5): Repasses, Usuários e Suporte escalado (entregue em 21/10/2026)
+
+## O que mudou (visual)
+
+- **Repasses (Dono)**: ganhou o filtro "Todos / Pendentes / Confirmados" no topo. "Pendentes"
+  continua mostrando exatamente o que já existia (lista por profissional, com o valor total que
+  ela deve, campo pra lançar quanto você recebeu dela, botão pra marcar pagamento específico como
+  recebido, aviso de comprovante enviado aguardando confirmação). "Confirmados" é novo: mostra um
+  ledger dos repasses já conferidos recentemente (profissional, tipo, data, valor). "Todos" mostra
+  as duas coisas juntas.
+- **Usuários (Dono)**: o formulário de criar login agora fica escondido até clicar em "+ Novo
+  usuário" (antes ficava sempre aberto no topo da tela). A lista virou cartões com um círculo de
+  iniciais colorido por papel (Dono azul, Atendente roxo, Profissional verde, Setor financeiro
+  dourado, Cliente cinza) em vez de tabela. Todas as ações continuam: editar, excluir, ativar
+  atendimento (pra outro Dono), abrir supervisão (pra Atendente).
+- **Suporte escalado (Dono)**: ganhou o filtro "Todos / Em aberto / Resolvidos". Os chamados
+  viraram cartões com a mensagem do cliente em um bloco destacado e o selo de status (laranja =
+  em aberto, verde = resolvido). Quando resolvido, a caixa de resposta fica escondida — mas tem um
+  link "Responder de novo" pra abrir ela de volta se precisar (nada foi removido, só escondido até
+  pedir).
+
+## De onde veio o conteúdo (nada foi inventado)
+
+A lista de "Confirmados" em Repasses usa transações que já existiam no banco (mesma tabela de
+sempre, filtrando as que já foram marcadas como repassadas) — é um dado novo mostrado, não um dado
+inventado. Nada mudou na lógica de quem deve o quê pra quem.
+
+## Backend
+
+- `GET /dono/repasses-pendentes` agora também devolve `confirmados` (últimos 40 repasses já
+  conferidos) — campo novo na resposta, aditivo, sem mudar o que já existia.
+
+## Arquivos alterados
+
+- `backend/src/routes/dono.js`
+- `frontend/src/pages/dono/index.js`
+
+## O que testar
+
+1. Como Dono, abrir "Repasses" e testar os 3 filtros (Todos/Pendentes/Confirmados). Testar lançar
+   um recebimento e marcar um pagamento específico como recebido, como já era possível antes.
+2. Abrir "Usuários": clicar em "+ Novo usuário", criar um login de teste, depois editar e excluir
+   um usuário. Testar "Ativar atendimento" num Dono e "Supervisão" numa Atendente.
+3. Abrir "Suporte escalado": testar os 3 filtros, responder um chamado em aberto e confirmar que
+   ele marca como resolvido e esconde a caixa de resposta (com a opção de abrir de novo).
+
+## Próxima parte
+
+Formulários, Meu dia, Mapas mentais e Secretaria do Dono — sem parar.

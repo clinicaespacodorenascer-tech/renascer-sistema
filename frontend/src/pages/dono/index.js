@@ -1438,11 +1438,20 @@ function Financeiro() {
   );
 }
 
+const FILTROS_REPASSES = [
+  { id: "todos", label: "Todos" },
+  { id: "pendentes", label: "Pendentes" },
+  { id: "confirmados", label: "Confirmados" },
+];
+
 // Dinheiro que as profissionais receberam direto dos clientes (fora da clínica) e ainda devem
 // repassar a parte da Renascer. Dá pra lançar um valor recebido (baixa as pendências mais
-// antigas dela automaticamente) ou marcar uma transação específica na mão.
+// antigas dela automaticamente) ou marcar uma transação específica na mão. Fase 38: visual novo +
+// aba "Confirmados" com o ledger de repasses já conferidos (dado novo, aditivo, vindo do backend).
 function RepassesProfissionais() {
   const [dados, setDados] = useState(null);
+  const [confirmados, setConfirmados] = useState([]);
+  const [filtro, setFiltro] = useState("pendentes");
   const [aberto, setAberto] = useState(null);
   const [valorLancar, setValorLancar] = useState({});
   const [msg, setMsg] = useState({});
@@ -1450,6 +1459,7 @@ function RepassesProfissionais() {
   async function carregar() {
     const { data } = await api.get("/dono/repasses-pendentes");
     setDados(data);
+    setConfirmados(data.confirmados || []);
   }
   useEffect(() => {
     carregar();
@@ -1476,111 +1486,192 @@ function RepassesProfissionais() {
     }
   }
 
-  if (!dados) return <p>Carregando...</p>;
+  if (!dados) return <p className="text-nv-muted">Carregando...</p>;
 
   const profissionais = Object.entries(dados.porProfissional || {});
+  const mostrarPendentes = filtro === "todos" || filtro === "pendentes";
+  const mostrarConfirmados = filtro === "todos" || filtro === "confirmados";
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <h2 className="font-semibold mb-1">Repasses das profissionais</h2>
-        <p className="text-xs text-renascer-ink/50">
-          Quando uma profissional recebe o pagamento direto do cliente (fora da clínica), ela fica devendo pra Renascer a
-          parte que é sua. Aqui você lança quanto recebeu de cada uma — ou marca um pagamento específico como recebido —
-          e a pendência baixa sozinha.
-        </p>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Repasses</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Ledger completo — pendentes e já confirmados</p>
+        </div>
+        <div>
+          {FILTROS_REPASSES.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`nv-seg ${filtro === f.id ? "nv-seg-ativo" : ""}`}
+              onClick={() => setFiltro(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {profissionais.length === 0 && (
-        <div className="card">
-          <p className="text-sm text-renascer-ink/50">Nenhuma pendência de repasse no momento — tudo em dia.</p>
+      {mostrarPendentes && (
+        <div className="space-y-3 mb-4">
+          <p className="text-xs text-nv-muted">
+            Quando uma profissional recebe o pagamento direto do cliente (fora da clínica), ela fica devendo pra
+            Renascer a parte que é sua. Aqui você lança quanto recebeu de cada uma — ou marca um pagamento
+            específico como recebido — e a pendência baixa sozinha.
+          </p>
+
+          {profissionais.length === 0 && (
+            <div className="nv-card">
+              <p className="text-sm text-nv-muted">Nenhuma pendência de repasse no momento — tudo em dia.</p>
+            </div>
+          )}
+
+          {profissionais.map(([nome, info]) => {
+            const aguardandoConfirmacao = info.transacoes.filter((t) => t.repasseSolicitadoEm).length;
+            return (
+              <div key={nome} className="nv-card">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="font-sora font-semibold text-nv-ink">{nome}</p>
+                    <p className="text-xs text-nv-muted mt-0.5">
+                      {info.transacoes.length} pagamento(s) pendente(s)
+                      {aguardandoConfirmacao > 0 && (
+                        <span className="text-amber-700">
+                          {" "}
+                          · {aguardandoConfirmacao} com comprovante aguardando sua confirmação
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <span className="nv-num font-sora font-bold text-sm px-3 py-1 rounded-full bg-amber-50 text-amber-700">
+                    R$ {info.totalPendente.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-nv-borderLight">
+                  <input
+                    className="input !w-auto flex-1 min-w-[150px]"
+                    placeholder="Valor que você recebeu dela"
+                    value={valorLancar[nome] || ""}
+                    onChange={(e) => setValorLancar({ ...valorLancar, [nome]: e.target.value })}
+                  />
+                  <button className="btn-primary text-sm" onClick={() => lancar(nome, info.profissionalId)}>
+                    Lançar recebimento
+                  </button>
+                  <button className="btn-secondary text-sm" onClick={() => setAberto(aberto === nome ? null : nome)}>
+                    {aberto === nome ? "Fechar lista" : "Ver pagamentos"}
+                  </button>
+                </div>
+                {msg[nome] && <p className="text-sm mt-2 text-nv-ink">{msg[nome]}</p>}
+
+                {aberto === nome && (
+                  <div className="mt-3 space-y-2">
+                    {info.transacoes.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between flex-wrap gap-2 text-sm pt-2 border-t border-nv-borderLight"
+                      >
+                        <div>
+                          <p className="text-nv-ink">
+                            {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} ·{" "}
+                            {TIPO_LABEL[t.tipo] || t.tipo} · você recebe R$ {t.valorRenascer.toFixed(2)}
+                          </p>
+                          {t.repasseSolicitadoEm ? (
+                            <p className="text-xs mt-0.5">
+                              <span className="badge bg-amber-100 text-amber-700">Comprovante enviado — aguardando você</span>
+                              {t.repasseValorInformado != null && (
+                                <span className={t.bateComEsperado ? "text-emerald-700 ml-1" : "text-red-600 ml-1"}>
+                                  {t.bateComEsperado
+                                    ? `Valor bate certinho: R$ ${t.repasseValorInformado.toFixed(2)}`
+                                    : `Atenção: valor no comprovante é R$ ${t.repasseValorInformado.toFixed(2)} (esperado R$ ${t.valorRenascer.toFixed(2)})`}
+                                </span>
+                              )}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-nv-muted2 mt-0.5">Ainda não enviou comprovante desse repasse.</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {t.temComprovanteRepasse && (
+                            <button className="text-nv-blue text-xs underline" onClick={() => verComprovanteRepasse(t.id)}>
+                              Ver comprovante
+                            </button>
+                          )}
+                          <button
+                            className={`text-xs underline ${t.repasseSolicitadoEm ? "text-emerald-700" : "text-nv-blue"}`}
+                            onClick={() => marcar(t.id)}
+                          >
+                            {t.repasseSolicitadoEm ? "Confirmar repasse" : "Marcar como recebido (sem comprovante)"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {profissionais.map(([nome, info]) => {
-        const aguardandoConfirmacao = info.transacoes.filter((t) => t.repasseSolicitadoEm).length;
-        return (
-        <div key={nome} className="card">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <p className="font-semibold">{nome}</p>
-              <p className="text-xs text-renascer-ink/50">
-                {info.transacoes.length} pagamento(s) pendente(s)
-                {aguardandoConfirmacao > 0 && (
-                  <span className="text-amber-700"> · {aguardandoConfirmacao} com comprovante aguardando sua confirmação</span>
-                )}
-              </p>
-            </div>
-            <p className="text-xl font-bold text-amber-700">R$ {info.totalPendente.toFixed(2)}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-renascer/10 pt-3">
-            <input
-              className="input !w-auto flex-1 min-w-[150px]"
-              placeholder="Valor que você recebeu dela"
-              value={valorLancar[nome] || ""}
-              onChange={(e) => setValorLancar({ ...valorLancar, [nome]: e.target.value })}
-            />
-            <button className="btn-primary text-sm" onClick={() => lancar(nome, info.profissionalId)}>
-              Lançar recebimento
-            </button>
-            <button className="btn-secondary text-sm" onClick={() => setAberto(aberto === nome ? null : nome)}>
-              {aberto === nome ? "Fechar lista" : "Ver pagamentos"}
-            </button>
-          </div>
-          {msg[nome] && <p className="text-sm mt-2">{msg[nome]}</p>}
-
-          {aberto === nome && (
-            <div className="mt-3 space-y-2">
-              {info.transacoes.map((t) => (
-                <div key={t.id} className="flex items-center justify-between flex-wrap gap-2 text-sm border-t border-renascer/10 pt-2">
-                  <div>
-                    <p>
-                      {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} · {TIPO_LABEL[t.tipo] || t.tipo} · você
-                      recebe R$ {t.valorRenascer.toFixed(2)}
-                    </p>
-                    {t.repasseSolicitadoEm ? (
-                      <p className="text-xs mt-0.5">
-                        <span className="badge bg-amber-100 text-amber-700">Comprovante enviado — aguardando você</span>
-                        {t.repasseValorInformado != null && (
-                          <span className={t.bateComEsperado ? "text-emerald-700 ml-1" : "text-red-600 ml-1"}>
-                            {t.bateComEsperado
-                              ? `Valor bate certinho: R$ ${t.repasseValorInformado.toFixed(2)}`
-                              : `Atenção: valor no comprovante é R$ ${t.repasseValorInformado.toFixed(2)} (esperado R$ ${t.valorRenascer.toFixed(2)})`}
-                          </span>
-                        )}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-renascer-ink/40 mt-0.5">Ainda não enviou comprovante desse repasse.</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {t.temComprovanteRepasse && (
-                      <button className="text-renascer text-xs underline" onClick={() => verComprovanteRepasse(t.id)}>
-                        Ver comprovante
-                      </button>
-                    )}
-                    <button
-                      className={`text-xs underline ${t.repasseSolicitadoEm ? "text-emerald-700" : "text-renascer"}`}
-                      onClick={() => marcar(t.id)}
-                    >
-                      {t.repasseSolicitadoEm ? "Confirmar repasse" : "Marcar como recebido (sem comprovante)"}
-                    </button>
-                  </div>
+      {mostrarConfirmados && (
+        <div>
+          {filtro === "todos" && <p className="nv-eyebrow mb-2">Confirmados recentemente</p>}
+          <div className="nv-card !p-0 px-6 py-1">
+            {confirmados.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum repasse confirmado ainda.</p>}
+            {confirmados.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight first:border-t-0"
+              >
+                <div>
+                  <p className="text-[13.5px] font-semibold text-nv-ink">{c.profissional}</p>
+                  <p className="text-xs text-nv-muted2 mt-0.5">
+                    {TIPO_LABEL[c.tipo] || c.tipo} · {c.repassadoEm ? new Date(c.repassadoEm).toLocaleDateString("pt-BR") : "-"}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
+                <div className="flex items-center gap-3">
+                  <span className="nv-num text-sm font-bold text-nv-ink">R$ {c.valorRenascer.toFixed(2)}</span>
+                  <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">
+                    Confirmado
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        );
-      })}
+      )}
     </div>
   );
+}
+
+const PAPEL_COR_NV = {
+  DONO: { bg: "#EAF1FA", fg: "#0B5FA8" },
+  ATENDENTE: { bg: "#F2E9FB", fg: "#8A4FA3" },
+  PROFISSIONAL: { bg: "#E8F5EE", fg: "#1C7C54" },
+  FINANCEIRO: { bg: "#FBF0E3", fg: "#B0580F" },
+  CLIENTE: { bg: "#EEF1F7", fg: "#6B7A91" },
+};
+const PAPEL_LABEL_NV = {
+  DONO: "Dono",
+  ATENDENTE: "Atendente",
+  PROFISSIONAL: "Profissional",
+  FINANCEIRO: "Setor financeiro",
+  CLIENTE: "Cliente",
+};
+function iniciaisNome(nome) {
+  const partes = (nome || "").trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
 
 function Usuarios() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
+  const [mostrarForm, setMostrarForm] = useState(false); // Fase 38: formulário de criação some até clicar em "+ Novo usuário"
   const [form, setForm] = useState({
     nome: "",
     email: "",
@@ -1650,128 +1741,157 @@ function Usuarios() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-3">Criar novo login</h2>
-        <div className="grid sm:grid-cols-2 gap-2">
-          <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-          <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
-          <input className="input" placeholder="Senha provisória" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} />
-          <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="PROFISSIONAL">Profissional</option>
-            <option value="ATENDENTE">Atendente</option>
-            <option value="DONO">Dono</option>
-            <option value="CLIENTE">Cliente</option>
-            <option value="FINANCEIRO">Setor Financeiro</option>
-          </select>
-          {form.role === "CLIENTE" && (
-            <select
-              className="input"
-              value={form.profissionalAtualId}
-              onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}
-            >
-              <option value="">Vincular profissional (opcional)</option>
-              {profissionais.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.user.nome}
-                  {p.user.role === "DONO" ? " (Dono)" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          {form.role === "DONO" && (
-            <label className="flex items-center gap-2 text-sm text-renascer-ink/70 sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={form.tambemProfissional}
-                onChange={(e) => setForm({ ...form, tambemProfissional: e.target.checked })}
-              />
-              Esse dono também atende pacientes (ganha uma agenda própria de profissional, sem repasse)
-            </label>
-          )}
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Usuários</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Todos os logins do sistema, por papel</p>
         </div>
-        <button className="btn-primary mt-3" onClick={criar}>
-          Criar login
+        <button className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
+          {mostrarForm ? "Fechar" : "+ Novo usuário"}
         </button>
-        {msg && <p className="text-sm mt-2">{msg}</p>}
       </div>
 
-      <div className="card overflow-x-auto">
-        <h2 className="font-semibold mb-2">Todos os usuários</h2>
-        <p className="text-xs text-renascer-ink/50 mb-2">
+      {mostrarForm && (
+        <div className="nv-card mb-4">
+          <h2 className="font-sora font-semibold text-nv-ink mb-3">Criar novo login</h2>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+            <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input
+              className="input"
+              placeholder="Telefone"
+              value={form.telefone}
+              onChange={(e) => setForm({ ...form, telefone: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Senha provisória"
+              value={form.senha}
+              onChange={(e) => setForm({ ...form, senha: e.target.value })}
+            />
+            <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="PROFISSIONAL">Profissional</option>
+              <option value="ATENDENTE">Atendente</option>
+              <option value="DONO">Dono</option>
+              <option value="CLIENTE">Cliente</option>
+              <option value="FINANCEIRO">Setor Financeiro</option>
+            </select>
+            {form.role === "CLIENTE" && (
+              <select
+                className="input"
+                value={form.profissionalAtualId}
+                onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}
+              >
+                <option value="">Vincular profissional (opcional)</option>
+                {profissionais.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.user.nome}
+                    {p.user.role === "DONO" ? " (Dono)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            {form.role === "DONO" && (
+              <label className="flex items-center gap-2 text-sm text-nv-muted sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.tambemProfissional}
+                  onChange={(e) => setForm({ ...form, tambemProfissional: e.target.checked })}
+                />
+                Esse dono também atende pacientes (ganha uma agenda própria de profissional, sem repasse)
+              </label>
+            )}
+          </div>
+          <button className="btn-primary mt-3" onClick={criar}>
+            Criar login
+          </button>
+          {msg && <p className="text-sm mt-2 text-nv-ink">{msg}</p>}
+        </div>
+      )}
+
+      <div className="nv-card !p-0 px-6 py-1">
+        <p className="text-xs text-nv-muted py-3 border-b border-nv-borderLight">
           Como dono, você pode editar ou excluir qualquer login (cliente, profissional, atendente ou outro dono).
         </p>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-renascer-ink/50">
-              <th>Nome</th>
-              <th>E-mail</th>
-              <th>Papel</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.flatMap((u) => {
-              const linhas = [
-                <tr key={u.id} className="border-t border-renascer/10">
-                  <td className="py-1">{u.nome}</td>
-                  <td>{u.email}</td>
-                  <td>{u.role}</td>
-                  <td>{u.ativo ? "Ativo" : "Inativo"}</td>
-                  <td className="text-right whitespace-nowrap">
-                    {u.role === "DONO" && !u.profissional && (
-                      <button
-                        className="text-renascer text-xs underline mr-3"
-                        disabled={ativandoId === u.id}
-                        onClick={() => ativarAtendimento(u)}
-                      >
-                        {ativandoId === u.id ? "Ativando..." : "Ativar atendimento"}
-                      </button>
-                    )}
-                    {u.role === "DONO" && u.profissional && (
-                      <span className="text-xs text-renascer-ink/40 mr-3">também atende pacientes</span>
-                    )}
-                    {u.role === "ATENDENTE" && (
-                      <button
-                        className="text-renascer text-xs underline mr-3"
-                        onClick={() => setSupervisionandoId(supervisionandoId === u.id ? null : u.id)}
-                      >
-                        {supervisionandoId === u.id ? "Fechar supervisão" : "Supervisão"}
-                      </button>
-                    )}
-                    <button className="text-renascer text-xs underline mr-3" onClick={() => setEditando(editando === u.id ? null : u.id)}>
-                      {editando === u.id ? "Fechar" : "Editar"}
+        {lista.map((u) => {
+          const cor = PAPEL_COR_NV[u.role] || PAPEL_COR_NV.CLIENTE;
+          return (
+            <div key={u.id}>
+              <div className="flex items-center justify-between flex-wrap gap-3 py-3 border-b border-nv-borderLight">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center font-sora font-bold text-xs text-white shrink-0"
+                    style={{ background: cor.fg }}
+                  >
+                    {iniciaisNome(u.nome)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-semibold text-nv-ink truncate">{u.nome}</p>
+                    <p className="text-xs text-nv-muted2 mt-0.5 truncate">{u.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap justify-end">
+                  <span
+                    className="text-[10.5px] font-bold rounded-full px-2.5 py-1"
+                    style={{ background: cor.bg, color: cor.fg }}
+                  >
+                    {PAPEL_LABEL_NV[u.role] || u.role}
+                  </span>
+                  <span className={`text-xs font-semibold ${u.ativo ? "text-emerald-700" : "text-nv-muted3"}`}>
+                    {u.ativo ? "Ativo" : "Inativo"}
+                  </span>
+                  {u.role === "DONO" && !u.profissional && (
+                    <button
+                      className="text-nv-blue text-xs font-semibold underline disabled:opacity-50"
+                      disabled={ativandoId === u.id}
+                      onClick={() => ativarAtendimento(u)}
+                    >
+                      {ativandoId === u.id ? "Ativando..." : "Ativar atendimento"}
                     </button>
-                    <button className="text-red-600 text-xs underline" onClick={() => excluir(u)}>
-                      Excluir
+                  )}
+                  {u.role === "DONO" && u.profissional && (
+                    <span className="text-xs text-nv-muted3">também atende pacientes</span>
+                  )}
+                  {u.role === "ATENDENTE" && (
+                    <button
+                      className="text-nv-blue text-xs font-semibold underline"
+                      onClick={() => setSupervisionandoId(supervisionandoId === u.id ? null : u.id)}
+                    >
+                      {supervisionandoId === u.id ? "Fechar supervisão" : "Supervisão"}
                     </button>
-                  </td>
-                </tr>,
-              ];
-              if (editando === u.id) {
-                linhas.push(
-                  <tr key={`${u.id}-editar`} className="border-t border-renascer/10 bg-renascer-light/20">
-                    <td colSpan={5} className="py-2">
-                      <EditarUsuario usuario={u} onSalvo={() => { setEditando(null); carregar(); }} />
-                    </td>
-                  </tr>
-                );
-              }
-              if (supervisionandoId === u.id) {
-                linhas.push(
-                  <tr key={`${u.id}-supervisao`} className="border-t border-renascer/10 bg-renascer-light/20">
-                    <td colSpan={5} className="py-3">
-                      <SupervisaoSecretaria usuarioId={u.id} nome={u.nome} />
-                    </td>
-                  </tr>
-                );
-              }
-              return linhas;
-            })}
-          </tbody>
-        </table>
+                  )}
+                  <button
+                    className="text-nv-blue text-xs font-semibold underline"
+                    onClick={() => setEditando(editando === u.id ? null : u.id)}
+                  >
+                    {editando === u.id ? "Fechar" : "Editar"}
+                  </button>
+                  <button className="text-red-600 text-xs font-semibold underline" onClick={() => excluir(u)}>
+                    Excluir
+                  </button>
+                </div>
+              </div>
+              {editando === u.id && (
+                <div className="py-3 border-b border-nv-borderLight">
+                  <EditarUsuario
+                    usuario={u}
+                    onSalvo={() => {
+                      setEditando(null);
+                      carregar();
+                    }}
+                  />
+                </div>
+              )}
+              {supervisionandoId === u.id && (
+                <div className="py-3 border-b border-nv-borderLight">
+                  <SupervisaoSecretaria usuarioId={u.id} nome={u.nome} />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1926,9 +2046,23 @@ function SupervisaoSecretaria({ usuarioId, nome }) {
   );
 }
 
+const FILTROS_SUPORTE = [
+  { id: "todos", label: "Todos" },
+  { id: "abertos", label: "Em aberto" },
+  { id: "resolvidos", label: "Resolvidos" },
+];
+const STATUS_SUPORTE_LABEL = {
+  ABERTO: "Em aberto",
+  EM_ANDAMENTO: "Em andamento",
+  ESCALADO_GERENCIA: "Escalado",
+  RESOLVIDO: "Resolvido",
+};
+
 function SuporteEscalado() {
   const [tickets, setTickets] = useState([]);
   const [resposta, setResposta] = useState({});
+  const [filtro, setFiltro] = useState("todos"); // Fase 38
+  const [reabrindo, setReabrindo] = useState({}); // ids marcados pra mostrar a caixa de resposta de novo, mesmo já resolvido
 
   async function carregar() {
     const { data } = await api.get("/dono/suporte-gerencia");
@@ -1950,43 +2084,89 @@ function SuporteEscalado() {
     carregar();
   }
 
+  const filtrados = tickets.filter((t) => {
+    if (filtro === "abertos") return t.status !== "RESOLVIDO";
+    if (filtro === "resolvidos") return t.status === "RESOLVIDO";
+    return true;
+  });
+
   return (
-    <div className="space-y-3">
-      {tickets.map((t) => (
-        <div key={t.id} className="card">
-          <div className="flex justify-between">
-            <div>
-              <p className="font-semibold">{t.assunto}</p>
-              <p className="text-xs text-renascer-ink/50">
-                Cliente: {t.cliente.user.nome} · Profissional: {t.cliente.profissionalAtual?.user?.nome || "-"}
-              </p>
-            </div>
-            <span className="badge bg-red-100 text-red-700">{t.status}</span>
-          </div>
-          <div className="my-2 space-y-1">
-            {t.mensagens.map((m) => (
-              <p key={m.id} className="text-sm">
-                {m.texto}
-              </p>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <input
-              className="input flex-1 min-w-[150px]"
-              placeholder="Responder..."
-              value={resposta[t.id] || ""}
-              onChange={(e) => setResposta({ ...resposta, [t.id]: e.target.value })}
-            />
-            <button className="btn-secondary" onClick={() => responder(t.id)}>
-              Enviar
-            </button>
-            <button className="btn-primary" onClick={() => resolver(t.id)}>
-              Resolver
-            </button>
-          </div>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono · também usado pela Atendente</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Suporte escalado</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Pedidos de suporte enviados pelos clientes pelo app</p>
         </div>
-      ))}
-      {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado no momento.</p>}
+        <div>
+          {FILTROS_SUPORTE.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`nv-seg ${filtro === f.id ? "nv-seg-ativo" : ""}`}
+              onClick={() => setFiltro(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {filtrados.map((t) => {
+          const resolvido = t.status === "RESOLVIDO";
+          const mostrarResposta = !resolvido || reabrindo[t.id];
+          return (
+            <div key={t.id} className="nv-card">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-[13.5px] font-semibold text-nv-ink">
+                    {t.cliente.user.nome} · com {t.cliente.profissionalAtual?.user?.nome || "-"}
+                  </p>
+                  <p className="text-xs text-nv-muted2 mt-0.5">{t.assunto}</p>
+                </div>
+                <span
+                  className="text-[10.5px] font-bold rounded-full px-2.5 py-1"
+                  style={resolvido ? { background: "#E8F5EE", color: "#1C7C54" } : { background: "#FBF0E3", color: "#B0580F" }}
+                >
+                  {STATUS_SUPORTE_LABEL[t.status] || t.status}
+                </span>
+              </div>
+              <div className="my-2.5 space-y-1.5">
+                {t.mensagens.map((m) => (
+                  <p key={m.id} className="text-[13.5px] text-nv-ink bg-nv-bg rounded-[10px] px-3 py-2.5">
+                    {m.texto}
+                  </p>
+                ))}
+              </div>
+              {mostrarResposta ? (
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    className="input flex-1 min-w-[150px]"
+                    placeholder="Responder ao cliente..."
+                    value={resposta[t.id] || ""}
+                    onChange={(e) => setResposta({ ...resposta, [t.id]: e.target.value })}
+                  />
+                  <button className="btn-secondary text-sm" onClick={() => responder(t.id)}>
+                    Enviar
+                  </button>
+                  <button className="btn-primary text-sm" onClick={() => resolver(t.id)}>
+                    Responder e marcar resolvido
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="text-nv-blue text-xs font-semibold underline self-start"
+                  onClick={() => setReabrindo({ ...reabrindo, [t.id]: true })}
+                >
+                  Responder de novo
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {filtrados.length === 0 && <p className="text-sm text-nv-muted">Nenhum chamado escalado nesse filtro.</p>}
+      </div>
     </div>
   );
 }

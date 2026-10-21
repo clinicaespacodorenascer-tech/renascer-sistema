@@ -530,7 +530,29 @@ router.get("/repasses-pendentes", async (req, res) => {
     });
   }
 
-  res.json({ porProfissional });
+  // Fase 38 — ledger de repasses já confirmados (últimos 40), pra tela nova mostrar também o que já
+  // foi conferido, sem precisar entrar em cada profissional. Não muda nada do que já existia acima.
+  const confirmadosRaw = await prisma.transacaoFinanceira.findMany({
+    where: { recebidoPor: "PROFISSIONAL", repassado: true },
+    select: {
+      id: true,
+      tipo: true,
+      valorRenascer: true,
+      repassadoEm: true,
+      profissional: { select: { user: { select: { nome: true } } } },
+    },
+    orderBy: { repassadoEm: "desc" },
+    take: 40,
+  });
+  const confirmados = confirmadosRaw.map((t) => ({
+    id: t.id,
+    profissional: t.profissional.user.nome,
+    tipo: t.tipo,
+    valorRenascer: t.valorRenascer,
+    repassadoEm: t.repassadoEm,
+  }));
+
+  res.json({ porProfissional, confirmados });
 });
 
 // Marca uma transação específica como repassada (o dono confere — vendo o comprovante que a
