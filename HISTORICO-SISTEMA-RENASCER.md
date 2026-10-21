@@ -1928,123 +1928,6 @@ aquela atualização e preferiu subir as duas juntas.
 
 ---
 
-# Fase 31 — Setor Financeiro: login novo, painel de CAC/ROI/imposto/retiradas (entregue em 21/10/2026)
-
-Depois da Fase 30 ("Meu dia"), o Elismael mandou o link do canvas de design completo (26 telas,
-"Novo Layout — Espaço do Renascer") e deixou claro que queria TUDO que foi desenhado ali, não só a
-parte de "Meu dia" — incluindo um login novo que ainda não existia em nenhum lugar do sistema até
-essa conversa: o **Setor Financeiro** (uma pessoa, ex: "Patrícia", cuidando do financeiro da
-clínica no dia a dia). Essa entrega é a primeira parte desse pedido maior — o login e o painel
-financeiro completos. As outras partes (Mapas mentais, Secretaria/Supervisão da atendente, e o
-redesign visual das ~20 telas que já existiam) vêm em fases separadas, avisando a cada uma pronta.
-
-## O que entrou nessa fase
-
-- **Login novo**: papel `FINANCEIRO` no sistema, criável pelo Dono em Usuários (`Setor
-  Financeiro` no formulário de criar login), com e-mail/senha provisória iguais a qualquer outro
-  login. Pode ser excluído como qualquer outro.
-- **Painel financeiro** (tela nova, `/financeiro`, já no novo visual — ver abaixo):
-  - 4 indicadores do dia: CAC, ROI, Receita de hoje e Lucro de hoje (os dois últimos reaproveitam
-    a MESMA conta de saldo de caixa que o Dono já usa em "Meu dia > Caixa" — não é um número
-    novo/paralelo, é o mesmo caixa visto por outro login).
-  - **Investimento em anúncios — análise diária**: lança quanto foi investido + leads do WhatsApp
-    + conversões de hoje; isso alimenta o CAC/ROI de cima e também lança automaticamente a saída
-    correspondente no caixa da clínica (lançar de novo o mesmo dia atualiza em vez de duplicar).
-  - **Calculadora de imposto**: valor recebido + % → calcula e lança como saída no caixa.
-  - **Retiradas e pró-labore**: sem valor fixo — cada retirada (Maria, Patrícia, pró-labore do
-    Elismael etc.) é lançada na hora, com filtro por hoje/semana/mês/histórico completo.
-  - **Pagamento de anúncios de hoje**: liga/desliga "pago" pra Meta Ads e Google Ads, por dia.
-  - 3 abas de apoio, reaproveitando a MESMA lógica que Dono/Atendente já usam (sem duplicar
-    conta): **Clientes pra renovar**, **Repasses** (marcar repasse de profissional como
-    confirmado) e **Agenda geral**.
-
-## Decisão de arquitetura: por que quase não criei tabela nova
-
-O mockup pedia retirada, imposto e investimento em anúncio como "lançamentos". Em vez de criar uma
-tabela nova pra cada um (o que duplicaria o `MovimentoCaixa` que a Fase 30 já criou pro caixa do
-Dono), **retirada e imposto viram um `MovimentoCaixa` de saída normal** (mesma tabela,
-categorias `"Retirada/Pró-labore"` e `"Imposto"`) — assim o caixa/lucro do dia do Dono já sai
-batendo sozinho com o que o Setor Financeiro lança, sem precisar de nenhuma conciliação manual
-entre duas fontes de dado. Só o **investimento em anúncio** precisou de tabela própria
-(`InvestimentoAnuncioDiario`), porque é o único lançamento que guarda *leads* e *conversões* —
-dados que não existiam (e não fazem sentido) dentro de `MovimentoCaixa`; mesmo assim, ele também
-gera/atualiza um `MovimentoCaixa` ligado, pelo mesmo motivo acima.
-
-O **ROI** usa o ticket médio real dos últimos 30 dias (média de `valorTotal` das transações), em
-vez de um valor fixo — fica mais preciso conforme a clínica for lançando pagamentos de verdade, e
-não exige cadastrar "preço médio do pacote" em nenhum lugar.
-
-## Visual: começo do novo design (Sora + Public Sans, navy/azul/dourado)
-
-O painel financeiro já nasce no visual NOVO do canvas (sidebar navy `#0D1B30`, azul `#0B5FA8`,
-detalhe dourado `#9C6B2E`, títulos em Sora e texto em Public Sans) — não no visual atual
-(Manrope/azul claro) usado pelas outras ~20 telas. Pra isso, criei um componente de casca
-reaproveitável, `frontend/src/components/LayoutNovo.js`, com a MESMA API de props do `Layout.js`
-atual (user/abas/abaAtiva/onTrocarAba/children) — ele vai servir de base pro redesign visual das
-telas antigas na(s) próxima(s) fase(s), em vez de reescrever a casca de novo pra cada uma. Os
-tokens de cor/fonte novos entraram em `tailwind.config.js` com nomes próprios (prefixo `nv`:
-`nv-navy`, `nv-blue`, `nv-gold` etc., fontes `font-sora`/`font-publicSans`) — **sem tocar** nos
-tokens `renascer`/`gold` que as telas antigas ainda usam, então nada do visual atual muda até eu
-redesenhar tela por tela.
-
-As 3 abas de apoio (Clientes pra renovar, Repasses, Agenda geral) foram construídas funcionais
-nesse mesmo visual novo, mas sem o acabamento 1:1 dos artboards específicos deles no canvas (eu só
-tinha lido o artboard do próprio Painel Financeiro até agora) — a função tá completa, o polimento
-visual exato dessas 3 entra junto do lote de redesign.
-
-## Arquivos novos ou alterados
-
-- `backend/prisma/schema.prisma`: 1 valor novo no enum `Role` (`FINANCEIRO`), 1 campo novo em
-  `User` (`financeiro`), 3 modelos novos (`Financeiro`, `InvestimentoAnuncioDiario`,
-  `PagamentoAnuncioStatus`) — tudo "acrescentar", nada removido/alterado do que já existia.
-- `backend/src/routes/financeiro.js` **(novo)**: todas as rotas do painel (`/financeiro/*`).
-- `backend/src/server.js`: registra a rota nova (`app.use("/api/financeiro", ...)`).
-- `backend/src/middleware/auth.js` e `backend/src/routes/auth.js`: o login/sessão passam a
-  carregar também o perfil `financeiro` (igual já faziam com profissional/cliente/atendente/dono).
-- `backend/src/routes/dono.js`: o formulário de criar login (`POST /dono/usuarios`) aceita o
-  papel `FINANCEIRO`.
-- `backend/src/utils/excluirUsuario.js`: função nova `excluirFinanceiro` + ligada na exclusão
-  genérica de usuário.
-- `frontend/src/pages/dono/index.js`: opção "Setor Financeiro" no select de criar login.
-- `frontend/src/lib/api.js`: `rotaPorPapel` manda `FINANCEIRO` pra `/financeiro` depois do login.
-- `frontend/src/components/LayoutNovo.js` **(novo)**: casca do novo visual (ver seção acima).
-- `frontend/src/pages/financeiro/index.js` **(novo)**: a tela toda do Setor Financeiro.
-- `frontend/tailwind.config.js`: tokens de cor/fonte novos (`nv-*`, `font-sora`,
-  `font-publicSans`), sem alterar nenhum token existente.
-- `frontend/src/styles/globals.css`: import das fontes Sora + Public Sans (Google Fonts), sem
-  remover o import da Manrope que as telas antigas usam.
-
-## Teste feito antes de entregar
-
-- `node -c` (checagem de sintaxe) em todos os arquivos de backend novos/alterados — todos OK.
-- Checagem de chaves/parênteses balanceados no `schema.prisma` inteiro e nos 2 arquivos de
-  frontend novos (`LayoutNovo.js`, `financeiro/index.js`) depois da edição.
-- **Não foi possível rodar `npx prisma validate`** nem `next build` de verdade neste ambiente
-  (sem acesso de rede pro binário do Prisma; o `node_modules` do frontend aqui não tem o Next
-  instalado) — a mesma limitação já registrada na Fase 30. Isso é checagem estrutural, não
-  substitui o `npx prisma generate`/build que o Railway e a Vercel já rodam sozinhos no deploy.
-- Revisão manual linha a linha de cada conta nova (CAC, ROI, custo por lead, cor vermelho/verde do
-  CAC comparando com o dia anterior, total do período de retiradas) comparando com a lógica
-  exata do mockup (`Financeiro-Setor.dc.html`), incluindo os casos de borda (sem lançamento
-  nenhum ainda, dia sem conversão, histórico vazio).
-
-## Pendência / aguardando teste do usuário
-
-- Depois do deploy: `npx prisma migrate dev` (ou `deploy`, conforme o ambiente) pra criar as
-  tabelas novas no Postgres do Railway — sem isso o painel financeiro não funciona.
-- Criar o primeiro login de Setor Financeiro pelo painel do Dono (Usuários → Setor Financeiro) e
-  testar o login.
-- Lançar um dia de investimento em anúncio de teste e confirmar que aparece certo no histórico e
-  que o CAC/ROI do topo atualiza.
-- Confirmar que "Receita de hoje"/"Lucro de hoje" batem com o que o Dono já vê em "Meu dia > Caixa"
-  no mesmo dia (é a mesma conta, então tem que bater exatamente).
-- Avisar se quer que o Dono também acesse essa MESMA tela (hoje o acesso de tela é só pro login
-  Setor Financeiro; o backend já libera o Dono também, só falta decidir se vale a pena abrir a
-  tela pra ele ou se o painel de "Meu dia" dele já basta).
-- Próximas partes do pedido maior (vou avisando conforme cada uma ficar pronta): Mapas mentais
-  (Dono), Secretaria/Supervisão da Atendente (Dono), e o redesign visual lote a lote das telas que
-  já existem.
-
 # Fase 30 — "Meu dia" entra no sistema de verdade: checklist diário, indicadores reais, marketing, gestão de pessoas, fechamento de caixa, diário de decisões e metas do trimestre, pros 3 logins de gestão (entregue em 21/10/2026)
 
 O Elismael pediu pra trazer pro sistema de verdade o módulo "Meu dia" que já existia como mockup
@@ -2193,3 +2076,197 @@ que existe como proxy.
   financeiro que o sistema já tinha, mas pode ser ajustado se não for o que ele queria.
 - Avisar se "alcance e engajamento do Instagram" (não construído — precisaria de integração com a
   API do Meta) é prioridade pra uma próxima fase.
+
+# Fase 31 — Setor Financeiro: login novo, painel de CAC/ROI/imposto/retiradas (entregue em 21/10/2026)
+
+Depois da Fase 30 ("Meu dia"), o Elismael mandou o link do canvas de design completo (26 telas,
+"Novo Layout — Espaço do Renascer") e deixou claro que queria TUDO que foi desenhado ali, não só a
+parte de "Meu dia" — incluindo um login novo que ainda não existia em nenhum lugar do sistema até
+essa conversa: o **Setor Financeiro** (uma pessoa, ex: "Patrícia", cuidando do financeiro da
+clínica no dia a dia). Essa entrega é a primeira parte desse pedido maior — o login e o painel
+financeiro completos. As outras partes (Mapas mentais, Secretaria/Supervisão da atendente, e o
+redesign visual das ~20 telas que já existiam) vêm em fases separadas, avisando a cada uma pronta.
+
+## O que entrou nessa fase
+
+- **Login novo**: papel `FINANCEIRO` no sistema, criável pelo Dono em Usuários (`Setor
+  Financeiro` no formulário de criar login), com e-mail/senha provisória iguais a qualquer outro
+  login. Pode ser excluído como qualquer outro.
+- **Painel financeiro** (tela nova, `/financeiro`, já no novo visual — ver abaixo):
+  - 4 indicadores do dia: CAC, ROI, Receita de hoje e Lucro de hoje (os dois últimos reaproveitam
+    a MESMA conta de saldo de caixa que o Dono já usa em "Meu dia > Caixa" — não é um número
+    novo/paralelo, é o mesmo caixa visto por outro login).
+  - **Investimento em anúncios — análise diária**: lança quanto foi investido + leads do WhatsApp
+    + conversões de hoje; isso alimenta o CAC/ROI de cima e também lança automaticamente a saída
+    correspondente no caixa da clínica (lançar de novo o mesmo dia atualiza em vez de duplicar).
+  - **Calculadora de imposto**: valor recebido + % → calcula e lança como saída no caixa.
+  - **Retiradas e pró-labore**: sem valor fixo — cada retirada (Maria, Patrícia, pró-labore do
+    Elismael etc.) é lançada na hora, com filtro por hoje/semana/mês/histórico completo.
+  - **Pagamento de anúncios de hoje**: liga/desliga "pago" pra Meta Ads e Google Ads, por dia.
+  - 3 abas de apoio, reaproveitando a MESMA lógica que Dono/Atendente já usam (sem duplicar
+    conta): **Clientes pra renovar**, **Repasses** (marcar repasse de profissional como
+    confirmado) e **Agenda geral**.
+
+## Decisão de arquitetura: por que quase não criei tabela nova
+
+O mockup pedia retirada, imposto e investimento em anúncio como "lançamentos". Em vez de criar uma
+tabela nova pra cada um (o que duplicaria o `MovimentoCaixa` que a Fase 30 já criou pro caixa do
+Dono), **retirada e imposto viram um `MovimentoCaixa` de saída normal** (mesma tabela,
+categorias `"Retirada/Pró-labore"` e `"Imposto"`) — assim o caixa/lucro do dia do Dono já sai
+batendo sozinho com o que o Setor Financeiro lança, sem precisar de nenhuma conciliação manual
+entre duas fontes de dado. Só o **investimento em anúncio** precisou de tabela própria
+(`InvestimentoAnuncioDiario`), porque é o único lançamento que guarda *leads* e *conversões* —
+dados que não existiam (e não fazem sentido) dentro de `MovimentoCaixa`; mesmo assim, ele também
+gera/atualiza um `MovimentoCaixa` ligado, pelo mesmo motivo acima.
+
+O **ROI** usa o ticket médio real dos últimos 30 dias (média de `valorTotal` das transações), em
+vez de um valor fixo — fica mais preciso conforme a clínica for lançando pagamentos de verdade, e
+não exige cadastrar "preço médio do pacote" em nenhum lugar.
+
+## Visual: começo do novo design (Sora + Public Sans, navy/azul/dourado)
+
+O painel financeiro já nasce no visual NOVO do canvas (sidebar navy `#0D1B30`, azul `#0B5FA8`,
+detalhe dourado `#9C6B2E`, títulos em Sora e texto em Public Sans) — não no visual atual
+(Manrope/azul claro) usado pelas outras ~20 telas. Pra isso, criei um componente de casca
+reaproveitável, `frontend/src/components/LayoutNovo.js`, com a MESMA API de props do `Layout.js`
+atual (user/abas/abaAtiva/onTrocarAba/children) — ele vai servir de base pro redesign visual das
+telas antigas na(s) próxima(s) fase(s), em vez de reescrever a casca de novo pra cada uma. Os
+tokens de cor/fonte novos entraram em `tailwind.config.js` com nomes próprios (prefixo `nv`:
+`nv-navy`, `nv-blue`, `nv-gold` etc., fontes `font-sora`/`font-publicSans`) — **sem tocar** nos
+tokens `renascer`/`gold` que as telas antigas ainda usam, então nada do visual atual muda até eu
+redesenhar tela por tela.
+
+As 3 abas de apoio (Clientes pra renovar, Repasses, Agenda geral) foram construídas funcionais
+nesse mesmo visual novo, mas sem o acabamento 1:1 dos artboards específicos deles no canvas (eu só
+tinha lido o artboard do próprio Painel Financeiro até agora) — a função tá completa, o polimento
+visual exato dessas 3 entra junto do lote de redesign.
+
+## Arquivos novos ou alterados
+
+- `backend/prisma/schema.prisma`: 1 valor novo no enum `Role` (`FINANCEIRO`), 1 campo novo em
+  `User` (`financeiro`), 3 modelos novos (`Financeiro`, `InvestimentoAnuncioDiario`,
+  `PagamentoAnuncioStatus`) — tudo "acrescentar", nada removido/alterado do que já existia.
+- `backend/src/routes/financeiro.js` **(novo)**: todas as rotas do painel (`/financeiro/*`).
+- `backend/src/server.js`: registra a rota nova (`app.use("/api/financeiro", ...)`).
+- `backend/src/middleware/auth.js` e `backend/src/routes/auth.js`: o login/sessão passam a
+  carregar também o perfil `financeiro` (igual já faziam com profissional/cliente/atendente/dono).
+- `backend/src/routes/dono.js`: o formulário de criar login (`POST /dono/usuarios`) aceita o
+  papel `FINANCEIRO`.
+- `backend/src/utils/excluirUsuario.js`: função nova `excluirFinanceiro` + ligada na exclusão
+  genérica de usuário.
+- `frontend/src/pages/dono/index.js`: opção "Setor Financeiro" no select de criar login.
+- `frontend/src/lib/api.js`: `rotaPorPapel` manda `FINANCEIRO` pra `/financeiro` depois do login.
+- `frontend/src/components/LayoutNovo.js` **(novo)**: casca do novo visual (ver seção acima).
+- `frontend/src/pages/financeiro/index.js` **(novo)**: a tela toda do Setor Financeiro.
+- `frontend/tailwind.config.js`: tokens de cor/fonte novos (`nv-*`, `font-sora`,
+  `font-publicSans`), sem alterar nenhum token existente.
+- `frontend/src/styles/globals.css`: import das fontes Sora + Public Sans (Google Fonts), sem
+  remover o import da Manrope que as telas antigas usam.
+
+## Teste feito antes de entregar
+
+- `node -c` (checagem de sintaxe) em todos os arquivos de backend novos/alterados — todos OK.
+- Checagem de chaves/parênteses balanceados no `schema.prisma` inteiro e nos 2 arquivos de
+  frontend novos (`LayoutNovo.js`, `financeiro/index.js`) depois da edição.
+- **Não foi possível rodar `npx prisma validate`** nem `next build` de verdade neste ambiente
+  (sem acesso de rede pro binário do Prisma; o `node_modules` do frontend aqui não tem o Next
+  instalado) — a mesma limitação já registrada na Fase 30. Isso é checagem estrutural, não
+  substitui o `npx prisma generate`/build que o Railway e a Vercel já rodam sozinhos no deploy.
+- Revisão manual linha a linha de cada conta nova (CAC, ROI, custo por lead, cor vermelho/verde do
+  CAC comparando com o dia anterior, total do período de retiradas) comparando com a lógica
+  exata do mockup (`Financeiro-Setor.dc.html`), incluindo os casos de borda (sem lançamento
+  nenhum ainda, dia sem conversão, histórico vazio).
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: `npx prisma migrate dev` (ou `deploy`, conforme o ambiente) pra criar as
+  tabelas novas no Postgres do Railway — sem isso o painel financeiro não funciona.
+- Criar o primeiro login de Setor Financeiro pelo painel do Dono (Usuários → Setor Financeiro) e
+  testar o login.
+- Lançar um dia de investimento em anúncio de teste e confirmar que aparece certo no histórico e
+  que o CAC/ROI do topo atualiza.
+- Confirmar que "Receita de hoje"/"Lucro de hoje" batem com o que o Dono já vê em "Meu dia > Caixa"
+  no mesmo dia (é a mesma conta, então tem que bater exatamente).
+- Avisar se quer que o Dono também acesse essa MESMA tela (hoje o acesso de tela é só pro login
+  Setor Financeiro; o backend já libera o Dono também, só falta decidir se vale a pena abrir a
+  tela pra ele ou se o painel de "Meu dia" dele já basta).
+- Próximas partes do pedido maior (vou avisando conforme cada uma ficar pronta): Mapas mentais
+  (Dono), Secretaria/Supervisão da Atendente (Dono), e o redesign visual lote a lote das telas que
+  já existem.
+
+# Fase 32 — Mapas mentais do Dono: planejamento visual com nós arrastáveis (entregue em 21/10/2026)
+
+## Contexto do pedido
+
+Segunda parte do pedido maior (depois do Setor Financeiro, na Fase 31): uma aba nova dentro do
+próprio login do Dono, "Mapas mentais", pra ele organizar estratégias, tarefas e ideias pro futuro
+em formato de mapa mental — nós que podem ter filhos, arrastáveis pela tela, agrupados em mapas
+separados (ex: "Estratégias", "Tarefas", "Futuro da plataforma").
+
+## O que foi construído
+
+- Tabela nova `mapas_mentais`, uma por mapa, pertencendo a um Dono. Cada mapa guarda nome, cor (a
+  cor dos ramos/nó raiz) e a lista de nós inteira num campo JSON (`nodes`), no formato
+  `[{id, texto, x, y, parentId}]` — o mesmo formato usado no mockup/canvas. Optei por JSON em vez
+  de uma tabela "nó" separada porque a estrutura de um mapa é livre (qualquer nó pode ter qualquer
+  quantidade de filhos, em qualquer profundidade) e o mapa inteiro sempre é lido/editado de uma vez
+  só — não tem nenhuma tela que precise buscar "só um nó" no banco.
+- Rotas novas em `backend/src/routes/mapasMentais.js` (só pra quem loga como DONO):
+  - `GET /mapas-mentais` — lista os mapas do Dono (nome, cor, quantidade de nós).
+  - `GET /mapas-mentais/:id` — um mapa específico, com todos os nós.
+  - `POST /mapas-mentais` — cria um mapa novo (já nasce com o nó raiz, que é o próprio nome do
+    mapa); a cor é escolhida automaticamente, alternando entre 5 cores.
+  - `DELETE /mapas-mentais/:id` — apaga o mapa inteiro.
+  - `POST /mapas-mentais/:id/nos` — adiciona um nó filho a um nó existente.
+  - `PATCH /mapas-mentais/:id/nos/:nodeId` — atualiza o texto e/ou a posição (x, y) de um nó —
+    usada tanto quando o Dono edita o texto quanto quando solta um nó depois de arrastar.
+  - `DELETE /mapas-mentais/:id/nos/:nodeId` — apaga um nó e toda a ramificação dele (os filhos, os
+    filhos dos filhos etc.); não deixa apagar o nó raiz do mapa (pra isso existe o
+    `DELETE /mapas-mentais/:id`, que apaga o mapa inteiro).
+  Toda rota confirma que o mapa pertence ao Dono logado antes de deixar ver/editar/apagar.
+- Nova aba "Mapas mentais" dentro do próprio painel do Dono (`frontend/src/pages/dono/index.js`),
+  logo depois de "Visão geral" no menu — não é um login separado, é só mais uma aba de quem já loga
+  como Dono. Tela com: lista de mapas na lateral (criar novo mapa, trocar entre eles, contador de
+  nós), um canvas com fundo pontilhado onde os nós aparecem como caixinhas conectadas por linhas
+  (a raiz com a cor do mapa, os filhos em branco com uma borda lateral colorida), e um painel
+  embaixo pra editar o texto do nó selecionado, adicionar um nó filho ou excluir o nó.
+- Arrastar um nó: o movimento do mouse só atualiza a posição na tela (prá ficar fluido); a posição
+  só é salva no banco quando solta o mouse — assim não manda uma requisição por pixel arrastado.
+  Editar o texto de um nó salva automaticamente meio segundo depois de parar de digitar (não a
+  cada letra), pelo mesmo motivo.
+- Por enquanto, feita dentro do visual atual (as mesmas cores/fontes que o resto do painel do Dono
+  já usa), pra não misturar dois estilos diferentes na mesma tela — o visual novo (navy/dourado,
+  igual ao canvas) entra junto com o redesign geral da Fase 33+, quando essa aba também vai ganhar
+  a cara nova de uma vez com o resto do painel do Dono.
+
+## Arquivos alterados/criados
+
+- `backend/prisma/schema.prisma` — modelo novo `MapaMental` (aditivo) + relação `mapasMentais` no
+  modelo `Dono`.
+- `backend/src/routes/mapasMentais.js` (novo) — todas as rotas de mapas mentais.
+- `backend/src/server.js` — registra a rota nova em `/api/mapas-mentais`.
+- `frontend/src/pages/dono/index.js` — aba nova "Mapas mentais" no menu do Dono + componente
+  `MapasMentais` (lista de mapas, canvas arrastável, painel de edição do nó).
+
+## O que foi testado nesta sessão
+
+- `node --check` nos arquivos de backend alterados/criados — sem erro de sintaxe.
+- Contagem de chaves/parênteses/colchetes no `schema.prisma` e no `dono/index.js` — todos
+  equilibrados.
+- Revisão manual da lógica de arrastar nó, adicionar nó filho e excluir nó (com exclusão em
+  cascata dos filhos), comparando com o comportamento do mockup original
+  (`Mapas-Mentais-Dono.dc.html`).
+- Como nas fases anteriores, não foi possível rodar `npx prisma validate` nem `npx next build`
+  neste ambiente (mesmas limitações de rede/sandbox já registradas nas Fases 22, 28, 30 e 31) — o
+  teste real de ponta a ponta (criar mapa, arrastar nó, editar texto, excluir) só vai acontecer
+  depois do deploy.
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: o Railway já cria a tabela `mapas_mentais` sozinho (é mudança aditiva no
+  schema, sem precisar de nenhum comando manual).
+- Abrir a aba "Mapas mentais" dentro do login de Dono e testar: criar um mapa, adicionar um nó
+  filho, arrastar um nó pra outra posição, editar o texto de um nó, excluir um nó e excluir um
+  mapa inteiro.
+- Próximas partes do pedido maior: Secretaria/Supervisão da Atendente (Dono) e o redesign visual
+  lote a lote das telas que já existem.

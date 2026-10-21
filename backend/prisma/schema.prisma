@@ -199,7 +199,30 @@ model Dono {
   userId  String @unique
   user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  mapasMentais MapaMental[] // Fase 32 — Mapas mentais
+
   @@map("donos")
+}
+
+// Fase 32 — Mapas mentais: ferramenta de planejamento pessoal do Dono (estratégias, tarefas,
+// ideias pro futuro), em formato de mapa mental com nós que podem ser arrastados. Os nós ficam
+// guardados num campo JSON (nodes: [{id, texto, x, y, parentId}]) em vez de virarem uma tabela
+// própria, porque a estrutura de cada mapa é livre (qualquer nó pode ter qualquer quantidade de
+// filhos) e quem lê/escreve isso sempre é o mapa inteiro de uma vez (não precisa de consulta por
+// nó individual no banco). Cada mapa pertence só ao Dono que criou.
+model MapaMental {
+  id     String @id @default(cuid())
+  nome   String
+  cor    String @default("#0B5FA8")
+  nodes  Json
+
+  donoId String
+  dono   Dono   @relation(fields: [donoId], references: [id], onDelete: Cascade)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("mapas_mentais")
 }
 
 model Atendente {

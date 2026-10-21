@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Layout from "../../components/Layout";
 import api, { atualizarUsuarioLocal } from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
@@ -30,6 +30,7 @@ export default function AreaDono() {
   const ABAS = [
     { id: "meudia", label: "Meu dia" },
     { id: "dashboard", label: "Visão geral" },
+    { id: "mapas", label: "Mapas mentais" }, // Fase 32
     { id: "profissionais", label: "Profissionais" },
     { id: "agenda", label: "Agenda geral" },
     { id: "clientes", label: "Clientes" },
@@ -49,6 +50,7 @@ export default function AreaDono() {
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "meudia" && <AbaMeuDia />}
       {aba === "dashboard" && <Dashboard />}
+      {aba === "mapas" && <MapasMentais />}
       {aba === "profissionais" && <Profissionais />}
       {aba === "agenda" && <AgendaGeralDono />}
       {aba === "clientes" && <Clientes />}
@@ -3321,6 +3323,330 @@ function MeuDiaMetas() {
           <BarraMetaTrimestre key={m.id} meta={m} onAtualizar={() => atualizar(m)} onExcluir={() => excluir(m.id)} />
         ))}
         {metas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma meta cadastrada neste trimestre.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- MAPAS MENTAIS (planejamento do Dono: estratégias, tarefas, ideias) ----------------
+// Fase 32. Cada mapa fica salvo com os nós (posição e texto) direto no banco, então o Dono pode
+// sair e voltar que tudo continua do jeito que deixou. Arrastar um nó só grava a posição final
+// quando solta o mouse (não a cada pixel de movimento), pra não sobrecarregar o servidor.
+const LARGURA_NO_MAPA = 170;
+const LARGURA_RAIZ_MAPA = 190;
+const ALTURA_NO_MAPA = 54;
+
+function MapasMentais() {
+  const [mapas, setMapas] = useState([]);
+  const [mapaAtivoId, setMapaAtivoId] = useState(null);
+  const [mapaAtual, setMapaAtual] = useState(null); // { id, nome, cor, nodes }
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [mostrarNovoMapa, setMostrarNovoMapa] = useState(false);
+  const [novoMapaNome, setNovoMapaNome] = useState("");
+  const [noSelecionadoId, setNoSelecionadoId] = useState(null);
+
+  const arrasteRef = useRef(null); // { nodeId, startX, startY, origX, origY, moveu }
+  const textoTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    carregarLista();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function carregarLista() {
+    setCarregando(true);
+    setErro("");
+    try {
+      const { data } = await api.get("/mapas-mentais");
+      setMapas(data);
+      if (data.length > 0) {
+        await selecionarMapa(data[0].id);
+      } else {
+        setMapaAtivoId(null);
+        setMapaAtual(null);
+      }
+    } catch (e) {
+      setErro("Não foi possível carregar os mapas mentais agora.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function selecionarMapa(id) {
+    setNoSelecionadoId(null);
+    const { data } = await api.get(`/mapas-mentais/${id}`);
+    setMapaAtivoId(id);
+    setMapaAtual(data);
+  }
+
+  async function criarMapa() {
+    const nome = novoMapaNome.trim();
+    if (!nome) return;
+    const { data } = await api.post("/mapas-mentais", { nome });
+    setMostrarNovoMapa(false);
+    setNovoMapaNome("");
+    const { data: lista } = await api.get("/mapas-mentais");
+    setMapas(lista);
+    setMapaAtivoId(data.id);
+    setMapaAtual(data);
+    setNoSelecionadoId(null);
+  }
+
+  async function excluirMapaAtual() {
+    if (!mapaAtual) return;
+    if (!window.confirm(`Excluir o mapa "${mapaAtual.nome}" e todos os nós dele? Essa ação não pode ser desfeita.`)) return;
+    await api.delete(`/mapas-mentais/${mapaAtual.id}`);
+    await carregarLista();
+  }
+
+  function iniciarArraste(nodeId, origX, origY, e) {
+    e.preventDefault();
+    arrasteRef.current = { nodeId, startX: e.clientX, startY: e.clientY, origX, origY, moveu: false };
+    setNoSelecionadoId(nodeId);
+  }
+
+  function moverArraste(e) {
+    const a = arrasteRef.current;
+    if (!a) return;
+    const dx = e.clientX - a.startX;
+    const dy = e.clientY - a.startY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) a.moveu = true;
+    const novoX = Math.max(0, a.origX + dx);
+    const novoY = Math.max(0, a.origY + dy);
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== a.nodeId ? n : { ...n, x: novoX, y: novoY })) } : m));
+  }
+
+  async function soltarArraste() {
+    const a = arrasteRef.current;
+    arrasteRef.current = null;
+    if (!a || !a.moveu) return;
+    setMapaAtual((atual) => {
+      const no = atual?.nodes.find((n) => n.id === a.nodeId);
+      if (no) {
+        api.patch(`/mapas-mentais/${atual.id}/nos/${no.id}`, { x: no.x, y: no.y }).catch(() => {});
+      }
+      return atual;
+    });
+  }
+
+  function atualizarTextoNo(nodeId, texto) {
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== nodeId ? n : { ...n, texto })) } : m));
+    clearTimeout(textoTimeoutRef.current);
+    textoTimeoutRef.current = setTimeout(() => {
+      if (mapaAtivoId) api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${nodeId}`, { texto }).catch(() => {});
+    }, 500);
+  }
+
+  async function adicionarNoFilho() {
+    if (!noSelecionadoId || !mapaAtual) return;
+    const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: noSelecionadoId });
+    setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
+    setNoSelecionadoId(data.novoId);
+    setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
+  }
+
+  async function excluirNoSelecionado() {
+    if (!noSelecionadoId || !mapaAtual) return;
+    const { data } = await api.delete(`/mapas-mentais/${mapaAtual.id}/nos/${noSelecionadoId}`);
+    setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
+    setNoSelecionadoId(null);
+    setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
+  }
+
+  if (carregando) return <p className="text-sm text-renascer-ink/60">Carregando mapas mentais...</p>;
+
+  const noSelecionado = (mapaAtual?.nodes || []).find((n) => n.id === noSelecionadoId) || null;
+
+  const linhas = [];
+  if (mapaAtual) {
+    mapaAtual.nodes.forEach((n) => {
+      if (!n.parentId) return;
+      const pai = mapaAtual.nodes.find((p) => p.id === n.parentId);
+      if (!pai) return;
+      const larguraPai = pai.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA;
+      linhas.push({
+        key: n.id,
+        x1: pai.x + larguraPai / 2,
+        y1: pai.y + ALTURA_NO_MAPA / 2,
+        x2: n.x + LARGURA_NO_MAPA / 2,
+        y2: n.y + ALTURA_NO_MAPA / 2,
+      });
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="text-lg font-semibold">Mapas mentais</h2>
+        <p className="text-sm text-renascer-ink/60">
+          Arraste os nós para organizar, crie quantos mapas quiser — estratégias, tarefas, ideias pra o futuro.
+        </p>
+      </div>
+      {erro && <p className="text-sm text-red-600">{erro}</p>}
+
+      <div className="flex gap-4 flex-wrap items-start">
+        <div className="card w-full md:w-56 flex flex-col gap-2 shrink-0">
+          <p className="font-semibold text-sm">Meus mapas</p>
+          <div className="flex flex-col gap-1">
+            {mapas.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => selecionarMapa(m.id)}
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors ${
+                  m.id === mapaAtivoId ? "bg-renascer-light/60 text-renascer" : "text-renascer-ink/70 hover:bg-renascer-light/30"
+                }`}
+              >
+                <span className="flex items-center gap-2 overflow-hidden">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.cor }} />
+                  <span className="truncate">{m.nome}</span>
+                </span>
+                <span className="text-xs font-bold shrink-0">{m.totalNos}</span>
+              </button>
+            ))}
+            {mapas.length === 0 && <p className="text-xs text-renascer-ink/50">Nenhum mapa ainda.</p>}
+          </div>
+
+          {mostrarNovoMapa ? (
+            <div className="flex flex-col gap-2 pt-2 border-t border-renascer-ink/10">
+              <input
+                className="input"
+                placeholder="Nome do novo mapa"
+                value={novoMapaNome}
+                onChange={(e) => setNovoMapaNome(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button type="button" className="btn-primary flex-1 !py-2 text-sm" onClick={criarMapa}>
+                  Criar
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary !py-2 text-sm"
+                  onClick={() => {
+                    setMostrarNovoMapa(false);
+                    setNovoMapaNome("");
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="btn-secondary text-sm" onClick={() => setMostrarNovoMapa(true)}>
+              + Novo mapa mental
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          {!mapaAtual ? (
+            <div className="card text-sm text-renascer-ink/60">
+              Crie seu primeiro mapa mental pra começar a organizar estratégias, tarefas ou ideias.
+            </div>
+          ) : (
+            <>
+              <div className="card flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="font-semibold">{mapaAtual.nome}</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs text-renascer-ink/50">Clique em um nó pra selecionar · arraste pra reorganizar</p>
+                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-medium text-red-600 hover:text-red-700">
+                      Excluir mapa
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="relative rounded-xl border border-renascer-ink/10 overflow-auto"
+                  style={{
+                    height: 500,
+                    backgroundColor: "#FAFBFD",
+                    backgroundImage: "radial-gradient(circle, #E1E8F2 1.4px, transparent 1.4px)",
+                    backgroundSize: "22px 22px",
+                  }}
+                  onMouseMove={moverArraste}
+                  onMouseUp={soltarArraste}
+                  onMouseLeave={soltarArraste}
+                >
+                  <div className="relative" style={{ width: 1200, height: 760 }}>
+                    <svg width={1200} height={760} className="absolute top-0 left-0 pointer-events-none">
+                      {linhas.map((l) => (
+                        <line
+                          key={l.key}
+                          x1={l.x1}
+                          y1={l.y1}
+                          x2={l.x2}
+                          y2={l.y2}
+                          stroke={mapaAtual.cor}
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                        />
+                      ))}
+                    </svg>
+                    {mapaAtual.nodes.map((n) => {
+                      const ehRaiz = !n.parentId;
+                      const selecionado = n.id === noSelecionadoId;
+                      return (
+                        <div
+                          key={n.id}
+                          onMouseDown={(e) => iniciarArraste(n.id, n.x, n.y, e)}
+                          onClick={() => setNoSelecionadoId(n.id)}
+                          className="absolute rounded-lg px-3 py-2 text-xs leading-tight select-none cursor-grab active:cursor-grabbing"
+                          style={{
+                            left: n.x,
+                            top: n.y,
+                            width: ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA,
+                            background: ehRaiz ? mapaAtual.cor : "#fff",
+                            color: ehRaiz ? "#fff" : "#1A2740",
+                            borderLeft: ehRaiz ? "4px solid transparent" : `4px solid ${mapaAtual.cor}`,
+                            fontWeight: ehRaiz ? 700 : 600,
+                            boxShadow: selecionado
+                              ? "0 0 0 2px #0D1B30, 0 3px 8px rgba(14,30,54,0.18)"
+                              : "0 2px 6px rgba(14,30,54,0.12)",
+                          }}
+                        >
+                          {n.texto}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card flex flex-col gap-3">
+                {noSelecionado ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-renascer-ink/50">Nó selecionado</p>
+                    <input
+                      className="input"
+                      value={noSelecionado.texto}
+                      onChange={(e) => atualizarTextoNo(noSelecionado.id, e.target.value)}
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      <button type="button" className="btn-primary !py-2 text-sm" onClick={adicionarNoFilho}>
+                        + Nó filho
+                      </button>
+                      {noSelecionado.parentId && (
+                        <button
+                          type="button"
+                          onClick={excluirNoSelecionado}
+                          className="text-sm font-medium text-red-600 hover:text-red-700 px-3"
+                        >
+                          Excluir nó
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-renascer-ink/60">
+                    Clique em um nó no mapa acima pra editar o texto, adicionar um nó filho ou excluir.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
