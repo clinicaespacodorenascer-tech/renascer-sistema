@@ -68,15 +68,19 @@ function ClientesParaReativar({ rotaBase }) {
     carregar();
   }
 
+  const ordenada = [...lista].sort((a, b) => a.nome.localeCompare(b.nome));
+
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-1">Clientes pra reativar</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
-        Clientes que alguma profissional marcou como "não renovou". Chama no WhatsApp com o número que ele
-        deixou no cadastro e, se ele topar voltar, vincula de novo com uma profissional aqui mesmo.
-      </p>
-      <div className="space-y-2">
-        {lista.map((c) => {
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Reativar clientes</h1>
+        <p className="text-nv-muted text-sm mt-0.5">
+          Clientes pausados, em ordem alfabética — chama no WhatsApp e, se topar voltar, vincula com uma profissional.
+        </p>
+      </div>
+      <div className="nv-card !p-0 px-5">
+        {ordenada.map((c) => {
           const linkReativar = c.whatsapp
             ? "https://wa.me/" +
               c.whatsapp.replace(/\D/g, "") +
@@ -86,41 +90,48 @@ function ClientesParaReativar({ rotaBase }) {
               )
             : null;
           return (
-          <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="font-medium">{c.nome}</p>
-              <p className="text-xs text-renascer-ink/50">
-                {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
-                {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {linkReativar && (
-                <button className="btn-secondary text-sm" onClick={() => window.open(linkReativar, "_blank")}>
-                  💬 Chamar no WhatsApp
+            <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-3.5 border-t border-nv-borderLight first:border-t-0">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-nv-ink2">{c.nome}</p>
+                <p className="text-xs text-nv-muted3 mt-0.5">
+                  {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
+                  {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {linkReativar && (
+                  <button
+                    className="text-xs font-semibold text-nv-green border border-nv-green/30 bg-nv-green/5 rounded-lg px-3 py-1.5 hover:bg-nv-green/10"
+                    onClick={() => window.open(linkReativar, "_blank")}
+                  >
+                    💬 Chamar no WhatsApp
+                  </button>
+                )}
+                <select
+                  className="border border-nv-border rounded-lg px-2.5 py-1.5 text-xs text-nv-ink2 bg-white"
+                  value={escolha[c.id] || ""}
+                  onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
+                >
+                  <option value="">Reativar com...</option>
+                  {profissionais.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.user.nome}
+                      {p.user.role === "DONO" ? " (Dono)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="text-xs font-semibold text-white bg-nv-blue rounded-lg px-3.5 py-1.5 hover:bg-nv-blueDark disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => reativar(c.id)}
+                  disabled={!escolha[c.id]}
+                >
+                  Reativar
                 </button>
-              )}
-              <select
-                className="input !w-auto !py-1.5 text-sm"
-                value={escolha[c.id] || ""}
-                onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
-              >
-                <option value="">Reativar com...</option>
-                {profissionais.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.user.nome}
-                    {p.user.role === "DONO" ? " (Dono)" : ""}
-                  </option>
-                ))}
-              </select>
-              <button className="btn-primary text-sm" onClick={() => reativar(c.id)} disabled={!escolha[c.id]}>
-                Reativar
-              </button>
+              </div>
             </div>
-          </div>
           );
         })}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Ninguém na fila de reativação agora.</p>}
+        {ordenada.length === 0 && <p className="text-sm text-nv-muted py-4">Ninguém na fila de reativação agora.</p>}
       </div>
     </div>
   );

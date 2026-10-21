@@ -169,15 +169,19 @@ function ClientesParaReativar({ rotaBase }) {
     carregar();
   }
 
+  const ordenada = [...lista].sort((a, b) => a.nome.localeCompare(b.nome));
+
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-1">Clientes pra reativar</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
-        Clientes que alguma profissional marcou como "não renovou". Chama no WhatsApp com o número que ele
-        deixou no cadastro e, se ele topar voltar, vincula de novo com uma profissional aqui mesmo.
-      </p>
-      <div className="space-y-2">
-        {lista.map((c) => {
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel do Dono · também usado pela Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Reativar clientes</h1>
+        <p className="text-nv-muted text-sm mt-0.5">
+          Clientes pausados, em ordem alfabética — chama no WhatsApp e, se topar voltar, vincula com uma profissional.
+        </p>
+      </div>
+      <div className="nv-card !p-0 px-5">
+        {ordenada.map((c) => {
           const linkReativar = c.whatsapp
             ? "https://wa.me/" +
               c.whatsapp.replace(/\D/g, "") +
@@ -187,41 +191,48 @@ function ClientesParaReativar({ rotaBase }) {
               )
             : null;
           return (
-          <div key={c.id} className="border border-renascer/10 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="font-medium">{c.nome}</p>
-              <p className="text-xs text-renascer-ink/50">
-                {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
-                {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {linkReativar && (
-                <button className="btn-secondary text-sm" onClick={() => window.open(linkReativar, "_blank")}>
-                  💬 Chamar no WhatsApp
+            <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-3.5 border-t border-nv-borderLight first:border-t-0">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-nv-ink2">{c.nome}</p>
+                <p className="text-xs text-nv-muted3 mt-0.5">
+                  {c.pacoteResumo || "pacote não registrado"} · saiu em{" "}
+                  {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "-"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {linkReativar && (
+                  <button
+                    className="text-xs font-semibold text-nv-green border border-nv-green/30 bg-nv-green/5 rounded-lg px-3 py-1.5 hover:bg-nv-green/10"
+                    onClick={() => window.open(linkReativar, "_blank")}
+                  >
+                    💬 Chamar no WhatsApp
+                  </button>
+                )}
+                <select
+                  className="border border-nv-border rounded-lg px-2.5 py-1.5 text-xs text-nv-ink2 bg-white"
+                  value={escolha[c.id] || ""}
+                  onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
+                >
+                  <option value="">Reativar com...</option>
+                  {profissionais.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.user.nome}
+                      {p.user.role === "DONO" ? " (Dono)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="text-xs font-semibold text-white bg-nv-blue rounded-lg px-3.5 py-1.5 hover:bg-nv-blueDark disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => reativar(c.id)}
+                  disabled={!escolha[c.id]}
+                >
+                  Reativar
                 </button>
-              )}
-              <select
-                className="input !w-auto !py-1.5 text-sm"
-                value={escolha[c.id] || ""}
-                onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
-              >
-                <option value="">Reativar com...</option>
-                {profissionais.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.user.nome}
-                    {p.user.role === "DONO" ? " (Dono)" : ""}
-                  </option>
-                ))}
-              </select>
-              <button className="btn-primary text-sm" onClick={() => reativar(c.id)} disabled={!escolha[c.id]}>
-                Reativar
-              </button>
+              </div>
             </div>
-          </div>
           );
         })}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Ninguém na fila de reativação agora.</p>}
+        {ordenada.length === 0 && <p className="text-sm text-nv-muted py-4">Ninguém na fila de reativação agora.</p>}
       </div>
     </div>
   );
@@ -291,92 +302,333 @@ function HistoricoClientes() {
   );
 }
 
+// ---- Ícones de linha (18x18) usados nos cartões de número da Visão geral (Fase 35) ----
+function IconProfissionais() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B5FA8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19c0-3 2.5-5.2 5.5-5.2s5.5 2.2 5.5 5.2" />
+      <circle cx="17" cy="7.5" r="2.4" />
+      <path d="M15.5 13.3c2.4.3 4 2.2 4 4.7" />
+    </svg>
+  );
+}
+function IconClientes() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B5FA8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M4.5 20c0-4 3.3-6.8 7.5-6.8s7.5 2.8 7.5 6.8" />
+    </svg>
+  );
+}
+function IconCalendarioCheck() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B5FA8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="5" width="17" height="15" rx="2.2" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="M8.3 14l2.2 2.2 4.5-4.6" />
+    </svg>
+  );
+}
+function IconTendencia() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B5FA8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3.5 16.5l5.2-5.3 3.6 3.4 7.2-7.5" />
+      <path d="M15 6.6h4.5v4.5" />
+    </svg>
+  );
+}
+
+function PontoStatus({ status }) {
+  const classe = status === "VERMELHO" ? "nv-dot-urgente" : status === "AMARELO" ? "nv-dot-atencao" : "nv-dot-ok";
+  return <span className={`nv-dot ${classe}`} />;
+}
+
 function Dashboard() {
   const [d, setD] = useState(null);
+  const [diaSelecionado, setDiaSelecionado] = useState(() => {
+    const diaSemanaHoje = new Date().getDay(); // 0=dom..6=sáb
+    const idx = diaSemanaHoje === 0 ? 5 : diaSemanaHoje - 1;
+    return Math.min(Math.max(idx, 0), 5);
+  });
+
   useEffect(() => {
     api.get("/dono/dashboard").then((r) => setD(r.data));
   }, []);
-  if (!d) return <p>Carregando...</p>;
-  const cartoes = [
-    ["Profissionais ativas", d.totalProfissionais],
-    ["Clientes cadastrados", d.totalClientes],
-    ["Pacotes ativos", d.pacotesAtivos],
-    ["Recebido no mês (total)", `R$ ${d.faturamentoMes.toFixed(2)}`],
-    ["Repasse às profissionais no mês", `R$ ${d.repasseProfissionaisMes.toFixed(2)}`],
-    ["Receita da Renascer no mês", `R$ ${d.receitaRenascerMes.toFixed(2)}`],
-  ];
+
+  if (!d) {
+    return (
+      <div className="flex items-center gap-2 text-nv-muted font-publicSans text-sm">
+        <span className="nv-dot nv-dot-ok" /> Carregando a visão geral...
+      </div>
+    );
+  }
+
   const profissionaisHoje = Object.entries(d.porProfissionalHoje || {});
+  const resultadoSemana = d.resultadoSemana || [];
+  const maxFaturamento = Math.max(...resultadoSemana.map((dia) => dia.faturamento), 1);
+  const diaAtivo = resultadoSemana[diaSelecionado] || resultadoSemana[0];
+
+  const pacotes = d.pacotesPorStatus || { ativos: 0, aRenovar: 0, encerrados: 0, total: 0 };
+  const totalPacotes = pacotes.total || 0;
+  const pctAtivos = totalPacotes > 0 ? (pacotes.ativos / totalPacotes) * 100 : 0;
+  const pctARenovar = totalPacotes > 0 ? (pacotes.aRenovar / totalPacotes) * 100 : 0;
+  const pctEncerrados = totalPacotes > 0 ? (pacotes.encerrados / totalPacotes) * 100 : 0;
+  const raio = 70;
+  const circunferencia = 2 * Math.PI * raio;
+  const segAtivos = (pctAtivos / 100) * circunferencia;
+  const segARenovar = (pctARenovar / 100) * circunferencia;
+  const segEncerrados = (pctEncerrados / 100) * circunferencia;
+
   return (
-    <div className="space-y-4">
-      <div className="card !border-renascer/30 bg-renascer-light/30">
-        <h3 className="font-semibold mb-1">A receber hoje</h3>
-        <p className="text-xs text-renascer-ink/50 mb-3">
+    <div className="space-y-5 font-publicSans">
+      {/* Cabeçalho */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Visão geral</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Painel geral do Espaço do Renascer</p>
+        </div>
+        <span className="inline-flex items-center gap-2 bg-white border border-nv-border rounded-full px-3.5 py-1.5 text-xs font-semibold text-nv-ink2 shadow-sm">
+          <span className="nv-dot nv-dot-ok" /> Atualizado agora
+        </span>
+      </div>
+
+      {/* 4 cartões de número */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="nv-card">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-nv-muted">Profissionais ativos</p>
+            <IconProfissionais />
+          </div>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.totalProfissionais}</p>
+        </div>
+        <div className="nv-card">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-nv-muted">Clientes cadastrados</p>
+            <IconClientes />
+          </div>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.totalClientes}</p>
+        </div>
+        <div className="nv-card">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-nv-muted">Sessões essa semana</p>
+            <IconCalendarioCheck />
+          </div>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.sessoesSemana ?? 0}</p>
+        </div>
+        <div className="nv-card">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-nv-muted">Taxa de renovação</p>
+            <IconTendencia />
+          </div>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
+            {d.taxaRenovacao != null ? `${d.taxaRenovacao}%` : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Resultado da semana */}
+        <div className="nv-card flex-[1_1_420px]">
+          <h3 className="font-sora font-semibold text-nv-ink">Resultado da semana</h3>
+          <p className="text-xs text-nv-muted mt-0.5 mb-4">Segunda a sábado · clique num dia pra ver o detalhe financeiro</p>
+          <div className="flex items-end gap-2 h-28 mb-3">
+            {resultadoSemana.map((dia, i) => {
+              const altura = Math.max((dia.faturamento / maxFaturamento) * 100, 4);
+              const selecionado = i === diaSelecionado;
+              return (
+                <button
+                  key={dia.label}
+                  onClick={() => setDiaSelecionado(i)}
+                  className="flex-1 flex flex-col items-center gap-1.5 group"
+                  style={{ opacity: selecionado ? 1 : 0.45 }}
+                >
+                  <div className="w-full flex items-end h-20">
+                    <div
+                      className="w-full rounded-t-md bg-nv-blue transition-all duration-200"
+                      style={{ height: `${altura}%` }}
+                    />
+                  </div>
+                  <span className={`text-[11px] font-semibold ${selecionado ? "text-nv-ink" : "text-nv-muted3"}`}>
+                    {dia.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {diaAtivo && (
+            <div className="bg-nv-bg rounded-xl p-4">
+              <p className="text-xs font-semibold text-nv-ink2 mb-3">
+                {diaAtivo.label} · {new Date(diaAtivo.data).toLocaleDateString("pt-BR")}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-[11px] text-nv-muted">Faturamento</p>
+                  <p className="nv-num font-semibold text-nv-ink">R$ {diaAtivo.faturamento.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-nv-muted">Agendamentos</p>
+                  <p className="nv-num font-semibold text-nv-ink">{diaAtivo.agendamentos}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-nv-muted">Investido em anúncio</p>
+                  <p className="nv-num font-semibold text-nv-ink">R$ {diaAtivo.investimento.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-nv-muted">Conversões</p>
+                  <p className="nv-num font-semibold text-nv-green">{diaAtivo.conversoes}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-nv-muted">CAC do dia</p>
+                  <p className="nv-num font-semibold text-nv-ink">{diaAtivo.cac != null ? `R$ ${diaAtivo.cac.toFixed(2)}` : "—"}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Pacotes por status */}
+        <div className="nv-card flex-[1_1_300px]">
+          <h3 className="font-sora font-semibold text-nv-ink">Pacotes por status</h3>
+          <p className="text-xs text-nv-muted mt-0.5 mb-4">Situação atual de todos os pacotes do sistema</p>
+          <div className="flex items-center justify-center mb-4">
+            <div className="relative w-[136px] h-[136px]">
+              <svg width="136" height="136" viewBox="0 0 180 180" className="-rotate-90">
+                <circle cx="90" cy="90" r={raio} fill="none" stroke="#EEF1F7" strokeWidth="20" />
+                {totalPacotes > 0 && (
+                  <>
+                    <circle
+                      cx="90" cy="90" r={raio} fill="none" stroke="#0B5FA8" strokeWidth="20"
+                      strokeDasharray={`${segAtivos} ${circunferencia - segAtivos}`} strokeLinecap="round"
+                    />
+                    <circle
+                      cx="90" cy="90" r={raio} fill="none" stroke="#9C6B2E" strokeWidth="20"
+                      strokeDasharray={`${segARenovar} ${circunferencia - segARenovar}`}
+                      strokeDashoffset={-segAtivos} strokeLinecap="round"
+                    />
+                    <circle
+                      cx="90" cy="90" r={raio} fill="none" stroke="#96A2B6" strokeWidth="20"
+                      strokeDasharray={`${segEncerrados} ${circunferencia - segEncerrados}`}
+                      strokeDashoffset={-(segAtivos + segARenovar)} strokeLinecap="round"
+                    />
+                  </>
+                )}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="nv-num font-sora font-bold text-xl text-nv-ink">{Math.round(pctAtivos)}%</span>
+                <span className="text-[11px] text-nv-muted">ativos</span>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {[
+              { label: "Ativos", cor: "#0B5FA8", valor: pacotes.ativos, pct: pctAtivos },
+              { label: "A renovar", cor: "#9C6B2E", valor: pacotes.aRenovar, pct: pctARenovar },
+              { label: "Encerrados", cor: "#96A2B6", valor: pacotes.encerrados, pct: pctEncerrados },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between text-sm px-2 py-1.5 rounded-lg">
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: item.cor }} />
+                  {item.label}
+                </span>
+                <span className="text-nv-muted text-xs">
+                  {item.valor} · {totalPacotes > 0 ? Math.round(item.pct) : 0}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Clientes para renovar */}
+      <div className="nv-card">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-sora font-semibold text-nv-ink">Clientes para renovar</h3>
+        </div>
+        <p className="text-xs text-nv-muted mb-3">Data de renovação combinada mais próxima primeiro</p>
+        <div>
+          {(d.clientesParaRenovar || []).map((c, i) => (
+            <div key={`${c.nome}-${i}`} className="flex items-center justify-between py-2.5" style={{ borderTop: i === 0 ? "none" : "1px solid #EEF1F7" }}>
+              <span className="flex items-center gap-2.5">
+                <PontoStatus status={c.status} />
+                <span>
+                  <span className="block text-sm font-semibold text-nv-ink2">{c.nome}</span>
+                  {c.profissional && <span className="block text-xs text-nv-muted3">com {c.profissional}</span>}
+                </span>
+              </span>
+              <span className="text-xs font-medium bg-nv-bg text-[#4B5B73] rounded-full px-3 py-1 whitespace-nowrap">
+                {c.dias < 0 ? `venceu há ${Math.abs(c.dias)} dia(s)` : c.dias === 0 ? "renova hoje" : `renova em ${c.dias} dia(s)`}
+              </span>
+            </div>
+          ))}
+          {(!d.clientesParaRenovar || d.clientesParaRenovar.length === 0) && (
+            <p className="text-sm text-nv-muted py-2">Nenhum cliente com data de renovação cadastrada no momento.</p>
+          )}
+        </div>
+      </div>
+
+      {/* A receber hoje — operacional, mantido da versão anterior */}
+      <div className="nv-card !border-nv-blue/20 bg-nv-blue/[0.03]">
+        <h3 className="font-sora font-semibold text-nv-ink mb-1">A receber hoje</h3>
+        <p className="text-xs text-nv-muted mb-3">
           Tudo que a atendente fechou hoje (contratação nova, renovação, sessão extra ou qualquer outro pagamento). O que
-          a própria profissional registra sozinha (renovação/sessão extra dela) não conta aqui — só aparece nas
-          pendências de repasse abaixo. Esse número reinicia sozinho todo dia — amanhã começa do zero de novo.
+          a própria profissional registra sozinha não conta aqui — só aparece nas pendências de repasse. Reinicia sozinho
+          todo dia.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
           <div>
-            <p className="text-xs text-renascer-ink/50">Total registrado hoje</p>
-            <p className="text-xl font-bold text-renascer">R$ {d.hoje.totalRecebido.toFixed(2)}</p>
+            <p className="text-xs text-nv-muted">Total registrado hoje</p>
+            <p className="nv-num text-xl font-bold text-nv-blue">R$ {d.hoje.totalRecebido.toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-xs text-renascer-ink/50">Vai pras profissionais</p>
-            <p className="text-xl font-bold text-renascer-ink/70">R$ {d.hoje.valorProfissional.toFixed(2)}</p>
+            <p className="text-xs text-nv-muted">Vai pras profissionais</p>
+            <p className="nv-num text-xl font-bold text-nv-ink2">R$ {d.hoje.valorProfissional.toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-xs text-renascer-ink/50">Você vai receber hoje</p>
-            <p className="text-xl font-bold text-emerald-600">R$ {d.hoje.valorRenascer.toFixed(2)}</p>
+            <p className="text-xs text-nv-muted">Você vai receber hoje</p>
+            <p className="nv-num text-xl font-bold text-nv-green">R$ {d.hoje.valorRenascer.toFixed(2)}</p>
           </div>
         </div>
         {profissionaisHoje.length > 0 && (
-          <div className="border-t border-renascer/10 pt-2 space-y-1">
-            <p className="text-xs font-medium text-renascer-ink/60">Quanto você vai receber de cada profissional hoje</p>
+          <div className="border-t border-nv-border pt-2 space-y-1">
+            <p className="text-xs font-medium text-nv-muted">Quanto você vai receber de cada profissional hoje</p>
             {profissionaisHoje.map(([nome, v]) => (
               <div key={nome} className="flex items-center justify-between text-sm">
-                <span>{nome}</span>
-                <span className="font-semibold text-emerald-600">R$ {v.valorRenascer.toFixed(2)}</span>
+                <span className="text-nv-ink2">{nome}</span>
+                <span className="nv-num font-semibold text-nv-green">R$ {v.valorRenascer.toFixed(2)}</span>
               </div>
             ))}
           </div>
         )}
-        {profissionaisHoje.length === 0 && <p className="text-xs text-renascer-ink/40">Nada registrado hoje ainda.</p>}
+        {profissionaisHoje.length === 0 && <p className="text-xs text-nv-muted3">Nada registrado hoje ainda.</p>}
       </div>
 
       {d.totalPendenteRepasseProfissionais > 0 && (
-        <div className="card !border-amber-300 bg-amber-50">
-          <h3 className="font-semibold mb-1">Repasses pendentes das profissionais</h3>
-          <p className="text-xs text-renascer-ink/50 mb-2">
+        <div className="nv-card !border-nv-gold/30" style={{ background: "#FBF4EA" }}>
+          <h3 className="font-sora font-semibold text-nv-ink mb-1">Repasses pendentes das profissionais</h3>
+          <p className="text-xs text-nv-muted mb-2">
             Dinheiro que as profissionais receberam direto dos clientes e ainda não te repassaram. Veja o detalhe na aba
             "Repasses".
           </p>
-          <p className="text-2xl font-bold text-amber-700">R$ {d.totalPendenteRepasseProfissionais.toFixed(2)}</p>
+          <p className="nv-num text-2xl font-bold text-nv-gold">R$ {d.totalPendenteRepasseProfissionais.toFixed(2)}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {cartoes.map(([label, valor]) => (
-          <div key={label} className="card">
-            <p className="text-sm text-renascer-ink/60">{label}</p>
-            <p className="text-2xl font-bold text-renascer">{valor}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold mb-3">Clientes por profissional</h3>
-        <p className="text-xs text-renascer-ink/50 mb-3">
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-1">Clientes por profissional</h3>
+        <p className="text-xs text-nv-muted mb-3">
           Conta tanto os clientes cadastrados pela recepção quanto os que a própria profissional cadastrou na aba dela.
         </p>
-        <div className="space-y-1">
-          {d.clientesPorProfissional.map((p) => (
-            <div key={p.nome} className="flex items-center justify-between border-t border-renascer/10 py-1.5 text-sm">
-              <span>{p.nome}</span>
-              <span className="font-semibold text-renascer">{p.total}</span>
+        <div>
+          {d.clientesPorProfissional.map((p, i) => (
+            <div key={p.nome} className="flex items-center justify-between py-1.5 text-sm" style={{ borderTop: i === 0 ? "none" : "1px solid #EEF1F7" }}>
+              <span className="text-nv-ink2">{p.nome}</span>
+              <span className="nv-num font-semibold text-nv-blue">{p.total}</span>
             </div>
           ))}
           {d.clientesPorProfissional.length === 0 && (
-            <p className="text-sm text-renascer-ink/50">Nenhuma profissional cadastrada ainda.</p>
+            <p className="text-sm text-nv-muted">Nenhuma profissional cadastrada ainda.</p>
           )}
         </div>
       </div>
@@ -476,10 +728,16 @@ function AgendaGeralDono() {
   );
 }
 
+function formatarDataCurta(data) {
+  if (!data) return null;
+  return new Date(data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [expandido, setExpandido] = useState(null);
+  const [modo, setModo] = useState("todos"); // "todos" | "porProfissional"
 
   async function carregar() {
     const [c, p] = await Promise.all([api.get("/dono/clientes"), api.get("/dono/profissionais")]);
@@ -489,64 +747,113 @@ function Clientes() {
   useEffect(() => {
     carregar();
   }, []);
+
+  const ordenados = [...lista].sort((a, b) => a.user.nome.localeCompare(b.user.nome));
+
+  function nomeProfissional(c) {
+    if (!c.profissionalAtual?.user?.nome) return "Sem profissional";
+    return c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "");
+  }
+
+  function LinhaCliente({ c }) {
+    const pacote = c.pacotes[0];
+    const contratadoEm = formatarDataCurta(pacote?.iniciadoEm);
+    const encerraEm = formatarDataCurta(c.renovarEm || pacote?.encerradoEm);
+    const aguardandoRenovacao = pacote?.status === "AGUARDANDO_RENOVACAO";
+    return (
+      <div>
+        <div
+          className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight cursor-pointer"
+          onClick={() => setExpandido(expandido === c.id ? null : c.id)}
+        >
+          <span className="flex items-center gap-2.5 min-w-0">
+            <PontoStatus status={c.statusCliente} />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-nv-ink2 truncate">{c.user.nome}</span>
+              <span className="block text-xs text-nv-muted3 truncate">
+                com {nomeProfissional(c)}
+                {contratadoEm && ` · contratado em ${contratadoEm}`}
+                {encerraEm && ` · encerra em ${encerraEm}`}
+              </span>
+            </span>
+          </span>
+          <span className="flex items-center gap-3.5 shrink-0">
+            {aguardandoRenovacao && (
+              <span className="text-[11px] font-semibold text-[#B0580F] bg-[#FBF0E3] rounded-full px-2.5 py-1 whitespace-nowrap">
+                aguardando renovação
+              </span>
+            )}
+            <span className="text-xs font-semibold text-nv-blue whitespace-nowrap">
+              {expandido === c.id ? "Fechar ficha" : "Ver ficha"}
+            </span>
+          </span>
+        </div>
+        {expandido === c.id && (
+          <div className="pb-4 space-y-3 bg-nv-bg -mx-5 px-5 pt-3">
+            <MetricasCliente clienteId={c.id} rotaBase="/dono" />
+            <ContratoCliente clienteId={c.id} />
+            <NotificacaoECliente cliente={c} onExcluido={carregar} />
+            <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
+            <TrocarProfissionalCliente
+              clienteId={c.id}
+              profissionalAtualNome={c.profissionalAtual?.user?.nome && nomeProfissional(c)}
+              profissionais={profissionais}
+              rotaBase="/dono"
+              onTrocou={carregar}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const grupos = (() => {
+    const porProf = {};
+    for (const c of ordenados) {
+      const chave = nomeProfissional(c);
+      (porProf[chave] = porProf[chave] || []).push(c);
+    }
+    return Object.keys(porProf)
+      .sort()
+      .map((nome) => ({ nome, clientes: porProf[nome] }));
+  })();
+
   return (
-    <div className="card overflow-x-auto">
-      <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-renascer-ink/50">
-            <th className="py-1">Cliente</th>
-            <th>Profissional</th>
-            <th>Pacote atual</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.flatMap((c) => {
-            const linhas = [
-              <tr
-                key={c.id}
-                className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
-                onClick={() => setExpandido(expandido === c.id ? null : c.id)}
-              >
-                <td className="py-1 flex items-center gap-1.5">
-                  <StatusCliente status={c.statusCliente} />
-                  {c.user.nome}
-                </td>
-                <td>
-                  {c.profissionalAtual?.user?.nome || "-"}
-                  {c.profissionalAtual?.user?.role === "DONO" ? " (Dono)" : ""}
-                </td>
-                <td>{c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes}` : "-"}</td>
-                <td>{c.pacotes[0]?.status || "-"}</td>
-              </tr>,
-            ];
-            if (expandido === c.id) {
-              linhas.push(
-                <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                  <td colSpan={4} className="py-2 space-y-3">
-                    <MetricasCliente clienteId={c.id} rotaBase="/dono" />
-                    <ContratoCliente clienteId={c.id} />
-                    <NotificacaoECliente cliente={c} onExcluido={carregar} />
-                    <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
-                    <TrocarProfissionalCliente
-                      clienteId={c.id}
-                      profissionalAtualNome={
-                        c.profissionalAtual?.user?.nome &&
-                        c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "")
-                      }
-                      profissionais={profissionais}
-                      rotaBase="/dono"
-                      onTrocou={carregar}
-                    />
-                  </td>
-                </tr>
-              );
-            }
-            return linhas;
-          })}
-        </tbody>
-      </table>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Clientes</h1>
+          <p className="text-nv-muted text-sm mt-0.5">{lista.length} clientes, em ordem alfabética</p>
+        </div>
+        <div>
+          <button type="button" className={`nv-seg ${modo === "todos" ? "nv-seg-ativo" : ""}`} onClick={() => setModo("todos")}>
+            Todos
+          </button>
+          <button
+            type="button"
+            className={`nv-seg ${modo === "porProfissional" ? "nv-seg-ativo" : ""}`}
+            onClick={() => setModo("porProfissional")}
+          >
+            Por profissional
+          </button>
+        </div>
+      </div>
+
+      <div className="nv-card !p-0 px-5">
+        {modo === "todos" &&
+          ordenados.map((c) => <LinhaCliente key={c.id} c={c} />)}
+        {modo === "porProfissional" &&
+          grupos.map((g) => (
+            <div key={g.nome}>
+              <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-4 pb-1.5">{g.nome}</p>
+              {g.clientes.map((c) => (
+                <LinhaCliente key={c.id} c={c} />
+              ))}
+            </div>
+          ))}
+        {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum cliente cadastrado ainda.</p>}
+      </div>
     </div>
   );
 }

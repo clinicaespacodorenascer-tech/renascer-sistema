@@ -2418,3 +2418,123 @@ em si. Mesma limitação de sempre nesse ambiente pra `next build` de verdade.
   função.
 - Próxima parte: redesign do CONTEÚDO de cada aba, lote por papel de login, pra chegar no
   acabamento 1:1 de cada artboard do canvas.
+
+# Fase 35 — Redesign visual (lote 2, parte 1): conteúdo da Visão geral do Dono (entregue em 21/10/2026)
+
+Primeira tela de CONTEÚDO redesenhada no padrão novo (navy + azul + dourado, Sora/Public Sans),
+depois da casca (Fase 34). Começou pelo Dono porque é quem mais abre essa tela no dia a dia.
+
+## O que mudou
+
+- **Visão geral (aba "Visão geral" do Dono)** foi reconstruída do zero visualmente, seguindo o
+  artboard "Visão geral" do canvas novo:
+  - Cabeçalho com "Painel do Dono" + título "Visão geral" + selo "Atualizado agora".
+  - 4 cartões de número: Profissionais ativos, Clientes cadastrados, Sessões essa semana (NOVO
+    indicador) e Taxa de renovação (NOVO indicador).
+  - Cartão "Resultado da semana": gráfico de barras clicável (segunda a sábado) — cada dia mostra,
+    ao clicar, faturamento, agendamentos, investido em anúncio, conversões (clientes novos) e CAC
+    do dia (custo por cliente novo = investimento ÷ conversões).
+  - Cartão "Pacotes por status": rosquinha (donut) com Ativos / A renovar / Encerrados, mais a
+    legenda com contagem e percentual de cada um.
+  - Cartão "Clientes para renovar": lista os clientes com data de renovação cadastrada mais
+    próxima primeiro, com uma bolinha de status (verde/amarelo/vermelho, o mesmo semáforo usado no
+    resto do sistema) e um selo "renova em X dia(s)".
+  - Os cartões operacionais que já existiam — "A receber hoje", "Repasses pendentes das
+    profissionais" e "Clientes por profissional" — foram MANTIDOS, só com a roupagem visual nova,
+    porque são conferência financeira do dia a dia que você já usa e nada disso pode sumir.
+
+## Ajustes importantes de conteúdo (pra você entender os números novos)
+
+- **"Sessões essa semana"** conta os agendamentos de segunda a sábado da semana atual que não
+  foram cancelados (conta mesmo se ainda não aconteceu).
+- **"Taxa de renovação"** é o percentual de pacotes que estão ativos ou aguardando renovação,
+  sobre o total de pacotes que não foram cancelados (ou seja: de tudo que não foi cancelado, quanto
+  está em andamento/continuando vs. quanto já encerrou). Fica "—" se ainda não existe nenhum pacote
+  no sistema.
+- **"Investido em anúncio" e "CAC do dia"** usam os mesmos lançamentos de "Anúncio" que você já
+  registra no Financeiro pessoal/caixa (Fase 30) — não é um indicador novo de marketing que
+  precisa de cadastro extra, só está sendo mostrado por dia da semana agora.
+- O mockup original (canvas) tinha também um indicador de "Leads no WhatsApp" (conversas que
+  chegam mas não necessariamente viram cliente). O sistema hoje **não tem** essa captura — só sabe
+  contar quando um lead vira cliente de fato (isso é o "Conversões"). Por isso esse indicador foi
+  deixado de fora, pra não inventar número. Se no futuro você quiser rastrear lead que não virou
+  cliente, dá pra criar isso depois como uma feature nova.
+- A legenda do donut "Pacotes por status" no mockup original abria uma listinha com o nome de cada
+  cliente ao clicar. Isso foi simplificado pra só mostrar a contagem/percentual — o nome de cada
+  cliente por status já dá pra ver nas abas "Clientes" e "Histórico".
+
+## Backend
+
+- `GET /dono/dashboard` agora também devolve: `sessoesSemana`, `taxaRenovacao`, `resultadoSemana`
+  (array com os 6 dias, seg-sáb), `pacotesPorStatus` (contagem ativos/a renovar/encerrados) e
+  `clientesParaRenovar` (até 8 clientes, os mais próximos da data de renovação primeiro). Tudo
+  calculado a partir de dados que já existiam (Agendamento, TransacaoFinanceira, MovimentoCaixa,
+  Pacote, Cliente.renovarEm) — nenhum campo novo no banco, mudança 100% aditiva.
+
+## Frontend
+
+- Nova classe utilitária `nv-*` em `globals.css`: `.nv-card`, `.nv-eyebrow`, `.nv-num`, `.nv-dot` (com
+  as 3 variantes pulsantes ok/atenção/urgente). Essas classes vão ser reaproveitadas em todas as
+  próximas telas de conteúdo redesenhadas — não é só pra Visão geral.
+
+## O que testar
+
+1. Entrar como Dono e abrir a aba "Visão geral" — conferir se os 4 cartões, o gráfico da semana,
+   a rosquinha de pacotes e a lista de clientes pra renovar aparecem certinho.
+2. Clicar em dias diferentes da barra "Resultado da semana" e ver se o detalhe embaixo muda.
+3. Conferir se "A receber hoje", "Repasses pendentes" (se houver) e "Clientes por profissional"
+   continuam aparecendo com os mesmos números de antes — só a cor/visual mudou.
+4. Se não tiver nenhum cliente com data de renovação cadastrada, a lista "Clientes para renovar"
+   deve mostrar a mensagem de vazio, sem quebrar a tela.
+
+## Próxima parte
+
+Seguindo direto para o resto das abas do Dono (Clientes, Histórico, Usuários, Agenda geral,
+Profissionais, Repasses, Formulários, Suporte, Reativar, Meu dia, Mapas mentais, Secretaria), sem
+parar, depois Atendente, Profissional e Cliente — conforme combinado.
+
+# Fase 36 — Redesign visual (lote 2, parte 2): Clientes e Reativar clientes (entregue em 21/10/2026)
+
+Continuação direta da Fase 35, sem pausa.
+
+## O que mudou
+
+- **Clientes (Dono)**: lista redesenhada no visual novo — nome + bolinha de status (o mesmo
+  semáforo verde/amarelo/vermelho de sempre) + "com {profissional} · contratado em {data} · encerra
+  em {data}" e um selo "aguardando renovação" quando for o caso. Ganhou também o alternador
+  "Todos" / "Por profissional" do mockup (agrupa os clientes por profissional, em ordem alfabética
+  dentro de cada grupo). Clicar em "Ver ficha" continua abrindo, na hora, a ficha completa do
+  cliente embaixo do nome dele — métricas, contrato, contato de notificação/data de renovação,
+  histórico de pagamentos e trocar de profissional — exatamente as mesmas informações de antes, só
+  que agora dentro do card no visual novo.
+- **Reativar clientes (Dono e Atendente)**: mesma lista redesenhada nos dois logins — nome do
+  cliente, resumo do pacote e data de saída, botão "Chamar no WhatsApp" (quando ele tiver WhatsApp
+  salvo), seletor de profissional e botão "Reativar". A lista agora vem sempre em ordem alfabética.
+
+## Observação sobre o mockup "Clientes"
+
+O artboard original tinha um botão "Excluir" direto na linha da lista. Como excluir um cliente é
+uma ação que apaga sessões, mensagens e pacotes dele (sem volta), esse botão continua só dentro da
+ficha expandida ("Ver ficha" → "Excluir login deste cliente"), do jeito que já era — pra evitar
+clique sem querer direto na lista. Se quiser que fique mais rápido de acessar, é só avisar.
+
+## Arquivos alterados
+
+- `frontend/src/pages/dono/index.js`: `Clientes()` e `ClientesParaReativar()` redesenhadas.
+- `frontend/src/pages/atendente/index.js`: `ClientesParaReativar()` redesenhada (mesma lógica da
+  versão do Dono).
+- `frontend/src/styles/globals.css`: classes novas `.nv-seg`/`.nv-seg-ativo` (alternador tipo
+  "Todos" / "Por profissional"), reaproveitáveis nas próximas telas.
+
+## O que testar
+
+1. Como Dono, abrir "Clientes": alternar entre "Todos" e "Por profissional", clicar em "Ver ficha"
+   de um cliente e conferir que tudo (métricas, contrato, pagamentos, trocar profissional) continua
+   aparecendo certinho.
+2. Como Dono e como Atendente, abrir "Reativar clientes" e testar o botão de WhatsApp e reativar
+   um cliente de teste.
+
+## Próxima parte
+
+Seguindo com Histórico, Agenda geral, Profissionais, Repasses, Usuários, Suporte escalado — sem
+parar.

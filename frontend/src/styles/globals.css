@@ -74,3 +74,69 @@ h3 {
 .badge-gold {
   @apply inline-block text-xs font-semibold px-3 py-1 rounded-full bg-gold-light text-gold-dark tracking-wide;
 }
+
+/* Fase 35 — utilitários do novo sistema visual (nv-*), usados pelas telas de CONTEÚDO já
+   redesenhadas (a partir da Visão geral do Dono). Ficam ao lado dos utilitários antigos acima
+   (.card, .badge etc) sem alterá-los — as telas ainda não redesenhadas continuam 100% intactas. */
+.nv-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.nv-card {
+  @apply bg-white rounded-2xl p-5 border border-nv-border transition-all duration-200;
+}
+.nv-card:hover {
+  box-shadow: 0 10px 30px -14px rgba(13, 27, 48, 0.18);
+  transform: translateY(-1px);
+}
+
+.nv-eyebrow {
+  @apply text-[11px] font-bold uppercase tracking-[0.09em] text-nv-gold font-publicSans;
+}
+
+.nv-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.nv-dot-ok {
+  background: #1c7c54;
+  animation: nv-pulse-ok 2s infinite;
+}
+.nv-dot-atencao {
+  background: #d6883b;
+  animation: nv-pulse-atencao 2s infinite;
+}
+.nv-dot-urgente {
+  background: #d94f4f;
+  animation: nv-pulse-urgente 2s infinite;
+}
+@keyframes nv-pulse-ok {
+  70% { box-shadow: 0 0 0 7px rgba(28, 124, 84, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(28, 124, 84, 0); }
+}
+@keyframes nv-pulse-atencao {
+  70% { box-shadow: 0 0 0 7px rgba(214, 136, 59, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(214, 136, 59, 0); }
+}
+@keyframes nv-pulse-urgente {
+  70% { box-shadow: 0 0 0 7px rgba(217, 79, 79, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 79, 79, 0); }
+}
+
+/* Alternador de 2+ opções (ex: "Todos" / "Por profissional") usado em várias listas do Dono/
+   Atendente redesenhadas a partir da Fase 35. */
+.nv-seg {
+  @apply border border-nv-border bg-white text-nv-muted font-publicSans text-xs font-semibold px-3.5 py-1.5 cursor-pointer transition-colors;
+}
+.nv-seg:first-child {
+  @apply rounded-l-lg;
+}
+.nv-seg:last-child {
+  @apply rounded-r-lg border-l-0;
+}
+.nv-seg-ativo {
+  @apply bg-nv-blue text-white border-nv-blue;
+}
