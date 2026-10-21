@@ -846,52 +846,155 @@ function Profissionais() {
 // sessão, se a profissional já entrou na videochamada (sessão de fato em andamento), se já
 // terminou, ou se já passou da hora marcada sem ter iniciado (⚠️ Não iniciada — o mesmo critério
 // do aviso automático que a gente manda pra ele e pra recepção).
+const NOMES_MES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+const DIAS_SEMANA_CURTO = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+// Cor estável por profissional (mesma profissional sempre com a mesma cor, mesmo mudando a
+// ordem da lista entre meses) — soma o código de cada letra do nome e escolhe dentro da mesma
+// paleta de 4 cores já usada na tela "Profissionais" (Fase 37).
+function corPorNome(nome) {
+  let soma = 0;
+  for (let i = 0; i < nome.length; i++) soma += nome.charCodeAt(i);
+  return NV_CORES_AVATAR[soma % NV_CORES_AVATAR.length];
+}
+
 function AgendaGeralDono() {
+  const hoje = new Date();
+  const [ano, setAno] = useState(hoje.getFullYear());
+  const [mesIndex, setMesIndex] = useState(hoje.getMonth());
   const [lista, setLista] = useState([]);
+  const [diaSelecionado, setDiaSelecionado] = useState(
+    hoje.getFullYear() === ano && hoje.getMonth() === mesIndex ? hoje.getDate() : 1
+  );
+
   useEffect(() => {
-    api.get("/dono/agenda-geral").then((r) => setLista(r.data));
-  }, []);
+    api.get(`/dono/agenda-geral?mes=${mesIndex + 1}&ano=${ano}`).then((r) => setLista(r.data));
+    setDiaSelecionado(hoje.getFullYear() === ano && hoje.getMonth() === mesIndex ? hoje.getDate() : 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesIndex, ano]);
+
+  function mudarMes(delta) {
+    let novoMes = mesIndex + delta;
+    let novoAno = ano;
+    if (novoMes < 0) {
+      novoMes = 11;
+      novoAno -= 1;
+    } else if (novoMes > 11) {
+      novoMes = 0;
+      novoAno += 1;
+    }
+    setMesIndex(novoMes);
+    setAno(novoAno);
+  }
+
+  const porDia = {};
+  for (const a of lista) {
+    const dt = new Date(a.data);
+    const dia = dt.getDate();
+    (porDia[dia] = porDia[dia] || []).push(a);
+  }
+
+  const primeiroDiaSemana = new Date(ano, mesIndex, 1).getDay();
+  const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
+  const celulas = [];
+  for (let i = 0; i < primeiroDiaSemana; i++) celulas.push(null);
+  for (let d = 1; d <= diasNoMes; d++) celulas.push(d);
+  while (celulas.length % 7 !== 0) celulas.push(null);
+
+  const profissionaisDoMes = [...new Set(lista.map((a) => a.profissional.user.nome))].sort();
+  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
+
   return (
-    <div className="card overflow-x-auto">
-      <p className="text-xs text-renascer-ink/50 mb-2">
-        Sessões de hoje em diante, de todas as profissionais. "Em atendimento agora" aparece assim que
-        ela entra na videochamada; "Não iniciada" aparece se já passou 15 minutos do horário marcado
-        sem ela ter entrado.
-      </p>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-renascer-ink/50">
-            <th>Data</th>
-            <th>Profissional</th>
-            <th>Cliente</th>
-            <th>Sessão</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map((a) => {
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda geral</h1>
+          <p className="text-nv-muted text-sm mt-0.5">{NOMES_MES[mesIndex]} de {ano} · clique num dia pra ver os agendamentos</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button className="nv-seg rounded-lg" onClick={() => mudarMes(-1)}>
+            ← Mês anterior
+          </button>
+          <button className="nv-seg rounded-lg" onClick={() => mudarMes(1)}>
+            Próximo mês →
+          </button>
+          {profissionaisDoMes.map((nome) => (
+            <span key={nome} className="text-[10.5px] font-semibold text-white rounded-md px-2 py-1 whitespace-nowrap" style={{ background: corPorNome(nome) }}>
+              {nome.split(" ").slice(0, 2).join(" ")}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-4 flex-wrap items-start">
+        <div className="flex-[3_1_560px] nv-card">
+          <div className="grid grid-cols-7 gap-1.5 mb-2">
+            {DIAS_SEMANA_CURTO.map((d) => (
+              <div key={d} className="text-center text-[11px] font-bold text-nv-muted3 uppercase tracking-wide">
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1.5">
+            {celulas.map((dia, i) => {
+              if (dia === null) return <div key={i} className="min-h-[86px]" />;
+              const doDia = porDia[dia] || [];
+              const chips = doDia.slice(0, 2);
+              const selecionado = dia === diaSelecionado;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setDiaSelecionado(dia)}
+                  className={`text-left rounded-[10px] p-1.5 border min-h-[86px] flex flex-col gap-1 transition-shadow hover:shadow-md ${
+                    selecionado ? "border-nv-blue shadow-md" : "border-nv-borderLight"
+                  } bg-white`}
+                >
+                  <span className={`text-xs font-bold ${selecionado ? "text-nv-blue" : "text-nv-ink2"}`}>{dia}</span>
+                  {chips.map((a) => (
+                    <span
+                      key={a.id}
+                      className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 truncate"
+                      style={{ background: corPorNome(a.profissional.user.nome) }}
+                    >
+                      {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} {a.cliente.user.nome}
+                    </span>
+                  ))}
+                  {doDia.length > 2 && <span className="text-[10px] text-nv-muted3 font-semibold">+{doDia.length - 2} mais</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex-[1_1_280px] nv-card self-start">
+          <p className="font-sora font-semibold text-sm text-nv-ink mb-2">
+            Dia {diaSelecionado} · {NOMES_MES[mesIndex]}
+          </p>
+          {agendamentosDoDia.map((a) => {
             const sessao = statusSessao(a);
             return (
-              <tr key={a.id} className="border-t border-renascer/10">
-                <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
-                <td>{a.profissional.user.nome}</td>
-                <td>{a.cliente.user.nome}</td>
-                <td>
-                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
+              <div key={a.id} className="flex items-start gap-2.5 py-2.5 border-t border-nv-borderLight first:border-t-0">
+                <span className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: corPorNome(a.profissional.user.nome) }} />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-bold text-nv-ink2">
+                    {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {a.cliente.user.nome}
+                  </p>
+                  <p className="text-xs text-nv-muted3 mt-0.5">com {a.profissional.user.nome}</p>
+                  <span className={`inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
                     {sessao.texto}
                   </span>
-                </td>
-              </tr>
+                </div>
+              </div>
             );
           })}
-          {lista.length === 0 && (
-            <tr>
-              <td colSpan={4} className="text-center text-renascer-ink/40 py-4">
-                Nenhuma sessão marcada a partir de agora.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+          {agendamentosDoDia.length === 0 && <p className="text-[13px] text-nv-muted3 mt-2">Nenhum agendamento nesse dia.</p>}
+        </div>
+      </div>
     </div>
   );
 }

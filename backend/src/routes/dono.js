@@ -418,15 +418,24 @@ router.delete("/clientes/:id", async (req, res) => {
 // de fato em andamento) ou ainda não. "chamadaVideo" é o mesmo registro usado desde a
 // videochamada da Fase 1.
 router.get("/agenda-geral", async (req, res) => {
+  const { mes, ano } = req.query;
+  // Sem mes/ano: comportamento de sempre (a partir de agora, até 100 sessões). Com mes/ano
+  // (Fase 38 — calendário mensal da Agenda geral): mostra o mês inteiro pedido, passado ou
+  // futuro, pra dar pra navegar o calendário pra trás e pra frente.
+  const where =
+    mes && ano
+      ? { data: { gte: new Date(Number(ano), Number(mes) - 1, 1), lt: new Date(Number(ano), Number(mes), 1) } }
+      : { data: { gte: new Date() } };
+
   const agendamentos = await prisma.agendamento.findMany({
-    where: { data: { gte: new Date() } },
+    where,
     include: {
       profissional: { include: { user: { select: { nome: true } } } },
       cliente: { include: { user: { select: { nome: true } } } },
       chamadaVideo: true,
     },
     orderBy: { data: "asc" },
-    take: 100,
+    take: mes && ano ? undefined : 100,
   });
   res.json(agendamentos);
 });

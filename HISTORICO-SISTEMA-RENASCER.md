@@ -2586,3 +2586,55 @@ sobre o total de pacotes não cancelados dela).
 ## Próxima parte
 
 Agenda geral, Repasses, Usuários e Suporte escalado — sem parar.
+
+# Fase 38 — Redesign visual (lote 2, parte 4): Agenda geral (entregue em 21/10/2026)
+
+## O que mudou (visual)
+
+- **Agenda geral (Dono)**: a tela que antes mostrava só uma lista das próximas sessões virou um
+  **calendário do mês completo**. No topo tem setas para trocar de mês e, ao lado, uma legenda com
+  uma cor para cada profissional (a mesma profissional aparece sempre com a mesma cor, em qualquer
+  mês). O calendário mostra os dias da semana em colunas e, dentro de cada dia, "pilulas" coloridas
+  com horário e nome do cliente, uma por sessão agendada, na cor da profissional responsável.
+- Ao clicar num dia do calendário, abre um painel à direita com a lista completa das sessões
+  daquele dia (horário, cliente, profissional) e, para cada uma, o selo de status da sessão que já
+  existia (confirmada, realizada, cancelada, etc. — mesma lógica de sempre, sem mudança).
+- O dia de hoje aparece destacado no calendário.
+
+## De onde veio o conteúdo (nada foi inventado)
+
+Os agendamentos mostrados são os mesmos que já existiam no sistema (tabela `Agendamento`); a única
+mudança é que agora dá para navegar entre meses, e não só ver "os próximos 100 agendamentos". A cor
+de cada profissional é calculada a partir do nome dela (mesma técnica já usada na tela de
+Profissionais, Fase 37) — não é um campo novo no banco, é só visual.
+
+## Backend
+
+- `GET /dono/agenda-geral` agora aceita, opcionalmente, `?mes=` e `?ano=` na URL. Quando esses
+  parâmetros vêm preenchidos (é o que o calendário novo usa), a rota devolve todos os agendamentos
+  daquele mês. Quando não vêm (comportamento antigo, para não quebrar nada que já use essa rota),
+  continua devolvendo os próximos 100 agendamentos a partir de agora, como sempre foi. Mudança
+  aditiva — nenhum comportamento antigo foi removido.
+
+## Arquivos alterados
+
+- `backend/src/routes/dono.js`
+- `frontend/src/pages/dono/index.js`
+
+## O que testar
+
+1. Como Dono, abrir "Agenda geral" e confirmar que aparece o calendário do mês atual, com o dia de
+   hoje destacado.
+2. Clicar nas setas de navegação e confirmar que troca de mês (inclusive virando o ano, de dezembro
+   para janeiro e vice-versa).
+3. Clicar em um dia que tenha sessões marcadas e confirmar que abre o painel com a lista daquele
+   dia, mostrando horário, cliente, profissional e o selo de status da sessão.
+4. Confirmar que a legenda de cores das profissionais no topo corresponde às cores das pílulas
+   dentro do calendário.
+5. Clicar em um dia sem nenhuma sessão e confirmar que o painel mostra que não há sessões, sem
+   quebrar a tela.
+
+## Próxima parte
+
+Repasses, Usuários, Suporte escalado, Formulários, Meu dia, Mapas mentais e Secretaria do Dono —
+sem parar.
