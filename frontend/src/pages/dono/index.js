@@ -5,8 +5,7 @@ import { useAuth } from "../../lib/useAuth";
 import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
 import StatusCliente from "../../components/StatusCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
-import IndicadorPresenca from "../../components/IndicadorPresenca";
-import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
+import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/presenca";
 import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 // Reaproveita os mesmos componentes da área da Profissional (agenda, clientes, cadastro,
 // financeiro, perfil/disponibilidade) pro Dono conseguir atender pacientes pelo próprio login,
@@ -246,58 +245,82 @@ const TIPO_HISTORICO_LABEL = {
   EXCLUIDO: "Saiu / não renovou",
   REATIVADO: "Reativado",
 };
-const TIPO_HISTORICO_COR = {
-  ENTROU: "bg-blue-100 text-blue-700",
-  RENOVOU: "bg-emerald-100 text-emerald-700",
-  EXCLUIDO: "bg-red-100 text-red-700",
-  REATIVADO: "bg-renascer-light text-renascer",
+const TIPO_HISTORICO_COR_NV = {
+  ENTROU: "#0B5FA8",
+  RENOVOU: "#1C7C54",
+  EXCLUIDO: "#D94F4F",
+  REATIVADO: "#9C6B2E",
 };
+const TIPO_HISTORICO_VERBO = {
+  ENTROU: "entrou",
+  RENOVOU: "renovou o pacote",
+  EXCLUIDO: "saiu (não renovou)",
+  REATIVADO: "foi reativado(a)",
+};
+const FILTROS_HISTORICO = [
+  { id: "todos", label: "Todos" },
+  { id: "ENTROU", label: "Entradas" },
+  { id: "RENOVOU", label: "Renovações" },
+  { id: "EXCLUIDO", label: "Saídas" },
+  { id: "REATIVADO", label: "Reativações" },
+];
 
 function HistoricoClientes() {
   const [lista, setLista] = useState([]);
+  const [filtro, setFiltro] = useState("todos");
   useEffect(() => {
     api.get("/dono/historico-clientes").then((r) => setLista(r.data));
   }, []);
 
+  const eventos = filtro === "todos" ? lista : lista.filter((h) => h.tipo === filtro);
+
   return (
-    <div className="card overflow-x-auto">
-      <h2 className="font-semibold mb-1">Histórico de clientes</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
-        Só você vê essa aba — todo mundo que entrou, renovou, saiu (não renovou) ou foi reativado.
-      </p>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-renascer-ink/50">
-            <th className="py-1">Data</th>
-            <th>Cliente</th>
-            <th>Evento</th>
-            <th>Pacote</th>
-            <th>Profissional</th>
-            <th>WhatsApp</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map((h) => (
-            <tr key={h.id} className="border-t border-renascer/10">
-              <td className="py-1">{new Date(h.criadoEm).toLocaleDateString("pt-BR")}</td>
-              <td>{h.nomeCliente}</td>
-              <td>
-                <span className={`badge ${TIPO_HISTORICO_COR[h.tipo]}`}>{TIPO_HISTORICO_LABEL[h.tipo] || h.tipo}</span>
-              </td>
-              <td>{h.pacoteResumo || "-"}</td>
-              <td>{h.profissionalNome || "-"}</td>
-              <td>{h.whatsapp || "-"}</td>
-            </tr>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Histórico</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Entradas, renovações e saídas de clientes</p>
+        </div>
+        <div>
+          {FILTROS_HISTORICO.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`nv-seg ${filtro === f.id ? "nv-seg-ativo" : ""}`}
+              onClick={() => setFiltro(f.id)}
+            >
+              {f.label}
+            </button>
           ))}
-          {lista.length === 0 && (
-            <tr>
-              <td colSpan={6} className="text-renascer-ink/50 py-2">
-                Nenhum evento registrado ainda.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+        </div>
+      </div>
+
+      <div className="nv-card !p-0 px-6 py-1">
+        {eventos.map((h) => {
+          const detalhes = [h.profissionalNome && `com ${h.profissionalNome}`, h.pacoteResumo, h.whatsapp && `WhatsApp: ${h.whatsapp}`]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <div key={h.id} className="flex gap-3 py-3 border-t border-nv-borderLight first:border-t-0">
+              <span
+                className="w-[9px] h-[9px] rounded-full shrink-0 mt-1.5"
+                style={{ background: TIPO_HISTORICO_COR_NV[h.tipo] || "#96A2B6" }}
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-nv-ink2">
+                  {h.nomeCliente} {TIPO_HISTORICO_VERBO[h.tipo] || (TIPO_HISTORICO_LABEL[h.tipo] || h.tipo).toLowerCase()}
+                </p>
+                <p className="text-xs text-nv-muted3 mt-0.5">
+                  {new Date(h.criadoEm).toLocaleDateString("pt-BR", { day: "numeric", month: "long" })}
+                  {detalhes && ` · ${detalhes}`}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        {eventos.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum evento registrado ainda.</p>}
+      </div>
     </div>
   );
 }
@@ -636,39 +659,184 @@ function Dashboard() {
   );
 }
 
+const NV_CORES_AVATAR = ["#0B5FA8", "#1C7C54", "#8A4FA3", "#B4622E"];
+
 function Profissionais() {
   const [lista, setLista] = useState([]);
+  const [busca, setBusca] = useState("");
+  const [selecionadaId, setSelecionadaId] = useState(null);
   useEffect(() => {
-    api.get("/dono/profissionais").then((r) => setLista(r.data));
+    api.get("/dono/profissionais").then((r) => {
+      setLista(r.data);
+      if (r.data.length > 0) setSelecionadaId((atual) => atual || r.data[0].id);
+    });
   }, []);
+
+  const buscaLower = busca.trim().toLowerCase();
+  const filtrada = lista.filter((p) => {
+    if (!buscaLower) return true;
+    const alvo = (p.user.nome + " " + (p.especialidades || []).join(" ")).toLowerCase();
+    return alvo.includes(buscaLower);
+  });
+
+  const selecionada = filtrada.find((p) => p.id === selecionadaId) || filtrada[0];
+  const presencaSel = selecionada ? formatarPresenca(selecionada.user.ultimoAcessoEm) : null;
+
   return (
-    <div className="space-y-3">
-      {lista.map((p) => (
-        <div key={p.id} className="card">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="font-semibold flex items-center gap-1.5 flex-wrap">
-                {p.user.nome}
-                {p.user.role === "DONO" && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Dono</span>
-                )}
-              </p>
-              <p className="text-sm text-renascer-ink/60">{p.titulo} · {p._count.clientes} clientes · {p._count.agendamentos} sessões</p>
-              <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
-            </div>
-            <span className={`badge ${p.user.ativo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-              {p.user.ativo ? "Ativa" : "Inativa"}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {p.clientes.map((c) => (
-              <span key={c.id} className="badge bg-renascer-light text-renascer">
-                {c.user.nome}
-              </span>
-            ))}
-          </div>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Profissionais</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Clique numa profissional para abrir a ficha completa</p>
         </div>
-      ))}
+        <label className="flex items-center gap-2 bg-white border border-nv-border rounded-lg px-3.5 py-2 min-w-[230px]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8392A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Buscar por nome ou especialidade"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="border-none outline-none text-sm text-nv-ink2 w-full"
+          />
+        </label>
+      </div>
+
+      <div className="flex gap-5 flex-wrap items-start">
+        <div className="flex-[2_1_420px] grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
+          {filtrada.map((p, i) => {
+            const presenca = formatarPresenca(p.user.ultimoAcessoEm);
+            const cor = NV_CORES_AVATAR[i % NV_CORES_AVATAR.length];
+            const iniciais = p.user.nome
+              .split(" ")
+              .slice(0, 2)
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase();
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelecionadaId(p.id)}
+                className={`nv-card text-left flex flex-col gap-3 ${selecionada?.id === p.id ? "!border-nv-blue" : ""}`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="relative w-11 h-11 shrink-0">
+                    <div
+                      className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white"
+                      style={{ background: cor }}
+                    >
+                      {iniciais}
+                    </div>
+                    <span
+                      className={`nv-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-white ${presenca.online ? "nv-dot-ok" : ""}`}
+                      style={!presenca.online ? { background: "#B7C1D1" } : undefined}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-nv-ink2 truncate flex items-center gap-1.5">
+                      {p.user.nome}
+                      {p.user.role === "DONO" && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-nv-gold/15 text-nv-gold">Dono</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-nv-muted3 truncate">{p.titulo}</p>
+                  </div>
+                </div>
+                {p.especialidades?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.especialidades.slice(0, 2).map((esp) => (
+                      <span key={esp} className="text-[11px] font-semibold text-[#3E6FA3] bg-[#EAF1FA] rounded-full px-2.5 py-1">
+                        {esp}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-[11px] text-nv-muted3 border-t border-nv-borderLight pt-2.5">
+                  <span>{p._count.clientes} clientes ativos</span>
+                  <span>{presenca.online ? "visto agora" : presenca.texto.replace("Visto ", "")}</span>
+                </div>
+              </button>
+            );
+          })}
+          {filtrada.length === 0 && <p className="text-sm text-nv-muted">Nenhuma profissional encontrada.</p>}
+        </div>
+
+        {selecionada && (
+          <div className="flex-[1_1_320px]">
+            <div className="nv-card flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-lg text-white shrink-0"
+                  style={{ background: NV_CORES_AVATAR[filtrada.indexOf(selecionada) % NV_CORES_AVATAR.length] }}
+                >
+                  {selecionada.user.nome
+                    .split(" ")
+                    .slice(0, 2)
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-sora font-bold text-base text-nv-ink">{selecionada.user.nome}</p>
+                  <p className="text-xs text-nv-muted3 mt-0.5">{selecionada.titulo}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 bg-nv-green/10 rounded-lg px-3 py-2.5">
+                <span className={`nv-dot ${presencaSel.online ? "nv-dot-ok" : ""}`} style={!presencaSel.online ? { background: "#B7C1D1" } : undefined} />
+                <span className="text-xs font-semibold text-[#22543D]">
+                  {presencaSel.online ? "Ativa agora" : `Offline · ${presencaSel.texto}`}
+                </span>
+              </div>
+
+              {selecionada.bio && <p className="text-[13px] leading-relaxed text-nv-ink2">{selecionada.bio}</p>}
+
+              {selecionada.especialidades?.length > 0 && (
+                <div>
+                  <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide mb-1.5">Especialidades</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selecionada.especialidades.map((esp) => (
+                      <span key={esp} className="text-[11px] font-semibold text-[#3E6FA3] bg-[#EAF1FA] rounded-full px-2.5 py-1">
+                        {esp}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5 border-t border-nv-borderLight pt-3.5">
+                <div>
+                  <p className="font-sora font-bold text-lg text-nv-ink">{selecionada._count.clientes}</p>
+                  <p className="text-[11px] text-nv-muted3 mt-0.5">clientes ativos</p>
+                </div>
+                <div>
+                  <p className="font-sora font-bold text-lg text-nv-ink">
+                    {selecionada.taxaRenovacao != null ? `${selecionada.taxaRenovacao}%` : "—"}
+                  </p>
+                  <p className="text-[11px] text-nv-muted3 mt-0.5">taxa de renovação</p>
+                </div>
+              </div>
+
+              {selecionada.clientes?.length > 0 && (
+                <div className="border-t border-nv-borderLight pt-3.5">
+                  <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide mb-1.5">Clientes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selecionada.clientes.map((c) => (
+                      <span key={c.id} className="text-[11px] font-semibold text-nv-blue bg-nv-blue/10 rounded-full px-2.5 py-1">
+                        {c.user.nome}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -2538,3 +2538,51 @@ clique sem querer direto na lista. Se quiser que fique mais rápido de acessar, 
 
 Seguindo com Histórico, Agenda geral, Profissionais, Repasses, Usuários, Suporte escalado — sem
 parar.
+
+# Fase 37 — Redesign visual (lote 2, parte 3): Histórico e Profissionais (entregue em 21/10/2026)
+
+Continuação direta da Fase 36, sem pausa.
+
+## O que mudou
+
+- **Histórico (Dono)**: virou uma linha do tempo — cada evento (entrada, renovação, saída,
+  reativação) com uma bolinha colorida por tipo, o nome do cliente e o que aconteceu, a data por
+  extenso e os detalhes (profissional, pacote, WhatsApp). Ganhou um filtro "Todos / Entradas /
+  Renovações / Saídas / Reativações" (o mockup original só tinha 3 filtros — acrescentei
+  "Reativações" porque esse tipo de evento já existe no sistema e não fazia sentido ficar de fora).
+- **Profissionais (Dono)**: virou a tela de "ficha" do mockup — grade de cartões (foto com
+  iniciais, bolinha de presença, título, especialidades, quantos clientes ativos e há quanto tempo
+  foi visto) com um campo de busca por nome ou especialidade, e um painel de detalhe à direita da
+  profissional selecionada: biografia, especialidades completas, status "Ativa agora"/"Offline",
+  número de clientes ativos e a taxa de renovação dela. A lista de clientes dela (que já existia na
+  versão antiga) continua aparecendo embaixo do painel.
+
+## De onde veio o conteúdo da ficha (nada foi inventado)
+
+Biografia, especialidades e abordagem já existiam no cadastro de cada profissional desde a Fase 1
+(campos `bio`, `especialidades`, `abordagens` no perfil completo) — só não apareciam nessa tela
+ainda. A "taxa de renovação" por profissional é nova: mesmo cálculo já usado na Visão geral (Fase
+35), mas agora separado por profissional (% de pacotes dela que estão ativos/aguardando renovação
+sobre o total de pacotes não cancelados dela).
+
+## Backend
+
+- `GET /dono/profissionais` agora também devolve `taxaRenovacao` em cada profissional — cálculo
+  aditivo, sem campo novo no banco.
+
+## Arquivos alterados
+
+- `backend/src/routes/dono.js`
+- `frontend/src/pages/dono/index.js`
+
+## O que testar
+
+1. Como Dono, abrir "Histórico" e testar os 5 filtros.
+2. Abrir "Profissionais": testar a busca por nome e por especialidade, clicar em cada cartão e
+   conferir se o painel da direita atualiza (bio, especialidades, clientes, taxa de renovação).
+3. Se alguma profissional não tiver bio ou especialidades cadastradas ainda, a tela não deve
+   quebrar — só aparece sem essas seções.
+
+## Próxima parte
+
+Agenda geral, Repasses, Usuários e Suporte escalado — sem parar.

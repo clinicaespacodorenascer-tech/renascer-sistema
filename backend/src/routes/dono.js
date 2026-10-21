@@ -22,6 +22,20 @@ const {
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
 
+// ---------- Visão geral (Fase 35: resultado da semana, pacotes por status, clientes p/ renovar) ----------
+// Segunda-feira da semana que contém `data` (semana sempre começa na segunda, igual ao
+// calendário real de atendimento da clínica — sábado é o último dia útil considerado).
+function inicioDaSemana(data) {
+  const diaSemana = data.getDay(); // 0 = domingo
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  return new Date(data.getFullYear(), data.getMonth(), data.getDate() + diff);
+}
+const DIAS_SEMANA_LABEL = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+function chaveDia(d) {
+  const dt = new Date(d);
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+}
+
 // ---------- Visão geral ----------
 router.get("/dashboard", async (req, res) => {
   const [totalProfissionais, totalClientes, pacotesAtivos, profissionais] = await Promise.all([
@@ -83,6 +97,81 @@ router.get("/dashboard", async (req, res) => {
     { totalRecebido: 0, valorProfissional: 0, valorRenascer: 0 }
   );
 
+  // ---- Resultado da semana (Seg–Sáb), pacotes por status e fila de renovação (Fase 35) ----
+  const inicioSemana = inicioDaSemana(hoje);
+  const fimSemanaExclusivo = new Date(inicioSemana.getTime() + 6 * 24 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
+
+  const [agendamentosSemana, transacoesSemana, gastosAnuncioSemana, clientesNovosSemana, pacotesPorStatusRaw, clientesParaRenovarRaw] =
+    await Promise.all([
+      prisma.agendamento.findMany({
+        where: { data: { gte: inicioSemana, lt: fimSemanaExclusivo }, status: { not: "CANCELADO" } },
+        select: { data: true },
+      }),
+      prisma.transacaoFinanceira.findMany({
+        where: { data: { gte: inicioSemana, lt: fimSemanaExclusivo } },
+        select: { data: true, valorTotal: true },
+      }),
+      prisma.movimentoCaixa.findMany({
+        where: { tipo: "SAIDA", canalOrigem: { not: null }, data: { gte: inicioSemana, lt: fimSemanaExclusivo } },
+        select: { data: true, valor: true },
+      }),
+      prisma.cliente.findMany({
+        where: { criadoEm: { gte: inicioSemana, lt: fimSemanaExclusivo } },
+        select: { criadoEm: true },
+      }),
+      prisma.pacote.groupBy({ by: ["status"], _count: { status: true } }),
+      // Clientes com data de renovação cadastrada, os mais próximos primeiro — vira a lista
+      // "Clientes para renovar" da Visão geral (mesmo semáforo VERDE/AMARELO/VERMELHO usado em
+      // todo o resto do sistema, calculado por calcularStatusCliente).
+      prisma.cliente.findMany({
+        where: { renovarEm: { not: null } },
+        select: {
+          renovarEm: true,
+          user: { select: { nome: true } },
+          profissionalAtual: { select: { user: { select: { nome: true } } } },
+          pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
+        },
+        orderBy: { renovarEm: "asc" },
+        take: 8,
+      }),
+    ]);
+
+  const resultadoSemana = DIAS_SEMANA_LABEL.map((label, i) => {
+    const diaRef = new Date(inicioSemana.getTime() + i * 24 * 60 * 60 * 1000);
+    const chave = chaveDia(diaRef);
+    const faturamento = transacoesSemana.filter((t) => chaveDia(t.data) === chave).reduce((s, t) => s + t.valorTotal, 0);
+    const agendamentosDia = agendamentosSemana.filter((a) => chaveDia(a.data) === chave).length;
+    const investimento = gastosAnuncioSemana.filter((g) => chaveDia(g.data) === chave).reduce((s, g) => s + g.valor, 0);
+    const conversoes = clientesNovosSemana.filter((c) => chaveDia(c.criadoEm) === chave).length;
+    return {
+      label,
+      data: diaRef,
+      faturamento: Number(faturamento.toFixed(2)),
+      agendamentos: agendamentosDia,
+      investimento: Number(investimento.toFixed(2)),
+      conversoes,
+      cac: investimento > 0 && conversoes > 0 ? Number((investimento / conversoes).toFixed(2)) : null,
+    };
+  });
+
+  const contagemStatusPacote = { ATIVO: 0, AGUARDANDO_RENOVACAO: 0, ENCERRADO: 0, CANCELADO: 0 };
+  for (const grupo of pacotesPorStatusRaw) contagemStatusPacote[grupo.status] = grupo._count.status;
+  const totalPacotesConsiderados = contagemStatusPacote.ATIVO + contagemStatusPacote.AGUARDANDO_RENOVACAO + contagemStatusPacote.ENCERRADO;
+  // Taxa de renovação = % dos pacotes (fora os cancelados) que seguem ativos ou aguardando
+  // renovação, em vez de terem encerrado sem continuar — null se ainda não existe pacote
+  // nenhum nessas 3 situações (sistema zerado).
+  const taxaRenovacao =
+    totalPacotesConsiderados > 0
+      ? Number((((contagemStatusPacote.ATIVO + contagemStatusPacote.AGUARDANDO_RENOVACAO) / totalPacotesConsiderados) * 100).toFixed(1))
+      : null;
+
+  const clientesParaRenovar = clientesParaRenovarRaw.map((c) => ({
+    nome: c.user.nome,
+    profissional: c.profissionalAtual?.user?.nome || null,
+    dias: Math.ceil((new Date(c.renovarEm).getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
+    status: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }),
+  }));
+
   res.json({
     totalProfissionais,
     totalClientes,
@@ -99,22 +188,53 @@ router.get("/dashboard", async (req, res) => {
     // Quantos clientes cada profissional tem hoje — soma tudo, seja cliente cadastrado
     // pela recepção ou pela própria profissional na aba dela.
     clientesPorProfissional: profissionais.map((p) => ({ nome: p.user.nome, total: p._count.clientes })),
+    // Fase 35 — alimenta a Visão geral redesenhada:
+    sessoesSemana: agendamentosSemana.length,
+    taxaRenovacao,
+    resultadoSemana,
+    pacotesPorStatus: {
+      ativos: contagemStatusPacote.ATIVO,
+      aRenovar: contagemStatusPacote.AGUARDANDO_RENOVACAO,
+      encerrados: contagemStatusPacote.ENCERRADO,
+      total: totalPacotesConsiderados,
+    },
+    clientesParaRenovar,
   });
 });
 
 // ---------- Todos os profissionais e seus clientes (mapa cliente -> profissional) ----------
 router.get("/profissionais", async (req, res) => {
-  const profissionais = await prisma.profissional.findMany({
-    include: {
-      // "role" vai junto pra dar pra identificar, na lista, qual profissional é também um
-      // login de Dono (ex: o próprio Elismael atendendo) — mostra um selo "Dono".
-      user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true, role: true, ultimoAcessoEm: true } },
-      clientes: { include: { user: { select: { nome: true } } } },
-      disponibilidades: true,
-      _count: { select: { clientes: true, agendamentos: true } },
-    },
+  const [profissionais, pacotesPorProfissionalStatus] = await Promise.all([
+    prisma.profissional.findMany({
+      include: {
+        // "role" vai junto pra dar pra identificar, na lista, qual profissional é também um
+        // login de Dono (ex: o próprio Elismael atendendo) — mostra um selo "Dono".
+        user: { select: { nome: true, email: true, telefone: true, ativo: true, fotoUrl: true, role: true, ultimoAcessoEm: true } },
+        clientes: { include: { user: { select: { nome: true } } } },
+        disponibilidades: true,
+        _count: { select: { clientes: true, agendamentos: true } },
+      },
+    }),
+    // Base pra "taxa de renovação" individual de cada profissional (Fase 37) — mesmo critério já
+    // usado na Visão geral (Fase 35): % de pacotes ativos/aguardando renovação sobre o total de
+    // pacotes não cancelados dela.
+    prisma.pacote.groupBy({ by: ["profissionalId", "status"], _count: { status: true } }),
+  ]);
+
+  const porProfissional = {};
+  for (const linha of pacotesPorProfissionalStatus) {
+    const bucket = (porProfissional[linha.profissionalId] = porProfissional[linha.profissionalId] || {});
+    bucket[linha.status] = linha._count.status;
+  }
+
+  const comTaxaRenovacao = profissionais.map((p) => {
+    const b = porProfissional[p.id] || {};
+    const total = (b.ATIVO || 0) + (b.AGUARDANDO_RENOVACAO || 0) + (b.ENCERRADO || 0);
+    const taxaRenovacao = total > 0 ? Number((((b.ATIVO || 0) + (b.AGUARDANDO_RENOVACAO || 0)) / total * 100).toFixed(1)) : null;
+    return { ...p, taxaRenovacao };
   });
-  res.json(profissionais);
+
+  res.json(comTaxaRenovacao);
 });
 
 router.get("/clientes", async (req, res) => {
