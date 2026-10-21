@@ -17,6 +17,7 @@ async function autenticar(req, res, next) {
         cliente: true,
         atendente: true,
         dono: true,
+        financeiro: true, // Fase 31 — Setor Financeiro
       },
     });
 

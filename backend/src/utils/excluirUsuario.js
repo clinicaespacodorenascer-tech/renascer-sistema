@@ -49,6 +49,15 @@ async function excluirAtendente(atendenteId) {
   ]);
 }
 
+// Fase 31 — Setor Financeiro: não tem nenhum dado próprio além do login (os lançamentos que ela
+// faz — MovimentoCaixa, InvestimentoAnuncioDiario — ficam no histórico do caixa da clínica,
+// ligados por criadoPorId, e não precisam ser apagados quando o login dela é excluído).
+async function excluirFinanceiro(financeiroId) {
+  const financeiro = await prisma.financeiro.findUnique({ where: { id: financeiroId } });
+  if (!financeiro) throw new Error("Login do Setor Financeiro não encontrado.");
+  await prisma.user.delete({ where: { id: financeiro.userId } });
+}
+
 async function excluirDono(donoId) {
   const totalDonos = await prisma.dono.count();
   if (totalDonos <= 1) {
@@ -62,7 +71,7 @@ async function excluirDono(donoId) {
 async function excluirUsuarioPorId(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { cliente: true, profissional: true, atendente: true, dono: true },
+    include: { cliente: true, profissional: true, atendente: true, dono: true, financeiro: true },
   });
   if (!user) throw new Error("Usuário não encontrado.");
 
@@ -70,7 +79,15 @@ async function excluirUsuarioPorId(userId) {
   if (user.role === "PROFISSIONAL" && user.profissional) return excluirProfissional(user.profissional.id);
   if (user.role === "ATENDENTE" && user.atendente) return excluirAtendente(user.atendente.id);
   if (user.role === "DONO" && user.dono) return excluirDono(user.dono.id);
+  if (user.role === "FINANCEIRO" && user.financeiro) return excluirFinanceiro(user.financeiro.id);
   throw new Error("Papel de usuário desconhecido.");
 }
 
-module.exports = { excluirUsuarioPorId, excluirCliente, excluirProfissional, excluirAtendente, excluirDono };
+module.exports = {
+  excluirUsuarioPorId,
+  excluirCliente,
+  excluirProfissional,
+  excluirAtendente,
+  excluirDono,
+  excluirFinanceiro,
+};

@@ -8,6 +8,16 @@ const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario
 const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { parseValorMonetario } = require("../utils/financeiro");
 const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
+const {
+  inicioDoDia,
+  periodoDoMes,
+  trimestreAtual,
+  obterConfiguracaoFinanceiraClinica,
+  calcularTaxaFaltas,
+  calcularTempoRespostaMedio,
+  calcularCACPorCanal,
+  calcularSaldoCaixaDoDia,
+} = require("../utils/meuDia");
 
 const router = express.Router();
 router.use(autenticar, permitir("DONO"));
@@ -486,7 +496,7 @@ router.post("/repasses/:profissionalId/lancar", async (req, res) => {
 // ---------- Gestão de usuários (criar login de profissional/atendente/dono) ----------
 router.post("/usuarios", async (req, res) => {
   const { nome, email, telefone, senha, role, dadosProfissional, profissionalAtualId, tambemProfissional } = req.body;
-  if (!["PROFISSIONAL", "ATENDENTE", "DONO", "CLIENTE"].includes(role)) {
+  if (!["PROFISSIONAL", "ATENDENTE", "DONO", "CLIENTE", "FINANCEIRO"].includes(role)) {
     return res.status(400).json({ erro: "Papel inválido." });
   }
 
@@ -525,6 +535,7 @@ router.post("/usuarios", async (req, res) => {
       }),
       ...(role === "ATENDENTE" && { atendente: { create: {} } }),
       ...(role === "DONO" && { dono: { create: {} } }),
+      ...(role === "FINANCEIRO" && { financeiro: { create: {} } }), // Fase 31
       ...(role === "CLIENTE" && {
         cliente: {
           create: {
@@ -713,6 +724,311 @@ router.put("/renascer-ia/configuracao", async (req, res) => {
   await obterConfiguracaoIA(); // garante que a linha "config" já existe antes do update
   const config = await prisma.configuracaoIA.update({ where: { id: "config" }, data: dados });
   res.json(config);
+});
+
+// ======================================================================================
+// ---------- "MEU DIA" (Fase 30) — checklist, indicadores reais, marketing, gestão de
+// pessoas, fechamento de caixa, diário de decisões e metas do trimestre, visão completa
+// do Dono (quem decide a estratégia da clínica inteira).
+// ======================================================================================
+
+// ---------- Indicadores reais ----------
+// Traz tudo que o painel "Indicadores" do Meu dia mostra, já calculado a partir do mês
+// informado (ou do mês atual). Cada indicador que ainda não tem dado suficiente (ex: nenhum
+// gasto de anúncio lançado ainda) volta como null/zero em vez de inventar número.
+router.get("/meu-dia/indicadores", async (req, res) => {
+  const { mes, ano } = req.query;
+  const { inicio, fim } = periodoDoMes(mes, ano);
+
+  const [
+    transacoesMes,
+    pendentesRepasse,
+    novosClientesMes,
+    churnMes,
+    clientesAtivos,
+    registrosMarketingMes,
+    taxaFaltas,
+    tempoResposta,
+    cacPorCanal,
+    sessoesPorProfissional,
+    saldoHoje,
+    configFinanceira,
+    metasTrimestreAtual,
+  ] = await Promise.all([
+    prisma.transacaoFinanceira.aggregate({
+      where: { data: { gte: inicio, lt: fim } },
+      _sum: { valorTotal: true, valorProfissional: true, valorRenascer: true },
+    }),
+    prisma.transacaoFinanceira.aggregate({
+      where: { recebidoPor: "PROFISSIONAL", repassado: false },
+      _sum: { valorRenascer: true },
+    }),
+    prisma.cliente.count({ where: { criadoEm: { gte: inicio, lt: fim } } }),
+    prisma.historicoCliente.count({ where: { tipo: "EXCLUIDO", criadoEm: { gte: inicio, lt: fim } } }),
+    prisma.cliente.count({ where: { situacao: "ATIVO" } }),
+    prisma.registroMarketing.groupBy({ by: ["tipo"], where: { data: { gte: inicio, lt: fim } }, _count: { _all: true } }),
+    calcularTaxaFaltas({ inicio, fim }),
+    calcularTempoRespostaMedio({ inicio, fim }),
+    calcularCACPorCanal({ inicio, fim }),
+    prisma.agendamento.groupBy({
+      by: ["profissionalId"],
+      where: { status: "REALIZADO", data: { gte: inicio, lt: fim } },
+      _count: { _all: true },
+    }),
+    calcularSaldoCaixaDoDia(),
+    obterConfiguracaoFinanceiraClinica(),
+    prisma.metaTrimestre.findMany({ where: { trimestre: trimestreAtual() }, orderBy: { criadoEm: "asc" } }),
+  ]);
+
+  const profissionais = await prisma.profissional.findMany({ select: { id: true, user: { select: { nome: true } } } });
+  const nomePorProfissionalId = Object.fromEntries(profissionais.map((p) => [p.id, p.user.nome]));
+  const sessoesRealizadasPorProfissional = sessoesPorProfissional.map((s) => ({
+    profissionalId: s.profissionalId,
+    nome: nomePorProfissionalId[s.profissionalId] || "—",
+    sessoesRealizadas: s._count._all,
+  }));
+
+  const faturamentoMes = transacoesMes._sum.valorTotal || 0;
+  const custoFixoMensalReais = configFinanceira.custoFixoMensalReais || 0;
+  const lucroMes = Number((faturamentoMes - custoFixoMensalReais).toFixed(2));
+  const mesesDeReserva = custoFixoMensalReais > 0 ? Number((configFinanceira.reservaCaixaReais / custoFixoMensalReais).toFixed(1)) : null;
+
+  res.json({
+    periodo: { mes: inicio.getMonth() + 1, ano: inicio.getFullYear() },
+    financeiro: {
+      saldoCaixaHoje: saldoHoje.saldoSistema,
+      faturamentoMes,
+      repasseProfissionaisMes: transacoesMes._sum.valorProfissional || 0,
+      receitaRenascerMes: transacoesMes._sum.valorRenascer || 0,
+      totalPendenteRepasseProfissionais: pendentesRepasse._sum.valorRenascer || 0,
+    },
+    crescimento: {
+      novosClientesMes,
+      churnMes,
+      clientesAtivos,
+    },
+    marketing: {
+      registrosMarketingMes: registrosMarketingMes.map((r) => ({ tipo: r.tipo, total: r._count._all })),
+      cacPorCanal: cacPorCanal.porCanal,
+      totalGastoAnunciosMes: cacPorCanal.totalGastoAnuncios,
+      totalClientesNovosMes: cacPorCanal.totalClientesNovos,
+    },
+    processos: {
+      taxaFaltasMes: taxaFaltas,
+      tempoRespostaMedioMes: tempoResposta,
+    },
+    pessoas: {
+      sessoesRealizadasPorProfissional,
+    },
+    estrategia: {
+      custoFixoMensalReais,
+      reservaCaixaReais: configFinanceira.reservaCaixaReais || 0,
+      pontoDeEquilibrioReais: custoFixoMensalReais,
+      lucroMes,
+      mesesDeReserva,
+      metasTrimestreAtual,
+    },
+  });
+});
+
+// Configuração financeira da clínica (custo fixo mensal + reserva de caixa) — usada só pelos
+// indicadores de estratégia acima. Editável a qualquer momento pelo Dono.
+router.get("/meu-dia/configuracao-financeira", async (req, res) => {
+  const config = await obterConfiguracaoFinanceiraClinica();
+  res.json(config);
+});
+
+router.put("/meu-dia/configuracao-financeira", async (req, res) => {
+  const { custoFixoMensalReais, reservaCaixaReais } = req.body;
+  await obterConfiguracaoFinanceiraClinica(); // garante que a linha "config" já existe
+  const dados = {};
+  if (custoFixoMensalReais !== undefined) {
+    const valor = parseValorMonetario(custoFixoMensalReais);
+    if (valor === null || valor < 0) return res.status(400).json({ erro: "Custo fixo mensal inválido." });
+    dados.custoFixoMensalReais = valor;
+  }
+  if (reservaCaixaReais !== undefined) {
+    const valor = parseValorMonetario(reservaCaixaReais);
+    if (valor === null || valor < 0) return res.status(400).json({ erro: "Reserva de caixa inválida." });
+    dados.reservaCaixaReais = valor;
+  }
+  const config = await prisma.configuracaoFinanceiraClinica.update({ where: { id: "config" }, data: dados });
+  res.json(config);
+});
+
+// ---------- Marketing (registro de post/stories/resposta/avaliação) ----------
+router.get("/meu-dia/marketing", async (req, res) => {
+  const lista = await prisma.registroMarketing.findMany({ orderBy: { data: "desc" }, take: 200 });
+  res.json(lista);
+});
+
+router.post("/meu-dia/marketing", async (req, res) => {
+  const { tipo, descricao, link } = req.body;
+  if (!tipo || !descricao) return res.status(400).json({ erro: "Informe o tipo e a descrição." });
+  const registro = await prisma.registroMarketing.create({
+    data: { criadoPorId: req.user.id, tipo, descricao, link: link || null },
+  });
+  res.json(registro);
+});
+
+router.delete("/meu-dia/marketing/:id", async (req, res) => {
+  await prisma.registroMarketing.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
+});
+
+// ---------- Gestão de pessoas (anotações do Dono sobre cada profissional) ----------
+router.get("/meu-dia/pessoas", async (req, res) => {
+  const { profissionalId } = req.query;
+  const lista = await prisma.registroPessoas.findMany({
+    where: profissionalId ? { profissionalId } : undefined,
+    orderBy: { data: "desc" },
+    take: 200,
+  });
+  res.json(lista);
+});
+
+router.post("/meu-dia/pessoas", async (req, res) => {
+  const { profissionalId, tipo, anotacao } = req.body;
+  if (!profissionalId || !tipo || !anotacao) {
+    return res.status(400).json({ erro: "Escolha a profissional, o tipo e escreva a anotação." });
+  }
+  const registro = await prisma.registroPessoas.create({
+    data: { criadoPorId: req.user.id, profissionalId, tipo, anotacao },
+  });
+  res.json(registro);
+});
+
+router.delete("/meu-dia/pessoas/:id", async (req, res) => {
+  await prisma.registroPessoas.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
+});
+
+// ---------- Diário de decisões ----------
+router.get("/meu-dia/decisoes", async (req, res) => {
+  const lista = await prisma.decisaoRegistro.findMany({
+    where: { criadoPorId: req.user.id },
+    orderBy: { data: "desc" },
+    take: 200,
+  });
+  res.json(lista);
+});
+
+router.post("/meu-dia/decisoes", async (req, res) => {
+  const { texto } = req.body;
+  if (!texto) return res.status(400).json({ erro: "Escreva a decisão ou ideia antes de salvar." });
+  const registro = await prisma.decisaoRegistro.create({ data: { criadoPorId: req.user.id, texto } });
+  res.json(registro);
+});
+
+router.delete("/meu-dia/decisoes/:id", async (req, res) => {
+  await prisma.decisaoRegistro.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
+});
+
+// ---------- Fechamento de caixa ----------
+// Dia a dia: lançamentos soltos (entrada/saída que não é pagamento de cliente) + conferência
+// contra o saldo informado do banco/Pix.
+router.get("/meu-dia/caixa", async (req, res) => {
+  const { data } = req.query;
+  const [saldo, conferencia] = await Promise.all([
+    calcularSaldoCaixaDoDia(data),
+    prisma.conferenciaCaixa.findUnique({ where: { data: inicioDoDia(data) } }),
+  ]);
+  res.json({ ...saldo, conferencia });
+});
+
+router.post("/meu-dia/caixa/movimentos", async (req, res) => {
+  const { tipo, categoria, valor, descricao, canalOrigem, data } = req.body;
+  if (!tipo || !categoria || !valor) return res.status(400).json({ erro: "Informe o tipo, a categoria e o valor." });
+  const valorNumerico = parseValorMonetario(valor);
+  if (!valorNumerico || valorNumerico <= 0) return res.status(400).json({ erro: "Valor inválido." });
+
+  const movimento = await prisma.movimentoCaixa.create({
+    data: {
+      tipo,
+      categoria,
+      valor: valorNumerico,
+      descricao: descricao || null,
+      canalOrigem: canalOrigem || null,
+      criadoPorId: req.user.id,
+      data: data ? new Date(`${data}T12:00:00`) : new Date(),
+    },
+  });
+  res.json(movimento);
+});
+
+router.delete("/meu-dia/caixa/movimentos/:id", async (req, res) => {
+  await prisma.movimentoCaixa.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
+});
+
+// Confere o saldo do sistema (calculado) com o saldo informado do banco/Pix nesse dia — salva
+// (ou atualiza, se já tinha conferido esse mesmo dia) um registro de conferência.
+router.post("/meu-dia/caixa/conferir", async (req, res) => {
+  const { data, saldoBancoInformado, observacao } = req.body;
+  const valorBanco = parseValorMonetario(saldoBancoInformado);
+  if (valorBanco === null) return res.status(400).json({ erro: "Informe o saldo do banco/Pix desse dia." });
+
+  const saldo = await calcularSaldoCaixaDoDia(data);
+  const diferenca = Number((saldo.saldoSistema - valorBanco).toFixed(2));
+
+  const conferencia = await prisma.conferenciaCaixa.upsert({
+    where: { data: inicioDoDia(data) },
+    update: { saldoSistema: saldo.saldoSistema, saldoBancoInformado: valorBanco, diferenca, observacao: observacao || null },
+    create: {
+      data: inicioDoDia(data),
+      saldoSistema: saldo.saldoSistema,
+      saldoBancoInformado: valorBanco,
+      diferenca,
+      observacao: observacao || null,
+      criadoPorId: req.user.id,
+    },
+  });
+  res.json(conferencia);
+});
+
+// ---------- Metas do trimestre ----------
+router.get("/meu-dia/metas", async (req, res) => {
+  const { trimestre } = req.query;
+  const lista = await prisma.metaTrimestre.findMany({
+    where: { trimestre: trimestre || trimestreAtual() },
+    orderBy: { criadoEm: "asc" },
+  });
+  res.json({ trimestre: trimestre || trimestreAtual(), metas: lista });
+});
+
+router.post("/meu-dia/metas", async (req, res) => {
+  const { titulo, unidade, valorMeta, valorAtual, observacao, trimestre } = req.body;
+  if (!titulo || !valorMeta) return res.status(400).json({ erro: "Informe o título e a meta." });
+  const meta = await prisma.metaTrimestre.create({
+    data: {
+      titulo,
+      unidade: unidade || "reais",
+      valorMeta: Number(valorMeta),
+      valorAtual: valorAtual ? Number(valorAtual) : 0,
+      observacao: observacao || null,
+      trimestre: trimestre || trimestreAtual(),
+      criadoPorId: req.user.id,
+    },
+  });
+  res.json(meta);
+});
+
+router.put("/meu-dia/metas/:id", async (req, res) => {
+  const { titulo, unidade, valorMeta, valorAtual, observacao } = req.body;
+  const dados = {};
+  if (titulo !== undefined) dados.titulo = titulo;
+  if (unidade !== undefined) dados.unidade = unidade;
+  if (valorMeta !== undefined) dados.valorMeta = Number(valorMeta);
+  if (valorAtual !== undefined) dados.valorAtual = Number(valorAtual);
+  if (observacao !== undefined) dados.observacao = observacao || null;
+  const meta = await prisma.metaTrimestre.update({ where: { id: req.params.id }, data: dados });
+  res.json(meta);
+});
+
+router.delete("/meu-dia/metas/:id", async (req, res) => {
+  await prisma.metaTrimestre.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
 });
 
 module.exports = router;

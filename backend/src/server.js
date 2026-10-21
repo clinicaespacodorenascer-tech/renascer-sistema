@@ -9,6 +9,7 @@ const profissionalRoutes = require("./routes/profissional");
 const clienteRoutes = require("./routes/cliente");
 const donoRoutes = require("./routes/dono");
 const atendenteRoutes = require("./routes/atendente");
+const financeiroRoutes = require("./routes/financeiro"); // Fase 31 — Setor Financeiro
 const comumRoutes = require("./routes/comum");
 const financaPessoalRoutes = require("./routes/financaPessoal");
 const iaRoutes = require("./routes/ia");
@@ -81,6 +82,7 @@ app.use("/api/profissional", profissionalRoutes);
 app.use("/api/cliente", clienteRoutes);
 app.use("/api/dono", donoRoutes);
 app.use("/api/atendente", atendenteRoutes);
+app.use("/api/financeiro", financeiroRoutes); // Fase 31 — Setor Financeiro
 app.use("/api/comum", comumRoutes);
 app.use("/api/financa-pessoal", financaPessoalRoutes);
 app.use("/api/ia", iaRoutes);

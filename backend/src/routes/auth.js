@@ -26,7 +26,7 @@ router.post("/login", async (req, res) => {
   if (!email || !senha) return res.status(400).json({ erro: "Informe e-mail, CPF ou telefone e a senha." });
 
   const identificador = email.toString().trim();
-  const include = { profissional: true, cliente: true, atendente: true, dono: true };
+  const include = { profissional: true, cliente: true, atendente: true, dono: true, financeiro: true };
   let user;
 
   if (identificador.includes("@")) {

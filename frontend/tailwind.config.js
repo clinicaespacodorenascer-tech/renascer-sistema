@@ -23,12 +23,36 @@ module.exports = {
           light: "#E3EFF8",
           dark: "#003A6E",
         },
+        // Fase 31 — novo sistema visual (canvas "Novo Layout — Espaço do Renascer"): tokens
+        // próprios, sem tocar em "renascer"/"gold" acima (usados pelas telas antigas). A Fase 32+
+        // vai trocando tela por tela pra esse design novo; quando acabar, os tokens antigos podem
+        // sair. Nomeado "nv" (de "novo") pra não colidir com nenhum nome já usado no projeto.
+        nv: {
+          navy: "#0D1B30",
+          navyLight: "#1B3153",
+          blue: "#0B5FA8",
+          blueDark: "#0A4E8C",
+          gold: "#9C6B2E",
+          ink: "#0D1B30",
+          ink2: "#1A2740",
+          muted: "#6B7A91",
+          muted2: "#8392A8",
+          muted3: "#96A2B6",
+          bg: "#F4F7FC",
+          border: "#DCE3EE",
+          borderLight: "#EEF1F7",
+          green: "#1C7C54",
+          red: "#D94F4F",
+        },
       },
       fontFamily: {
         // Fase 23: trocado de Plus Jakarta Sans + Fraunces (serifada) para Manrope — a mesma fonte
         // usada em todas as telas da Renascer IA — pra unificar a identidade dos dois produtos.
         sans: ["Manrope", "system-ui", "sans-serif"],
         display: ["Manrope", "system-ui", "sans-serif"],
+        // Fase 31 — novo sistema visual: títulos em Sora, corpo em Public Sans.
+        sora: ["Sora", "system-ui", "sans-serif"],
+        publicSans: ["Public Sans", "system-ui", "sans-serif"],
       },
       boxShadow: {
         premium: "0 10px 30px -12px rgba(0, 80, 150, 0.25)",

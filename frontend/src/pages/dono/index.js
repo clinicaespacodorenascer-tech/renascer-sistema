@@ -7,6 +7,7 @@ import StatusCliente from "../../components/StatusCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
 import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
+import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 // Reaproveita os mesmos componentes da área da Profissional (agenda, clientes, cadastro,
 // financeiro, perfil/disponibilidade) pro Dono conseguir atender pacientes pelo próprio login,
 // sem duplicar esse código todo — o backend libera as rotas de /profissional/* pra quem tem um
@@ -27,6 +28,7 @@ export default function AreaDono() {
   if (carregando) return null;
 
   const ABAS = [
+    { id: "meudia", label: "Meu dia" },
     { id: "dashboard", label: "Visão geral" },
     { id: "profissionais", label: "Profissionais" },
     { id: "agenda", label: "Agenda geral" },
@@ -45,6 +47,7 @@ export default function AreaDono() {
 
   return (
     <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {aba === "meudia" && <AbaMeuDia />}
       {aba === "dashboard" && <Dashboard />}
       {aba === "profissionais" && <Profissionais />}
       {aba === "agenda" && <AgendaGeralDono />}
@@ -1079,6 +1082,7 @@ function Usuarios() {
             <option value="ATENDENTE">Atendente</option>
             <option value="DONO">Dono</option>
             <option value="CLIENTE">Cliente</option>
+            <option value="FINANCEIRO">Setor Financeiro</option>
           </select>
           {form.role === "CLIENTE" && (
             <select
@@ -2541,6 +2545,783 @@ function AbaFormularios() {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- MEU DIA (Fase 30) — Dono: checklist diário, indicadores reais, marketing,
+// gestão de pessoas, fechamento de caixa, diário de decisões e metas do trimestre. ----------------
+// ================================================================================================
+
+const ITENS_CHECKLIST_HOJE_DONO = [
+  { chave: "ver_dashboard", texto: "Conferir a visão geral (faturamento do dia, repasses pendentes)" },
+  { chave: "revisar_agenda_geral", texto: "Revisar a agenda geral do dia" },
+  { chave: "lancar_caixa", texto: "Lançar as entradas e saídas de hoje no Fechamento de caixa" },
+  { chave: "conferir_banco", texto: "Comparar o saldo do sistema com o saldo do banco/Pix" },
+  { chave: "registrar_marketing_dia", texto: "Registrar o que foi postado/respondido hoje no marketing (se houver)" },
+  { chave: "registrar_decisao_dia", texto: "Anotar alguma decisão ou ideia importante do dia (se houver)" },
+];
+
+const ITENS_CHECKLIST_IMPLANTACAO_DONO = [
+  { chave: "config_financeira", texto: "Configurar o custo fixo mensal e a reserva de caixa da clínica" },
+  { chave: "primeira_meta", texto: "Cadastrar a primeira meta do trimestre" },
+  { chave: "revisar_repasses_implantacao", texto: "Revisar o percentual de repasse de cada profissional" },
+  { chave: "ativar_push_implantacao", texto: "Ativar as notificações push no seu aparelho" },
+];
+
+const TIPO_MARKETING_LABEL = { POST: "Post", STORIES: "Stories", RESPOSTA: "Resposta", AVALIACAO: "Avaliação", OUTRO: "Outro" };
+const TIPO_PESSOAS_LABEL = { ALINHAMENTO: "Alinhamento", FEEDBACK: "Feedback", DIFICULDADE: "Dificuldade", TREINAMENTO: "Treinamento", OUTRO: "Outro" };
+const CANAL_LABEL = { INSTAGRAM: "Instagram", FACEBOOK: "Facebook", GOOGLE: "Google", INDICACAO: "Indicação", OUTRO: "Outro", NAO_INFORMADO: "Não informado" };
+
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function AbaMeuDia() {
+  const [sub, setSub] = useState("hoje");
+  const SUBABAS = [
+    { id: "hoje", label: "Hoje" },
+    { id: "indicadores", label: "Indicadores" },
+    { id: "marketing", label: "Marketing" },
+    { id: "pessoas", label: "Gestão de pessoas" },
+    { id: "caixa", label: "Fechamento de caixa" },
+    { id: "decisoes", label: "Diário de decisões" },
+    { id: "metas", label: "Metas do trimestre" },
+    { id: "implantacao", label: "Implantação" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {SUBABAS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSub(s.id)}
+            className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "hoje" && <MeuDiaHoje />}
+      {sub === "indicadores" && <MeuDiaIndicadores />}
+      {sub === "marketing" && <MeuDiaMarketing />}
+      {sub === "pessoas" && <MeuDiaPessoas />}
+      {sub === "caixa" && <MeuDiaCaixa />}
+      {sub === "decisoes" && <MeuDiaDecisoes />}
+      {sub === "metas" && <MeuDiaMetas />}
+      {sub === "implantacao" && <MeuDiaImplantacao />}
+    </div>
+  );
+}
+
+function MeuDiaHoje() {
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h3 className="font-semibold">Checklist de hoje</h3>
+        <p className="text-xs text-renascer-ink/50">
+          {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })} — os números completos
+          estão na aba Indicadores.
+        </p>
+      </div>
+      <ChecklistMeuDia itens={ITENS_CHECKLIST_HOJE_DONO} data={hojeISO()} />
+    </div>
+  );
+}
+
+function MeuDiaImplantacao() {
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h3 className="font-semibold">Checklist de implantação</h3>
+        <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só, não voltam a aparecer.</p>
+      </div>
+      <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_DONO} />
+    </div>
+  );
+}
+
+function CardIndicador({ titulo, valor, destaque, aviso }) {
+  return (
+    <div className="border border-renascer/10 rounded-xl p-3">
+      <p className="text-xs text-renascer-ink/50">{titulo}</p>
+      <p className={`text-lg font-bold ${destaque || "text-renascer-ink"}`}>{valor}</p>
+      {aviso && <p className="text-[11px] text-renascer-ink/40 mt-0.5">{aviso}</p>}
+    </div>
+  );
+}
+
+function MeuDiaIndicadores() {
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState("");
+
+  async function carregar() {
+    setErro("");
+    try {
+      const { data } = await api.get("/dono/meu-dia/indicadores");
+      setDados(data);
+    } catch (e) {
+      setErro("Não consegui carregar os indicadores agora. Tente de novo em alguns segundos.");
+    }
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  if (erro) {
+    return (
+      <div className="card space-y-2">
+        <p className="text-sm text-red-600">{erro}</p>
+        <button className="btn-secondary" onClick={carregar}>
+          Tentar de novo
+        </button>
+      </div>
+    );
+  }
+  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+
+  const semDadoSuficiente = "ainda sem dado suficiente este mês";
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Financeiro</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <CardIndicador titulo="Saldo de caixa hoje" valor={`R$ ${dados.financeiro.saldoCaixaHoje.toFixed(2)}`} destaque="text-renascer" />
+          <CardIndicador titulo="Faturamento do mês" valor={`R$ ${dados.financeiro.faturamentoMes.toFixed(2)}`} />
+          <CardIndicador titulo="Repasse às profissionais (mês)" valor={`R$ ${dados.financeiro.repasseProfissionaisMes.toFixed(2)}`} />
+          <CardIndicador titulo="Receita Renascer (mês)" valor={`R$ ${dados.financeiro.receitaRenascerMes.toFixed(2)}`} destaque="text-emerald-600" />
+        </div>
+        {dados.financeiro.totalPendenteRepasseProfissionais > 0 && (
+          <p className="text-xs text-amber-700">
+            R$ {dados.financeiro.totalPendenteRepasseProfissionais.toFixed(2)} ainda pendente de repasse das profissionais.
+          </p>
+        )}
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Crescimento</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <CardIndicador titulo="Clientes novos (mês)" valor={dados.crescimento.novosClientesMes} />
+          <CardIndicador titulo="Clientes que saíram (mês)" valor={dados.crescimento.churnMes} />
+          <CardIndicador titulo="Clientes ativos hoje" valor={dados.crescimento.clientesAtivos} />
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Marketing</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <CardIndicador
+            titulo="Registros de marketing (mês)"
+            valor={dados.marketing.registrosMarketingMes.reduce((s, r) => s + r.total, 0)}
+            aviso={dados.marketing.registrosMarketingMes.length === 0 ? "nada lançado ainda este mês" : null}
+          />
+          <CardIndicador titulo="Gasto com anúncios (mês)" valor={`R$ ${dados.marketing.totalGastoAnunciosMes.toFixed(2)}`} />
+          <CardIndicador titulo="Clientes novos no mês" valor={dados.marketing.totalClientesNovosMes} />
+        </div>
+        <div>
+          <p className="text-xs text-renascer-ink/50 mb-1">Custo por cliente novo (CAC), por canal</p>
+          {Object.keys(dados.marketing.cacPorCanal).length === 0 ? (
+            <p className="text-sm text-renascer-ink/40">
+              {semDadoSuficiente} — lance gastos de anúncio no Fechamento de caixa e informe o canal dos clientes novos no
+              cadastro, pra esse número aparecer.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {Object.entries(dados.marketing.cacPorCanal).map(([canal, info]) => (
+                <div key={canal} className="flex items-center justify-between text-sm border-b border-renascer-ink/5 py-1">
+                  <span>{CANAL_LABEL[canal] || canal}</span>
+                  <span className="text-renascer-ink/70">
+                    R$ {info.gasto.toFixed(2)} gasto · {info.clientesNovos} cliente(s) novo(s)
+                    {info.cac !== null ? ` · CAC R$ ${info.cac.toFixed(2)}` : " · CAC ainda sem dado"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Processos</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <CardIndicador
+            titulo="Taxa de faltas (mês)"
+            valor={dados.processos.taxaFaltasMes.taxaFaltasPercentual !== null ? `${dados.processos.taxaFaltasMes.taxaFaltasPercentual}%` : "—"}
+            aviso={dados.processos.taxaFaltasMes.totalSessoes === 0 ? semDadoSuficiente : `${dados.processos.taxaFaltasMes.faltas} de ${dados.processos.taxaFaltasMes.totalSessoes} sessões`}
+          />
+          <CardIndicador
+            titulo="Tempo médio de resposta"
+            valor={dados.processos.tempoRespostaMedioMes.tempoMedioMinutos !== null ? `${dados.processos.tempoRespostaMedioMes.tempoMedioMinutos} min` : "—"}
+            aviso={dados.processos.tempoRespostaMedioMes.mensagensRespondidas === 0 ? semDadoSuficiente : `${dados.processos.tempoRespostaMedioMes.mensagensRespondidas} resposta(s) no mês`}
+          />
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Pessoas (sessões realizadas no mês)</h3>
+        <div className="space-y-1">
+          {dados.pessoas.sessoesRealizadasPorProfissional.map((p) => (
+            <div key={p.profissionalId} className="flex items-center justify-between text-sm border-b border-renascer-ink/5 py-1">
+              <span>{p.nome}</span>
+              <span className="font-semibold">{p.sessoesRealizadas}</span>
+            </div>
+          ))}
+          {dados.pessoas.sessoesRealizadasPorProfissional.length === 0 && (
+            <p className="text-sm text-renascer-ink/40">Nenhuma sessão realizada este mês ainda.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Estratégia</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <CardIndicador titulo="Ponto de equilíbrio (custo fixo/mês)" valor={`R$ ${dados.estrategia.pontoDeEquilibrioReais.toFixed(2)}`} />
+          <CardIndicador
+            titulo="Lucro do mês"
+            valor={`R$ ${dados.estrategia.lucroMes.toFixed(2)}`}
+            destaque={dados.estrategia.lucroMes >= 0 ? "text-emerald-600" : "text-red-600"}
+          />
+          <CardIndicador
+            titulo="Meses de reserva"
+            valor={dados.estrategia.mesesDeReserva !== null ? dados.estrategia.mesesDeReserva : "—"}
+            aviso={dados.estrategia.custoFixoMensalReais === 0 ? "configure o custo fixo mensal" : null}
+          />
+        </div>
+        <p className="text-xs text-renascer-ink/50">
+          Custo fixo e reserva de caixa são configurados na aba Fechamento de caixa.
+        </p>
+        {dados.estrategia.metasTrimestreAtual.length > 0 && (
+          <div className="pt-2 space-y-2">
+            <p className="text-xs text-renascer-ink/50">Metas deste trimestre</p>
+            {dados.estrategia.metasTrimestreAtual.map((m) => (
+              <BarraMetaTrimestre key={m.id} meta={m} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MeuDiaMarketing() {
+  const [lista, setLista] = useState([]);
+  const [tipo, setTipo] = useState("POST");
+  const [descricao, setDescricao] = useState("");
+  const [link, setLink] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/meu-dia/marketing");
+    setLista(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function registrar() {
+    if (!descricao.trim()) return;
+    setSalvando(true);
+    try {
+      await api.post("/dono/meu-dia/marketing", { tipo, descricao, link: link || undefined });
+      setDescricao("");
+      setLink("");
+      carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir este registro?")) return;
+    await api.delete(`/dono/meu-dia/marketing/${id}`);
+    carregar();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Registrar ação de marketing</h3>
+        <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          {Object.entries(TIPO_MARKETING_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <textarea className="input" rows={2} placeholder="O que foi feito?" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+        <input className="input" placeholder="Link (opcional)" value={link} onChange={(e) => setLink(e.target.value)} />
+        <button className="btn-primary" onClick={registrar} disabled={salvando || !descricao.trim()}>
+          {salvando ? "Salvando..." : "Registrar"}
+        </button>
+      </div>
+
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Histórico</h3>
+        {lista.map((r) => (
+          <div key={r.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+            <div>
+              <span className="badge-gold">{TIPO_MARKETING_LABEL[r.tipo] || r.tipo}</span>
+              <p className="text-sm mt-1">{r.descricao}</p>
+              {r.link && (
+                <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-renascer underline">
+                  {r.link}
+                </a>
+              )}
+              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+            </div>
+            <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(r.id)}>
+              Excluir
+            </button>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum registro ainda.</p>}
+      </div>
+    </div>
+  );
+}
+
+function MeuDiaPessoas() {
+  const [lista, setLista] = useState([]);
+  const [profissionais, setProfissionais] = useState([]);
+  const [profissionalId, setProfissionalId] = useState("");
+  const [tipo, setTipo] = useState("ALINHAMENTO");
+  const [anotacao, setAnotacao] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function carregar() {
+    const [r, p] = await Promise.all([api.get("/dono/meu-dia/pessoas"), api.get("/dono/profissionais")]);
+    setLista(r.data);
+    setProfissionais(p.data);
+    if (!profissionalId && p.data.length > 0) setProfissionalId(p.data[0].id);
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function registrar() {
+    if (!profissionalId || !anotacao.trim()) return;
+    setSalvando(true);
+    try {
+      await api.post("/dono/meu-dia/pessoas", { profissionalId, tipo, anotacao });
+      setAnotacao("");
+      carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir esta anotação?")) return;
+    await api.delete(`/dono/meu-dia/pessoas/${id}`);
+    carregar();
+  }
+
+  const nomePorId = Object.fromEntries(profissionais.map((p) => [p.id, p.user.nome]));
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Nova anotação</h3>
+        <select className="input" value={profissionalId} onChange={(e) => setProfissionalId(e.target.value)}>
+          {profissionais.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.user.nome}
+            </option>
+          ))}
+        </select>
+        <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          {Object.entries(TIPO_PESSOAS_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <textarea className="input" rows={2} placeholder="Anotação" value={anotacao} onChange={(e) => setAnotacao(e.target.value)} />
+        <button className="btn-primary" onClick={registrar} disabled={salvando || !anotacao.trim()}>
+          {salvando ? "Salvando..." : "Registrar"}
+        </button>
+      </div>
+
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Histórico</h3>
+        {lista.map((r) => (
+          <div key={r.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">
+                {nomePorId[r.profissionalId] || "—"} <span className="badge-gold ml-1">{TIPO_PESSOAS_LABEL[r.tipo] || r.tipo}</span>
+              </p>
+              <p className="text-sm mt-1">{r.anotacao}</p>
+              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+            </div>
+            <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(r.id)}>
+              Excluir
+            </button>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhuma anotação ainda.</p>}
+      </div>
+    </div>
+  );
+}
+
+const CATEGORIAS_MOVIMENTO_SAIDA = ["Anúncio", "Repasse pago", "Aluguel", "Conta", "Material", "Outro"];
+const CATEGORIAS_MOVIMENTO_ENTRADA = ["Outro recebimento", "Ajuste de caixa"];
+
+function MeuDiaCaixa() {
+  const [dataSelecionada, setDataSelecionada] = useState(hojeISO());
+  const [dados, setDados] = useState(null);
+  const [tipo, setTipo] = useState("SAIDA");
+  const [categoria, setCategoria] = useState("Anúncio");
+  const [valor, setValor] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [canalOrigem, setCanalOrigem] = useState("");
+  const [saldoBanco, setSaldoBanco] = useState("");
+  const [observacaoConferencia, setObservacaoConferencia] = useState("");
+  const [config, setConfig] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+
+  async function carregar() {
+    const [c, cfg] = await Promise.all([
+      api.get("/dono/meu-dia/caixa", { params: { data: dataSelecionada } }),
+      api.get("/dono/meu-dia/configuracao-financeira"),
+    ]);
+    setDados(c.data);
+    setConfig(cfg.data);
+    if (c.data.conferencia) setSaldoBanco(String(c.data.conferencia.saldoBancoInformado));
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSelecionada]);
+
+  async function lancarMovimento() {
+    if (!valor) return;
+    setSalvando(true);
+    try {
+      await api.post("/dono/meu-dia/caixa/movimentos", {
+        tipo,
+        categoria,
+        valor: Number(valor),
+        descricao: descricao || undefined,
+        canalOrigem: categoria === "Anúncio" && canalOrigem ? canalOrigem : undefined,
+        data: dataSelecionada,
+      });
+      setValor("");
+      setDescricao("");
+      setCanalOrigem("");
+      carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function excluirMovimento(id) {
+    if (!window.confirm("Excluir este lançamento?")) return;
+    await api.delete(`/dono/meu-dia/caixa/movimentos/${id}`);
+    carregar();
+  }
+
+  async function conferir() {
+    if (!saldoBanco) return;
+    setMensagem("");
+    const { data } = await api.post("/dono/meu-dia/caixa/conferir", {
+      data: dataSelecionada,
+      saldoBancoInformado: Number(saldoBanco),
+      observacao: observacaoConferencia || undefined,
+    });
+    setMensagem(Math.abs(data.diferenca) < 0.01 ? "Bateu certinho! ✓" : `Diferença de R$ ${Math.abs(data.diferenca).toFixed(2)}.`);
+    carregar();
+  }
+
+  async function salvarConfig(campo, valorCampo) {
+    const payload = { [campo]: Number(valorCampo) };
+    const { data } = await api.put("/dono/meu-dia/configuracao-financeira", payload);
+    setConfig(data);
+  }
+
+  if (!dados || !config) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Fechamento de caixa</h3>
+          <input className="input !w-auto" type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <CardIndicador titulo="Entradas de clientes" valor={`R$ ${dados.totalEntradasClientes.toFixed(2)}`} />
+          <CardIndicador titulo="Entradas/saídas extra" valor={`+R$ ${dados.totalEntradasExtra.toFixed(2)} / -R$ ${dados.totalSaidas.toFixed(2)}`} />
+          <CardIndicador titulo="Saldo do sistema" valor={`R$ ${dados.saldoSistema.toFixed(2)}`} destaque="text-renascer" />
+        </div>
+
+        <div className="pt-2 border-t border-renascer-ink/5 space-y-1">
+          {dados.movimentos.map((m) => (
+            <div key={m.id} className="flex items-center justify-between text-sm py-1">
+              <span>
+                {m.tipo === "ENTRADA" ? "+ " : "- "}
+                {m.categoria}
+                {m.descricao ? ` — ${m.descricao}` : ""}
+              </span>
+              <span className="flex items-center gap-2">
+                <span className={m.tipo === "ENTRADA" ? "text-emerald-600" : "text-red-600"}>R$ {m.valor.toFixed(2)}</span>
+                <button className="text-xs text-red-600 underline" onClick={() => excluirMovimento(m.id)}>
+                  Excluir
+                </button>
+              </span>
+            </div>
+          ))}
+          {dados.movimentos.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum lançamento extra nesse dia.</p>}
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Novo lançamento</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            <option value="SAIDA">Saída</option>
+            <option value="ENTRADA">Entrada</option>
+          </select>
+          <select className="input" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            {(tipo === "SAIDA" ? CATEGORIAS_MOVIMENTO_SAIDA : CATEGORIAS_MOVIMENTO_ENTRADA).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        {tipo === "SAIDA" && categoria === "Anúncio" && (
+          <select className="input" value={canalOrigem} onChange={(e) => setCanalOrigem(e.target.value)}>
+            <option value="">Canal (opcional, pra calcular CAC)</option>
+            {["INSTAGRAM", "FACEBOOK", "GOOGLE", "OUTRO"].map((c) => (
+              <option key={c} value={c}>
+                {CANAL_LABEL[c]}
+              </option>
+            ))}
+          </select>
+        )}
+        <input className="input" type="number" step="0.01" placeholder="Valor (R$)" value={valor} onChange={(e) => setValor(e.target.value)} />
+        <input className="input" placeholder="Descrição (opcional)" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+        <button className="btn-primary" onClick={lancarMovimento} disabled={salvando || !valor}>
+          {salvando ? "Salvando..." : "Lançar"}
+        </button>
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Conferir com o banco/Pix</h3>
+        <input
+          className="input"
+          type="number"
+          step="0.01"
+          placeholder="Saldo informado do banco/Pix nesse dia"
+          value={saldoBanco}
+          onChange={(e) => setSaldoBanco(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="Observação (opcional)"
+          value={observacaoConferencia}
+          onChange={(e) => setObservacaoConferencia(e.target.value)}
+        />
+        <button className="btn-primary" onClick={conferir} disabled={!saldoBanco}>
+          Conferir
+        </button>
+        {mensagem && <p className="text-sm font-medium">{mensagem}</p>}
+        {dados.conferencia && (
+          <p className="text-xs text-renascer-ink/50">
+            Última conferência desse dia: sistema R$ {dados.conferencia.saldoSistema.toFixed(2)} vs. banco R${" "}
+            {dados.conferencia.saldoBancoInformado.toFixed(2)} (diferença R$ {Math.abs(dados.conferencia.diferenca).toFixed(2)}).
+          </p>
+        )}
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Configuração financeira da clínica</h3>
+        <p className="text-xs text-renascer-ink/50">Usada só pros indicadores de ponto de equilíbrio, lucro e meses de reserva.</p>
+        <label className="block text-sm">
+          Custo fixo mensal (R$)
+          <input
+            className="input mt-1"
+            type="number"
+            step="0.01"
+            defaultValue={config.custoFixoMensalReais}
+            onBlur={(e) => salvarConfig("custoFixoMensalReais", e.target.value)}
+          />
+        </label>
+        <label className="block text-sm">
+          Reserva de caixa atual (R$)
+          <input
+            className="input mt-1"
+            type="number"
+            step="0.01"
+            defaultValue={config.reservaCaixaReais}
+            onBlur={(e) => salvarConfig("reservaCaixaReais", e.target.value)}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function MeuDiaDecisoes() {
+  const [lista, setLista] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/meu-dia/decisoes");
+    setLista(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function registrar() {
+    if (!texto.trim()) return;
+    setSalvando(true);
+    try {
+      await api.post("/dono/meu-dia/decisoes", { texto });
+      setTexto("");
+      carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir este registro?")) return;
+    await api.delete(`/dono/meu-dia/decisoes/${id}`);
+    carregar();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Nova decisão ou ideia</h3>
+        <textarea className="input" rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} />
+        <button className="btn-primary" onClick={registrar} disabled={salvando || !texto.trim()}>
+          {salvando ? "Salvando..." : "Registrar"}
+        </button>
+      </div>
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Diário</h3>
+        {lista.map((d) => (
+          <div key={d.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm">{d.texto}</p>
+              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(d.data).toLocaleString("pt-BR")}</p>
+            </div>
+            <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(d.id)}>
+              Excluir
+            </button>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhuma decisão registrada ainda.</p>}
+      </div>
+    </div>
+  );
+}
+
+function BarraMetaTrimestre({ meta, onAtualizar, onExcluir }) {
+  const pct = meta.valorMeta > 0 ? Math.min(100, (meta.valorAtual / meta.valorMeta) * 100) : 0;
+  const formatar = (v) => (meta.unidade === "reais" ? `R$ ${v.toFixed(2)}` : meta.unidade === "percentual" ? `${v}%` : v);
+  return (
+    <div className="border border-renascer/10 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="font-medium">{meta.titulo}</p>
+        {onExcluir && (
+          <button className="text-xs text-red-600 underline" onClick={onExcluir}>
+            Excluir
+          </button>
+        )}
+      </div>
+      <div className="h-2 rounded-full bg-renascer-light overflow-hidden">
+        <div className="h-full bg-renascer" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="flex items-center justify-between mt-1 text-xs text-renascer-ink/60">
+        <span>
+          {formatar(meta.valorAtual)} de {formatar(meta.valorMeta)} ({pct.toFixed(0)}%)
+        </span>
+        {meta.observacao && <span>{meta.observacao}</span>}
+      </div>
+      {onAtualizar && (
+        <button className="btn-secondary text-xs mt-2" onClick={onAtualizar}>
+          Atualizar valor atual
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MeuDiaMetas() {
+  const [metas, setMetas] = useState([]);
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [unidade, setUnidade] = useState("reais");
+  const [valorMeta, setValorMeta] = useState("");
+  const [observacao, setObservacao] = useState("");
+
+  async function carregar() {
+    const { data } = await api.get("/dono/meu-dia/metas");
+    setMetas(data.metas);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function criar() {
+    if (!titulo || !valorMeta) return;
+    await api.post("/dono/meu-dia/metas", { titulo, unidade, valorMeta: Number(valorMeta), observacao: observacao || undefined });
+    setTitulo("");
+    setValorMeta("");
+    setObservacao("");
+    setMostrarForm(false);
+    carregar();
+  }
+  async function atualizar(meta) {
+    const valor = window.prompt("Novo valor atual:", String(meta.valorAtual));
+    if (valor === null || isNaN(Number(valor))) return;
+    await api.put(`/dono/meu-dia/metas/${meta.id}`, { valorAtual: Number(valor) });
+    carregar();
+  }
+  async function excluir(id) {
+    if (!window.confirm("Excluir esta meta?")) return;
+    await api.delete(`/dono/meu-dia/metas/${id}`);
+    carregar();
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Metas do trimestre</h3>
+        <button className="btn-primary" onClick={() => setMostrarForm(!mostrarForm)}>
+          + Nova meta
+        </button>
+      </div>
+      {mostrarForm && (
+        <div className="space-y-2 p-3 rounded-xl bg-renascer-light/40">
+          <input className="input" placeholder="Título (ex: Faturamento do trimestre)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+          <select className="input" value={unidade} onChange={(e) => setUnidade(e.target.value)}>
+            <option value="reais">Reais (R$)</option>
+            <option value="numero">Número</option>
+            <option value="percentual">Percentual (%)</option>
+          </select>
+          <input className="input" type="number" step="0.01" placeholder="Meta" value={valorMeta} onChange={(e) => setValorMeta(e.target.value)} />
+          <input className="input" placeholder="Observação (opcional)" value={observacao} onChange={(e) => setObservacao(e.target.value)} />
+          <button className="btn-primary" onClick={criar}>
+            Salvar meta
+          </button>
+        </div>
+      )}
+      <div className="space-y-3">
+        {metas.map((m) => (
+          <BarraMetaTrimestre key={m.id} meta={m} onAtualizar={() => atualizar(m)} onExcluir={() => excluir(m.id)} />
+        ))}
+        {metas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma meta cadastrada neste trimestre.</p>}
+      </div>
     </div>
   );
 }

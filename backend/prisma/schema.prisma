@@ -18,6 +18,10 @@ enum Role {
   PROFISSIONAL
   CLIENTE
   USUARIO_IA // Renascer IA: cadastro público, aberto a qualquer pessoa, não só cliente da clínica
+  // Fase 31 — "Setor Financeiro": login próprio pra quem cuida do financeiro da clínica no dia a
+  // dia (CAC/ROI de anúncio, imposto, retiradas/pró-labore, repasses das profissionais) sem ser
+  // a própria Dona/Dono. Não substitui o Dono — ele continua vendo/podendo fazer tudo isso também.
+  FINANCEIRO
 }
 
 enum DiaSemana {
@@ -99,6 +103,40 @@ enum TipoEventoHistorico {
   TROCOU_PROFISSIONAL
 }
 
+// ---------- "MEU DIA" (Fase 30) ----------
+
+// De onde um cliente novo veio — preenchido opcionalmente no cadastro (atendente/profissional) —
+// usado pra calcular indicadores reais de marketing (leads por canal, CAC) em vez de deixá-los
+// sem nenhum dado.
+enum CanalOrigem {
+  INSTAGRAM
+  FACEBOOK
+  GOOGLE
+  INDICACAO
+  OUTRO
+}
+
+enum TipoMovimentoCaixa {
+  ENTRADA
+  SAIDA
+}
+
+enum TipoRegistroMarketing {
+  POST
+  STORIES
+  RESPOSTA
+  AVALIACAO
+  OUTRO
+}
+
+enum TipoRegistroPessoas {
+  ALINHAMENTO
+  FEEDBACK
+  DIFICULDADE
+  TREINAMENTO
+  OUTRO
+}
+
 enum TemaTarefa {
   ANSIEDADE
   DEPRESSAO
@@ -145,6 +183,7 @@ model User {
   cliente       Cliente?
   atendente     Atendente?
   dono          Dono?
+  financeiro    Financeiro? // Fase 31 — Setor Financeiro
 
   notificacoes  Notificacao[]
   mensagensEnviadas Mensagem[] @relation("MensagensEnviadas")
@@ -171,6 +210,52 @@ model Atendente {
   clientesCadastrados Cliente[] @relation("CadastradoPorAtendente")
 
   @@map("atendentes")
+}
+
+// ---------- SETOR FINANCEIRO (Fase 31) ----------
+// Login sem agenda/clientes próprios — só o painel financeiro (ver backend/src/routes/
+// financeiro.js). Mesma estrutura mínima do Atendente/Dono (não guarda nada extra aqui; o
+// trabalho dela fica nos modelos abaixo e reaproveitando MovimentoCaixa/TransacaoFinanceira
+// que já existiam).
+model Financeiro {
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("financeiros")
+}
+
+// Lançamento diário do Setor Financeiro: quanto foi investido em anúncio, quantos leads chegaram
+// no WhatsApp e quantos converteram — alimenta CAC/ROI do painel financeiro. Um registro por dia
+// (upsert quando lança de novo o mesmo dia). Gera também um MovimentoCaixa (SAIDA, categoria
+// "Anúncio (Setor Financeiro)") pra esse gasto entrar no caixa/lucro do dia normalmente — o id
+// fica guardado aqui pra atualizar o mesmo lançamento em vez de duplicar se a pessoa lançar de
+// novo o mesmo dia.
+model InvestimentoAnuncioDiario {
+  id             String    @id @default(cuid())
+  data           DateTime  @unique
+  investido      Float
+  leads          Int
+  conversoes     Int       @default(0)
+  movimentoCaixaId String? @unique
+  criadoPorId    String
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  @@map("investimentos_anuncio_diario")
+}
+
+// "Marcar como pago" do cartão "Pagamento de anúncios de hoje" — um registro por dia+canal.
+model PagamentoAnuncioStatus {
+  id        String    @id @default(cuid())
+  data      DateTime
+  canal     String    // "META" | "GOOGLE"
+  pago      Boolean   @default(false)
+  pagoEm    DateTime?
+  pagoPorId String?
+
+  @@unique([data, canal])
+  @@map("pagamentos_anuncio_status")
 }
 
 // ---------- PROFISSIONAL ----------
@@ -253,6 +338,11 @@ model Cliente {
   situacao         SituacaoCliente @default(ATIVO)
   whatsappCadastro String?
 
+  // De onde esse cliente veio (Fase 30) — opcional, preenchido no cadastro pela atendente. Usado
+  // só pra indicador de marketing (leads/novos clientes por canal, CAC) — nunca obrigatório, pra
+  // não travar nenhum cadastro antigo nem novo que não souber a origem.
+  canalOrigem    CanalOrigem?
+
   contrato       Contrato?
   pacotes        Pacote[]
   agendamentos   Agendamento[]
@@ -270,6 +360,7 @@ model Cliente {
 
   @@index([profissionalAtualId])
   @@index([situacao])
+  @@index([canalOrigem])
   @@map("clientes")
 }
 
@@ -803,4 +894,139 @@ model RespostaFormulario {
 
   @@index([formularioId])
   @@map("respostas_formulario")
+}
+
+// ---------- "MEU DIA" (Fase 30) — checklist diário, registros de marketing/equipe/decisões,
+// fechamento de caixa e metas do trimestre, pros 3 logins de gestão (Dono, Atendente,
+// Profissional). Cada papel vê sua própria versão (ver histórico do sistema pra entender o
+// recorte de cada um): o Dono vê o painel completo; Atendente e Profissional veem só o que já é
+// delas em outras partes do sistema, nunca o financeiro consolidado da clínica.
+//
+// Os "criadoPorId" abaixo são de propósito um campo solto (sem relação formal do Prisma com
+// User), do mesmo jeito que `Agendamento.reagendadoDe` já funciona nesse schema — guarda só o id,
+// sem precisar tocar nos modelos User/Profissional existentes pra abrir essa categoria nova.
+
+// Conclusão de um item de checklist — serve tanto pro checklist DIÁRIO ("Hoje", data preenchida
+// com a meia-noite do dia) quanto pro checklist PERMANENTE ("Implantação", data nula, marca uma
+// vez só e nunca mais reaparece). O "itemChave" é fixo, definido no código de cada painel.
+model ChecklistConclusao {
+  id          String    @id @default(cuid())
+  userId      String
+  itemChave   String
+  data        DateTime? // null = item permanente (implantação); preenchido = dia específico (meia-noite)
+  concluidoEm DateTime  @default(now())
+
+  @@unique([userId, itemChave, data])
+  @@index([userId, data])
+  @@map("checklist_conclusoes")
+}
+
+// Registro de ação de marketing do dia (post, stories, resposta a comentário/DM, avaliação
+// recebida) — o Dono e a Atendente podem registrar. Alimenta o indicador "ações de marketing no
+// mês" dentro de Meu dia.
+model RegistroMarketing {
+  id          String                @id @default(cuid())
+  criadoPorId String
+  tipo        TipoRegistroMarketing
+  descricao   String                @db.Text
+  link        String?
+  data        DateTime              @default(now())
+
+  @@index([criadoPorId])
+  @@index([data])
+  @@map("registros_marketing")
+}
+
+// Anotação do Dono sobre a gestão de uma profissional (alinhamento, feedback, dificuldade,
+// treinamento) — só o Dono registra e vê.
+model RegistroPessoas {
+  id             String              @id @default(cuid())
+  criadoPorId    String
+  profissionalId String
+  tipo           TipoRegistroPessoas
+  anotacao       String              @db.Text
+  data           DateTime            @default(now())
+
+  @@index([criadoPorId])
+  @@index([profissionalId])
+  @@map("registros_pessoas")
+}
+
+// Diário de decisões do Dono — registro livre de decisões/ideias importantes do dia a dia da
+// gestão, só dele.
+model DecisaoRegistro {
+  id          String   @id @default(cuid())
+  criadoPorId String
+  texto       String   @db.Text
+  data        DateTime @default(now())
+
+  @@index([criadoPorId])
+  @@map("decisoes_registro")
+}
+
+// Movimento de caixa que NÃO é pagamento de cliente (isso já é a TransacaoFinanceira que existe
+// desde o início) — gasto com anúncio, aluguel, material, ou qualquer outra entrada/saída solta
+// que o Dono lança no Fechamento de caixa. "canalOrigem" só é preenchido numa saída de categoria
+// "Anúncio", pra permitir calcular custo por canal (CAC/ROI) depois.
+model MovimentoCaixa {
+  id          String             @id @default(cuid())
+  tipo        TipoMovimentoCaixa
+  categoria   String
+  valor       Float
+  descricao   String?
+  canalOrigem CanalOrigem?
+  criadoPorId String
+  data        DateTime           @default(now())
+
+  @@index([data])
+  @@index([tipo])
+  @@map("movimentos_caixa")
+}
+
+// Conferência do Fechamento de caixa de um dia: quanto o sistema calculou (transações de
+// clientes recebidas pela clínica + movimentos de caixa) vs. o saldo informado do banco/Pix. Uma
+// linha por dia (upsert quando o Dono conferir de novo o mesmo dia).
+model ConferenciaCaixa {
+  id                  String   @id @default(cuid())
+  data                DateTime @unique
+  saldoSistema        Float
+  saldoBancoInformado Float
+  diferenca           Float
+  observacao          String?
+  criadoPorId         String
+  criadoEm            DateTime @default(now())
+
+  @@map("conferencias_caixa")
+}
+
+// Meta do TRIMESTRE da clínica (diferente de MetaPessoal, que é a finança pessoal do Elismael) —
+// ex: faturamento do trimestre, novos clientes, redução de churn. valorAtual é atualizado
+// manualmente pelo Dono (não calculado sozinho, pra ele poder ajustar o que achar certo).
+model MetaTrimestre {
+  id           String   @id @default(cuid())
+  titulo       String
+  trimestre    String // ex: "2026-T4"
+  unidade      String   @default("reais") // "reais" | "numero" | "percentual"
+  valorMeta    Float
+  valorAtual   Float    @default(0)
+  observacao   String?
+  criadoPorId  String
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([trimestre])
+  @@map("metas_trimestre")
+}
+
+// Configuração financeira da CLÍNICA (separada da ConfiguracaoIA e das finanças pessoais do
+// Elismael) — custo fixo mensal e reserva de caixa, editáveis pelo Dono — usada pros indicadores
+// de ponto de equilíbrio, lucro do mês e meses de reserva. Uma linha só, id fixo "config", mesmo
+// padrão da ConfiguracaoIA.
+model ConfiguracaoFinanceiraClinica {
+  id                   String   @id @default("config")
+  custoFixoMensalReais Float    @default(0)
+  reservaCaixaReais    Float    @default(0)
+  atualizadoEm         DateTime @updatedAt
+
+  @@map("configuracao_financeira_clinica")
 }

@@ -6,6 +6,11 @@
    usada em todas as telas da Renascer IA — pra unificar a identidade visual dos dois produtos. */
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
 
+/* Fase 31 — novo sistema visual (Setor Financeiro e, a partir da Fase 32, o redesign das
+   telas antigas): Sora pra título, Public Sans pro corpo de texto. Carregada à parte da Manrope
+   acima pra não afetar nenhuma tela ainda não redesenhada. */
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap");
+
 html,
 body {
   overflow-x: hidden;

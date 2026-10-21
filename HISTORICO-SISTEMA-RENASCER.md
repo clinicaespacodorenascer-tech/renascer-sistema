@@ -1925,3 +1925,271 @@ aquela atualização e preferiu subir as duas juntas.
   que a resposta chega certinho na lista.
 - Me avisar quando tiver o conteúdo da segunda pesquisa (clientes) pra eu criar do mesmo jeito.
 
+
+---
+
+# Fase 31 — Setor Financeiro: login novo, painel de CAC/ROI/imposto/retiradas (entregue em 21/10/2026)
+
+Depois da Fase 30 ("Meu dia"), o Elismael mandou o link do canvas de design completo (26 telas,
+"Novo Layout — Espaço do Renascer") e deixou claro que queria TUDO que foi desenhado ali, não só a
+parte de "Meu dia" — incluindo um login novo que ainda não existia em nenhum lugar do sistema até
+essa conversa: o **Setor Financeiro** (uma pessoa, ex: "Patrícia", cuidando do financeiro da
+clínica no dia a dia). Essa entrega é a primeira parte desse pedido maior — o login e o painel
+financeiro completos. As outras partes (Mapas mentais, Secretaria/Supervisão da atendente, e o
+redesign visual das ~20 telas que já existiam) vêm em fases separadas, avisando a cada uma pronta.
+
+## O que entrou nessa fase
+
+- **Login novo**: papel `FINANCEIRO` no sistema, criável pelo Dono em Usuários (`Setor
+  Financeiro` no formulário de criar login), com e-mail/senha provisória iguais a qualquer outro
+  login. Pode ser excluído como qualquer outro.
+- **Painel financeiro** (tela nova, `/financeiro`, já no novo visual — ver abaixo):
+  - 4 indicadores do dia: CAC, ROI, Receita de hoje e Lucro de hoje (os dois últimos reaproveitam
+    a MESMA conta de saldo de caixa que o Dono já usa em "Meu dia > Caixa" — não é um número
+    novo/paralelo, é o mesmo caixa visto por outro login).
+  - **Investimento em anúncios — análise diária**: lança quanto foi investido + leads do WhatsApp
+    + conversões de hoje; isso alimenta o CAC/ROI de cima e também lança automaticamente a saída
+    correspondente no caixa da clínica (lançar de novo o mesmo dia atualiza em vez de duplicar).
+  - **Calculadora de imposto**: valor recebido + % → calcula e lança como saída no caixa.
+  - **Retiradas e pró-labore**: sem valor fixo — cada retirada (Maria, Patrícia, pró-labore do
+    Elismael etc.) é lançada na hora, com filtro por hoje/semana/mês/histórico completo.
+  - **Pagamento de anúncios de hoje**: liga/desliga "pago" pra Meta Ads e Google Ads, por dia.
+  - 3 abas de apoio, reaproveitando a MESMA lógica que Dono/Atendente já usam (sem duplicar
+    conta): **Clientes pra renovar**, **Repasses** (marcar repasse de profissional como
+    confirmado) e **Agenda geral**.
+
+## Decisão de arquitetura: por que quase não criei tabela nova
+
+O mockup pedia retirada, imposto e investimento em anúncio como "lançamentos". Em vez de criar uma
+tabela nova pra cada um (o que duplicaria o `MovimentoCaixa` que a Fase 30 já criou pro caixa do
+Dono), **retirada e imposto viram um `MovimentoCaixa` de saída normal** (mesma tabela,
+categorias `"Retirada/Pró-labore"` e `"Imposto"`) — assim o caixa/lucro do dia do Dono já sai
+batendo sozinho com o que o Setor Financeiro lança, sem precisar de nenhuma conciliação manual
+entre duas fontes de dado. Só o **investimento em anúncio** precisou de tabela própria
+(`InvestimentoAnuncioDiario`), porque é o único lançamento que guarda *leads* e *conversões* —
+dados que não existiam (e não fazem sentido) dentro de `MovimentoCaixa`; mesmo assim, ele também
+gera/atualiza um `MovimentoCaixa` ligado, pelo mesmo motivo acima.
+
+O **ROI** usa o ticket médio real dos últimos 30 dias (média de `valorTotal` das transações), em
+vez de um valor fixo — fica mais preciso conforme a clínica for lançando pagamentos de verdade, e
+não exige cadastrar "preço médio do pacote" em nenhum lugar.
+
+## Visual: começo do novo design (Sora + Public Sans, navy/azul/dourado)
+
+O painel financeiro já nasce no visual NOVO do canvas (sidebar navy `#0D1B30`, azul `#0B5FA8`,
+detalhe dourado `#9C6B2E`, títulos em Sora e texto em Public Sans) — não no visual atual
+(Manrope/azul claro) usado pelas outras ~20 telas. Pra isso, criei um componente de casca
+reaproveitável, `frontend/src/components/LayoutNovo.js`, com a MESMA API de props do `Layout.js`
+atual (user/abas/abaAtiva/onTrocarAba/children) — ele vai servir de base pro redesign visual das
+telas antigas na(s) próxima(s) fase(s), em vez de reescrever a casca de novo pra cada uma. Os
+tokens de cor/fonte novos entraram em `tailwind.config.js` com nomes próprios (prefixo `nv`:
+`nv-navy`, `nv-blue`, `nv-gold` etc., fontes `font-sora`/`font-publicSans`) — **sem tocar** nos
+tokens `renascer`/`gold` que as telas antigas ainda usam, então nada do visual atual muda até eu
+redesenhar tela por tela.
+
+As 3 abas de apoio (Clientes pra renovar, Repasses, Agenda geral) foram construídas funcionais
+nesse mesmo visual novo, mas sem o acabamento 1:1 dos artboards específicos deles no canvas (eu só
+tinha lido o artboard do próprio Painel Financeiro até agora) — a função tá completa, o polimento
+visual exato dessas 3 entra junto do lote de redesign.
+
+## Arquivos novos ou alterados
+
+- `backend/prisma/schema.prisma`: 1 valor novo no enum `Role` (`FINANCEIRO`), 1 campo novo em
+  `User` (`financeiro`), 3 modelos novos (`Financeiro`, `InvestimentoAnuncioDiario`,
+  `PagamentoAnuncioStatus`) — tudo "acrescentar", nada removido/alterado do que já existia.
+- `backend/src/routes/financeiro.js` **(novo)**: todas as rotas do painel (`/financeiro/*`).
+- `backend/src/server.js`: registra a rota nova (`app.use("/api/financeiro", ...)`).
+- `backend/src/middleware/auth.js` e `backend/src/routes/auth.js`: o login/sessão passam a
+  carregar também o perfil `financeiro` (igual já faziam com profissional/cliente/atendente/dono).
+- `backend/src/routes/dono.js`: o formulário de criar login (`POST /dono/usuarios`) aceita o
+  papel `FINANCEIRO`.
+- `backend/src/utils/excluirUsuario.js`: função nova `excluirFinanceiro` + ligada na exclusão
+  genérica de usuário.
+- `frontend/src/pages/dono/index.js`: opção "Setor Financeiro" no select de criar login.
+- `frontend/src/lib/api.js`: `rotaPorPapel` manda `FINANCEIRO` pra `/financeiro` depois do login.
+- `frontend/src/components/LayoutNovo.js` **(novo)**: casca do novo visual (ver seção acima).
+- `frontend/src/pages/financeiro/index.js` **(novo)**: a tela toda do Setor Financeiro.
+- `frontend/tailwind.config.js`: tokens de cor/fonte novos (`nv-*`, `font-sora`,
+  `font-publicSans`), sem alterar nenhum token existente.
+- `frontend/src/styles/globals.css`: import das fontes Sora + Public Sans (Google Fonts), sem
+  remover o import da Manrope que as telas antigas usam.
+
+## Teste feito antes de entregar
+
+- `node -c` (checagem de sintaxe) em todos os arquivos de backend novos/alterados — todos OK.
+- Checagem de chaves/parênteses balanceados no `schema.prisma` inteiro e nos 2 arquivos de
+  frontend novos (`LayoutNovo.js`, `financeiro/index.js`) depois da edição.
+- **Não foi possível rodar `npx prisma validate`** nem `next build` de verdade neste ambiente
+  (sem acesso de rede pro binário do Prisma; o `node_modules` do frontend aqui não tem o Next
+  instalado) — a mesma limitação já registrada na Fase 30. Isso é checagem estrutural, não
+  substitui o `npx prisma generate`/build que o Railway e a Vercel já rodam sozinhos no deploy.
+- Revisão manual linha a linha de cada conta nova (CAC, ROI, custo por lead, cor vermelho/verde do
+  CAC comparando com o dia anterior, total do período de retiradas) comparando com a lógica
+  exata do mockup (`Financeiro-Setor.dc.html`), incluindo os casos de borda (sem lançamento
+  nenhum ainda, dia sem conversão, histórico vazio).
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: `npx prisma migrate dev` (ou `deploy`, conforme o ambiente) pra criar as
+  tabelas novas no Postgres do Railway — sem isso o painel financeiro não funciona.
+- Criar o primeiro login de Setor Financeiro pelo painel do Dono (Usuários → Setor Financeiro) e
+  testar o login.
+- Lançar um dia de investimento em anúncio de teste e confirmar que aparece certo no histórico e
+  que o CAC/ROI do topo atualiza.
+- Confirmar que "Receita de hoje"/"Lucro de hoje" batem com o que o Dono já vê em "Meu dia > Caixa"
+  no mesmo dia (é a mesma conta, então tem que bater exatamente).
+- Avisar se quer que o Dono também acesse essa MESMA tela (hoje o acesso de tela é só pro login
+  Setor Financeiro; o backend já libera o Dono também, só falta decidir se vale a pena abrir a
+  tela pra ele ou se o painel de "Meu dia" dele já basta).
+- Próximas partes do pedido maior (vou avisando conforme cada uma ficar pronta): Mapas mentais
+  (Dono), Secretaria/Supervisão da Atendente (Dono), e o redesign visual lote a lote das telas que
+  já existem.
+
+# Fase 30 — "Meu dia" entra no sistema de verdade: checklist diário, indicadores reais, marketing, gestão de pessoas, fechamento de caixa, diário de decisões e metas do trimestre, pros 3 logins de gestão (entregue em 21/10/2026)
+
+O Elismael pediu pra trazer pro sistema de verdade o módulo "Meu dia" que já existia como mockup
+(visual) — e, quando perguntado sobre o tamanho da entrega, escolheu a versão mais completa
+possível: pros 3 logins de gestão de uma vez (Dono, Atendente e Profissional, não só o Dono) e com
+todos os indicadores puxando dado real já nessa entrega, mesmo os que ainda não tinham nenhuma
+fonte de dado no sistema (precisando então criar essa fonte de dado nova, não só a conta em cima
+do que já existia).
+
+## Decisão de recorte entre os 3 logins (importante)
+
+O mockup original só existia pro Dono. Como não havia nenhuma referência visual pro "Meu dia" da
+Atendente ou da Profissional, a entrega seguiu um critério claro, coerente com a separação de
+permissões que o sistema já tinha desde o início (financeiro consolidado da clínica sempre foi só
+do Dono):
+
+- **Dono**: painel completo, igual ao mockup — checklist diário, indicadores de toda a clínica
+  (financeiro, crescimento, marketing, processos, pessoas, estratégia), marketing, gestão de
+  pessoas, fechamento de caixa, diário de decisões e metas do trimestre.
+- **Atendente**: um "Meu dia" enxuto, só com o que já era dela em outras partes do sistema —
+  checklist diário operacional, indicadores de agenda do dia e fila de reativação, e o mesmo
+  registro de marketing do Dono (ela também pode lançar o que postou/respondeu). **Nenhum número
+  financeiro consolidado da clínica aparece pra ela** — contratos quebrariam uma separação que o
+  sistema sempre manteve.
+- **Profissional**: um "Meu dia" enxuto, só com os dados dela mesma, que ela já vê em outras
+  abas (Agenda, Financeiro) — checklist diário, sessões de hoje, repasse pendente, taxa de faltas
+  e tempo de resposta dela, clientes perto de renovar.
+
+Se esse recorte não for o que o Elismael tinha em mente, é só avisar — dá pra ajustar o que cada
+papel vê sem precisar refazer a base.
+
+## Indicadores: o que já tinha dado real e o que precisou de fonte de dado nova
+
+Boa parte dos indicadores do mockup já tinha tudo que precisava no sistema (só precisava da
+conta): saldo de caixa, faturamento, repasses, clientes novos/churn, sessões realizadas por
+profissional. Esses entraram direto, sem mudança de schema.
+
+Três indicadores PRECISAVAM de dado novo e a entrega já criou a fonte, além da conta:
+
+- **Taxa de faltas** e **tempo médio de resposta**: na real já existia tudo (status "FALTOU" do
+  Agendamento, e as mensagens entre profissional e cliente) — só faltava a conta em cima disso.
+  Sem mudança de schema.
+- **Leads/clientes novos por canal e CAC (custo por cliente)**: precisou de um campo novo opcional
+  no cadastro do cliente (de onde ele veio: Instagram, Facebook, Google, Indicação, Outro) e um
+  registro novo de gasto com anúncio (dentro do Fechamento de caixa, com o canal). Como o sistema
+  não tem hoje nenhuma captura de "lead" que não virou cliente, o indicador conta clientes
+  CONVERTIDOS por canal — não visitas/contatos que não fecharam. Fica zerado até a Atendente
+  começar a informar a origem nos cadastros novos e o Dono lançar gasto de anúncio.
+- **Ponto de equilíbrio, lucro do mês e meses de reserva**: dependiam de o Elismael definir o que é
+  "custo fixo mensal" da clínica — isso não existia em nenhum lugar do sistema (só existe o caixa
+  de entradas/saídas). Criada uma configuração simples (custo fixo mensal + reserva de caixa,
+  editável na aba Fechamento de caixa) — enquanto não for preenchida, esses indicadores aparecem
+  zerados/sem conta, nunca inventados.
+
+**Ficou de fora desta entrega** (avisado, não construído): alcance e engajamento reais do
+Instagram/Meta — isso exigiria integração com a API do Meta Business (login comercial, permissões,
+etc.), um projeto à parte, bem maior que "adicionar um campo". Por enquanto esse número continua
+sem indicador automático — o registro de marketing (quantos posts/stories/respostas no mês) é o
+que existe como proxy.
+
+## O que foi criado — resumo por categoria
+
+- **Checklist diário e de implantação**: um item só de banco de dados (`ChecklistConclusao`) serve
+  os 3 papéis — cada um com sua própria lista de itens (definida no código de cada painel,
+  fácil de ajustar depois). "Hoje" marca por dia; "Implantação" marca uma vez só e não some.
+- **Marketing**: registro de post/stories/resposta/avaliação, com link opcional — Dono e Atendente
+  registram no mesmo lugar (log compartilhado da equipe).
+- **Gestão de pessoas**: anotações do Dono sobre cada profissional (alinhamento, feedback,
+  dificuldade, treinamento) — só o Dono vê e registra.
+- **Diário de decisões**: registro livre de decisões/ideias do dia a dia, só do Dono.
+- **Fechamento de caixa**: lançamentos soltos de entrada/saída que não são pagamento de cliente
+  (anúncio, aluguel, material, repasse pago, outro), com o saldo do sistema calculado
+  automaticamente pro dia (entradas de cliente recebidas pela clínica + esses lançamentos) e uma
+  conferência contra o saldo informado do banco/Pix, salva por dia.
+- **Metas do trimestre**: diferente da "Meta pessoal" que já existia (essa é a finança pessoal do
+  Elismael) — aqui são metas da CLÍNICA (faturamento, clientes novos, o que o Dono quiser),
+  separadas por trimestre, com valor atual atualizado manualmente.
+- **Indicadores**: uma rota só por papel, já calculando tudo junto (nunca mais de uma chamada por
+  tela).
+
+## O que muda pra quem já usa o sistema hoje
+
+- Nenhum dado existente foi alterado ou apagado — todas as mudanças de banco são só de
+  "acrescentar" (campos e tabelas novas), aplicam sozinhas no próximo deploy.
+- O cadastro de cliente (recepção) ganhou um campo novo opcional "De onde veio?" — quem não
+  preencher, nada muda pra esse cliente.
+- Marcar falta numa sessão já era possível (status "Faltou" já existia na Agenda) — agora esse
+  dado também alimenta o indicador de taxa de faltas.
+
+## Arquivos novos ou alterados
+
+- `backend/prisma/schema.prisma`: 4 enums novos (`CanalOrigem`, `TipoMovimentoCaixa`,
+  `TipoRegistroMarketing`, `TipoRegistroPessoas`), 1 campo novo opcional em `Cliente`
+  (`canalOrigem`) e 8 modelos novos (`ChecklistConclusao`, `RegistroMarketing`, `RegistroPessoas`,
+  `DecisaoRegistro`, `MovimentoCaixa`, `ConferenciaCaixa`, `MetaTrimestre`,
+  `ConfiguracaoFinanceiraClinica`) — tudo "acrescentar", nada removido/alterado do que já existia.
+- `backend/src/utils/meuDia.js` **(novo)**: todas as contas compartilhadas pelos 3 painéis (saldo
+  de caixa do dia, taxa de faltas, tempo de resposta, CAC por canal, configuração financeira da
+  clínica) — um lugar só, pra não repetir a mesma conta 3 vezes.
+- `backend/src/routes/comum.js`: rotas de checklist (`/comum/meu-dia/checklist`), compartilhadas
+  pelos 3 papéis de gestão (Cliente e usuário da Renascer IA não têm acesso).
+- `backend/src/routes/dono.js`: todas as rotas do painel completo (`/dono/meu-dia/*`) —
+  indicadores, configuração financeira, marketing, pessoas, caixa, decisões, metas.
+- `backend/src/routes/atendente.js`: rotas do recorte dela (`/atendente/meu-dia/*`) — indicadores
+  operacionais e marketing; e o cadastro de cliente ganhou o campo opcional `canalOrigem`.
+- `backend/src/routes/profissional.js`: rota do recorte dela (`/profissional/meu-dia/indicadores`).
+- `frontend/src/components/ChecklistMeuDia.js` **(novo)**: componente do checklist, reaproveitado
+  pelos 3 painéis.
+- `frontend/src/components/Layout.js`: ícone novo (sol) pra aba "Meu dia" no menu lateral.
+- `frontend/src/pages/dono/index.js`: aba nova "Meu dia", com as 8 sub-abas (Hoje, Indicadores,
+  Marketing, Gestão de pessoas, Fechamento de caixa, Diário de decisões, Metas do trimestre,
+  Implantação).
+- `frontend/src/pages/atendente/index.js`: aba nova "Meu dia" (Hoje, Indicadores, Marketing,
+  Implantação) e o campo "De onde veio?" no cadastro de cliente.
+- `frontend/src/pages/profissional/index.js`: aba nova "Meu dia" (Hoje, Indicadores, Implantação).
+
+## Teste feito antes de entregar
+
+- `node -c` (checagem de sintaxe) em todos os arquivos de backend novos/alterados.
+- Checagem de chaves/parênteses balanceados e de nomes duplicados (modelo, enum e tabela) no
+  `schema.prisma` inteiro depois da edição — sem conseguir rodar o `prisma validate` de verdade
+  aqui (sem acesso de rede pro binário do Prisma neste ambiente), então essa é uma checagem
+  estrutural, não substitui o `npx prisma generate` que o Railway já roda sozinho no deploy.
+- Validação de JSX (Babel) em todos os arquivos de frontend novos/alterados.
+- Checagem de função/componente duplicado (mesmo nome declarado duas vezes) em cada página de
+  frontend alterada.
+- Simulação isolada (sem banco de dados) da LÓGICA das contas mais delicadas de
+  `backend/src/utils/meuDia.js` — pareamento de mensagens pro tempo de resposta, combinação de
+  canal pro CAC, aritmética do saldo de caixa e taxa de faltas — com dados de exemplo, incluindo os
+  casos de borda (sem dado nenhum, gasto sem cliente novo, mensagem sem resposta) — todos os casos
+  bateram com o esperado antes de aplicar a mesma lógica nas rotas de verdade.
+- **Não foi possível testar contra um banco Postgres real** (não tenho acesso ao banco de
+  produção nem a um Postgres neste ambiente) — isso é obrigatório fazer depois do deploy, antes de
+  divulgar a funcionalidade pra equipe.
+
+## Pendência / aguardando teste do usuário
+
+- Depois do deploy: abrir a aba "Meu dia" nos 3 logins, confirmar que cada uma carrega sem erro.
+- Testar o checklist (marcar/desmarcar) em "Hoje" e "Implantação" nos 3 logins.
+- No login do Dono: configurar o custo fixo mensal e a reserva de caixa (aba Fechamento de caixa)
+  pra ativar os indicadores de ponto de equilíbrio/lucro/meses de reserva; cadastrar a primeira
+  meta do trimestre; lançar um gasto de anúncio de teste com canal, e cadastrar um cliente teste
+  com "De onde veio?" preenchido (como Atendente), pra ver o CAC calcular.
+- Confirmar se o recorte entre os 3 logins (o que cada um vê) ficou do jeito que o Elismael
+  esperava — esse ponto foi uma decisão minha, documentada acima, pra manter a mesma separação de
+  financeiro que o sistema já tinha, mas pode ser ajustado se não for o que ele queria.
+- Avisar se "alcance e engajamento do Instagram" (não construído — precisaria de integração com a
+  API do Meta) é prioridade pra uma próxima fase.
