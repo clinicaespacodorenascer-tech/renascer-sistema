@@ -2354,3 +2354,67 @@ quantos chamados de suporte respondeu, um gráfico de cadastros dos últimos 7 d
 - Importante: o "tempo online hoje" e o "online agora" só começam a acumular depois do deploy
   dessa fase — não existe isso retroativo pra hoje antes do deploy.
 - Próxima parte do pedido maior: redesign visual lote a lote das telas que já existem (Fase 34+).
+
+---
+
+# Fase 34 — Redesign visual (lote 1): a casca nova (navy + azul + dourado, Sora/Public Sans) chega pro Dono, Atendente, Profissional e Cliente (entregue em 21/10/2026)
+
+Primeira parte do "redesign visual completo das telas que já existem", combinado desde a Fase 31
+(quando o Setor Financeiro nasceu direto no visual novo do canvas "Novo Layout — Espaço do
+Renascer"). Em vez de redesenhar cada aba de cada papel de uma vez (entrega gigante e arriscada),
+esta fase troca só a CASCA compartilhada — menu lateral no computador, cabeçalho no celular, menu
+em gaveta — que every tela de Dono/Atendente/Profissional/Cliente usa. É a mesma estratégia já
+usada com sucesso na Fase 23 (quando o visual mudou de cara inteiro só editando o `Layout.js`
+antigo): trocar a peça compartilhada muda a aparência de todo o sistema de uma vez, sem precisar
+editar aba por aba.
+
+## O que mudou
+
+- As 4 áreas de login que ainda usavam a casca antiga (`Layout.js` — menu claro, azul-destaque,
+  fonte Manrope) passam a usar a casca nova (`LayoutNovo.js` — menu lateral navy escuro, detalhe
+  azul `#0B5FA8`/dourado `#9C6B2E` na borda de cima, fonte Sora nos títulos e Public Sans no corpo)
+  que já estava rodando desde a Fase 31 só no Setor Financeiro.
+- Visualmente, todo o sistema passa a abrir com o mesmo menu lateral escuro do canvas: Dono,
+  Atendente, Profissional e Cliente (inclusive as telas de videochamada de Profissional e Cliente).
+- O CONTEÚDO de cada aba (tabelas, formulários, cards, gráficos) continua exatamente igual — essa
+  troca foi só da casca em volta. O acabamento visual 1:1 de cada aba específica (cores dos cards,
+  layout interno) é o próximo lote, tela por tela.
+
+## Cuidado tomado: não perder nenhuma função ao trocar a casca
+
+A casca nova (`LayoutNovo.js`), construída na Fase 31 só pra servir ao Setor Financeiro (um papel
+novo, sem casca antiga pra comparar), não tinha ainda duas funções que a casca antiga já oferecia
+pra Dono/Atendente/Profissional/Cliente há várias fases: a foto de perfil clicável no cabeçalho
+(pra trocar a própria foto a qualquer momento) e o sininho de notificações (avisos salvos + botão
+de ativar notificação push no aparelho). Antes de trocar qualquer página pra essa casca, as duas
+funções foram adicionadas na `LayoutNovo.js` (mesma lógica de sempre, só com as cores adaptadas pro
+fundo escuro) — pra ninguém perder nada ao ganhar o visual novo.
+
+## Arquivos alterados
+
+- `frontend/src/components/LayoutNovo.js`: ganhou a foto de perfil clicável e o sininho de
+  notificações (antes só existiam na casca antiga `Layout.js`).
+- `frontend/src/pages/dono/index.js`, `atendente/index.js`, `cliente/index.js`,
+  `profissional/index.js`, `profissional/videochamada/[agendamentoId].js`,
+  `cliente/videochamada/[agendamentoId].js`: trocada a casca (`Layout` → `LayoutNovo`) — nenhuma
+  outra linha de lógica ou conteúdo foi alterada nesses 6 arquivos.
+- A casca antiga (`Layout.js`) não foi apagada — fica sem uso por enquanto, sem risco nenhum de
+  deixar no repositório.
+
+## Teste feito antes de entregar
+
+Checagem de sintaxe com o parser do Babel (JSX) em todos os 7 arquivos alterados — todos OK.
+Revisão visual do código: como cada uma dessas 4 telas só mostra UM bloco de conteúdo por vez
+(a aba ativa), a troca de casca não arrisca nenhuma mudança de espaçamento/organização do conteúdo
+em si. Mesma limitação de sempre nesse ambiente pra `next build` de verdade.
+
+## Pendência / aguardando teste do usuário
+
+- Nenhuma mudança de banco de dados nem de backend nesta fase — é só visual, só frontend (Vercel).
+- Depois do deploy: abrir o sistema como Dono, Atendente, Profissional e Cliente (computador e
+  celular) e confirmar: 1) o menu lateral/cabeçalho aparece no visual novo (navy, azul, dourado);
+  2) a foto de perfil ainda pode ser trocada clicando no avatar; 3) o sininho de notificações ainda
+  mostra os avisos e ainda oferece ativar notificação push; 4) nenhuma aba perdeu conteúdo ou
+  função.
+- Próxima parte: redesign do CONTEÚDO de cada aba, lote por papel de login, pra chegar no
+  acabamento 1:1 de cada artboard do canvas.

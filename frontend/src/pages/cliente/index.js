@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Layout from "../../components/Layout";
+import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { linkWhatsapp } from "../../lib/whatsapp";
@@ -37,7 +37,7 @@ export default function AreaCliente() {
   ];
 
   return (
-    <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+    <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       <AvisoEntrada onIrParaAvisos={() => setAba("avisos")} />
       {aba === "painel" && <AbaPainel />}
       {aba === "agenda" && <AbaAgenda />}
@@ -51,7 +51,7 @@ export default function AreaCliente() {
       {aba === "materiais" && <AbaMateriais />}
       {aba === "duvidas" && <AbaDuvidas />}
       {aba === "contrato" && <AbaContrato contrato={contrato.contrato} />}
-    </Layout>
+    </LayoutNovo>
   );
 }
 

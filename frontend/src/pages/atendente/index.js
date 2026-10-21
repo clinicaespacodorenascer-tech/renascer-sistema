@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Layout from "../../components/Layout";
+import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
@@ -9,6 +9,7 @@ import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
 import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
+import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -23,6 +24,7 @@ export default function AreaAtendente() {
   if (carregando) return null;
 
   const ABAS = [
+    { id: "meudia", label: "Meu dia" },
     { id: "clientes", label: "Clientes" },
     { id: "profissionais", label: "Profissionais e agendar" },
     { id: "reativar", label: "Reativar clientes" },
@@ -31,13 +33,14 @@ export default function AreaAtendente() {
   ];
 
   return (
-    <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+    <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {aba === "meudia" && <AbaMeuDiaAtendente />}
       {aba === "clientes" && <Clientes />}
       {aba === "profissionais" && <ProfissionaisEAgendar />}
       {aba === "reativar" && <ClientesParaReativar rotaBase="/atendente" />}
       {aba === "agenda" && <AgendaGeral />}
       {aba === "suporte" && <SuporteEscalado />}
-    </Layout>
+    </LayoutNovo>
   );
 }
 
@@ -411,7 +414,19 @@ const FORM_CLIENTE_VAZIO = {
   duracao: "MIN50",
   totalSessoes: 4,
   valorTotal: "",
+  canalOrigem: "",
 };
+
+// De onde o cliente veio (Fase 30) — opcional, só pra alimentar os indicadores reais de
+// marketing (leads/novos clientes por canal, CAC) no Meu dia do Dono.
+const CANAL_ORIGEM_OPCOES = [
+  { valor: "", label: "De onde veio? (opcional)" },
+  { valor: "INSTAGRAM", label: "Instagram" },
+  { valor: "FACEBOOK", label: "Facebook" },
+  { valor: "GOOGLE", label: "Google" },
+  { valor: "INDICACAO", label: "Indicação" },
+  { valor: "OUTRO", label: "Outro" },
+];
 
 function Clientes() {
   const [lista, setLista] = useState([]);
@@ -448,6 +463,7 @@ function Clientes() {
         valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
         imagemBase64,
         mimeType: arquivo?.type,
+        canalOrigem: form.canalOrigem || undefined,
       });
       setResultado(data);
       setForm(FORM_CLIENTE_VAZIO);
@@ -473,6 +489,13 @@ function Clientes() {
               <option key={p.id} value={p.id}>
                 {p.user.nome}
                 {p.user.role === "DONO" ? " (Dono)" : ""}
+              </option>
+            ))}
+          </select>
+          <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
+            {CANAL_ORIGEM_OPCOES.map((c) => (
+              <option key={c.valor} value={c.valor}>
+                {c.label}
               </option>
             ))}
           </select>
@@ -780,6 +803,195 @@ function SuporteEscalado() {
         </div>
       ))}
       {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado.</p>}
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- MEU DIA (Fase 30) — Atendente: checklist diário + indicadores operacionais
+// (agenda do dia, fila de reativação, clientes novos) + registro de marketing. Não mostra nenhum
+// número financeiro consolidado da clínica — isso continua só na visão do Dono. ----------------
+// ================================================================================================
+
+const ITENS_CHECKLIST_HOJE_ATENDENTE = [
+  { chave: "revisar_agenda_atendente", texto: "Revisar a agenda geral do dia (quem confirmou, quem ainda não)" },
+  { chave: "fila_reativacao_atendente", texto: "Checar a fila de reativação de clientes" },
+  { chave: "clientes_novos_atendente", texto: "Conferir se todo cliente novo de hoje já tem profissional vinculada" },
+  { chave: "registrar_marketing_atendente", texto: "Registrar o que foi postado/respondido hoje no marketing (se houver)" },
+];
+
+const ITENS_CHECKLIST_IMPLANTACAO_ATENDENTE = [
+  { chave: "conhecer_profissionais_atendente", texto: "Revisar a lista de profissionais e o que cada uma atende" },
+  { chave: "ativar_push_atendente", texto: "Ativar as notificações push no seu aparelho" },
+];
+
+const TIPO_MARKETING_LABEL_ATENDENTE = { POST: "Post", STORIES: "Stories", RESPOSTA: "Resposta", AVALIACAO: "Avaliação", OUTRO: "Outro" };
+
+function hojeISOAtendente() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function AbaMeuDiaAtendente() {
+  const [sub, setSub] = useState("hoje");
+  const SUBABAS = [
+    { id: "hoje", label: "Hoje" },
+    { id: "indicadores", label: "Indicadores" },
+    { id: "marketing", label: "Marketing" },
+    { id: "implantacao", label: "Implantação" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {SUBABAS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSub(s.id)}
+            className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "hoje" && (
+        <div className="card space-y-3">
+          <div>
+            <h3 className="font-semibold">Checklist de hoje</h3>
+            <p className="text-xs text-renascer-ink/50">
+              {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+            </p>
+          </div>
+          <ChecklistMeuDia itens={ITENS_CHECKLIST_HOJE_ATENDENTE} data={hojeISOAtendente()} />
+        </div>
+      )}
+      {sub === "indicadores" && <IndicadoresMeuDiaAtendente />}
+      {sub === "marketing" && <MarketingMeuDiaAtendente />}
+      {sub === "implantacao" && (
+        <div className="card space-y-3">
+          <div>
+            <h3 className="font-semibold">Checklist de implantação</h3>
+            <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só.</p>
+          </div>
+          <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_ATENDENTE} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IndicadoresMeuDiaAtendente() {
+  const [dados, setDados] = useState(null);
+  async function carregar() {
+    const { data } = await api.get("/atendente/meu-dia/indicadores");
+    setDados(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+
+  return (
+    <div className="card space-y-4">
+      <div>
+        <h3 className="font-semibold mb-2">Agenda de hoje</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="border border-renascer/10 rounded-xl p-3">
+            <p className="text-xs text-renascer-ink/50">Total</p>
+            <p className="text-lg font-bold">{dados.agendaHoje.total}</p>
+          </div>
+          {Object.entries(dados.agendaHoje.porStatus).map(([status, total]) => (
+            <div key={status} className="border border-renascer/10 rounded-xl p-3">
+              <p className="text-xs text-renascer-ink/50">{status}</p>
+              <p className="text-lg font-bold">{total}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Fila de reativação</p>
+          <p className="text-lg font-bold">{dados.clientesEsperandoReativacao}</p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Clientes novos hoje</p>
+          <p className="text-lg font-bold">{dados.clientesNovosHoje}</p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Clientes novos no mês</p>
+          <p className="text-lg font-bold">{dados.clientesNovosMes}</p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Seus registros de marketing (mês)</p>
+          <p className="text-lg font-bold">{dados.registrosMarketingMeusMes}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarketingMeuDiaAtendente() {
+  const [lista, setLista] = useState([]);
+  const [tipo, setTipo] = useState("POST");
+  const [descricao, setDescricao] = useState("");
+  const [link, setLink] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get("/atendente/meu-dia/marketing");
+    setLista(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function registrar() {
+    if (!descricao.trim()) return;
+    setSalvando(true);
+    try {
+      await api.post("/atendente/meu-dia/marketing", { tipo, descricao, link: link || undefined });
+      setDescricao("");
+      setLink("");
+      carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Registrar ação de marketing</h3>
+        <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          {Object.entries(TIPO_MARKETING_LABEL_ATENDENTE).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <textarea className="input" rows={2} placeholder="O que foi feito?" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+        <input className="input" placeholder="Link (opcional)" value={link} onChange={(e) => setLink(e.target.value)} />
+        <button className="btn-primary" onClick={registrar} disabled={salvando || !descricao.trim()}>
+          {salvando ? "Salvando..." : "Registrar"}
+        </button>
+      </div>
+      <div className="card space-y-2">
+        <h3 className="font-semibold">Histórico (de toda a equipe)</h3>
+        {lista.map((r) => (
+          <div key={r.id} className="border-b border-renascer-ink/5 py-2">
+            <span className="badge-gold">{TIPO_MARKETING_LABEL_ATENDENTE[r.tipo] || r.tipo}</span>
+            <p className="text-sm mt-1">{r.descricao}</p>
+            {r.link && (
+              <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-renascer underline">
+                {r.link}
+              </a>
+            )}
+            <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum registro ainda.</p>}
+      </div>
     </div>
   );
 }

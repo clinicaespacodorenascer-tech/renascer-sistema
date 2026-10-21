@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
-import Layout from "../../../components/Layout";
+import LayoutNovo from "../../../components/LayoutNovo";
 import api from "../../../lib/api";
 import { useAuth } from "../../../lib/useAuth";
 
@@ -28,7 +28,7 @@ export default function VideoChamada() {
   if (carregando) return null;
 
   return (
-    <Layout user={user}>
+    <LayoutNovo user={user}>
       <div className="card max-w-2xl mx-auto text-center">
         <h1 className="text-xl font-semibold mb-3">Sua sessão por videochamada</h1>
         {aviso && <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 text-sm mb-3">{aviso}</p>}
@@ -67,6 +67,6 @@ export default function VideoChamada() {
           <p className="text-sm text-renascer-ink/60 mt-3">Duração registrada: {chamada.duracaoMinutos} minuto(s).</p>
         )}
       </div>
-    </Layout>
+    </LayoutNovo>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Layout from "../../components/Layout";
+import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, verComprovanteRepasse } from "../../lib/comprovante";
@@ -8,6 +8,7 @@ import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
+import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -68,6 +69,7 @@ export default function AreaProfissional() {
   if (carregando) return null;
 
   const ABAS = [
+    { id: "meudia", label: "Meu dia" },
     { id: "agenda", label: "Agenda" },
     { id: "clientes", label: "Clientes" },
     { id: "cadastrar", label: "Cadastrar cliente" },
@@ -77,14 +79,15 @@ export default function AreaProfissional() {
   ];
 
   return (
-    <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+    <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {aba === "meudia" && <AbaMeuDiaProfissional />}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "clientes" && <AbaClientes />}
       {aba === "cadastrar" && <AbaCadastrarCliente />}
       {aba === "financeiro" && <AbaFinanceiro />}
       {aba === "notificacoes" && <AbaNotificacoes />}
       {aba === "config" && <AbaConfig />}
-    </Layout>
+    </LayoutNovo>
   );
 }
 
@@ -1553,6 +1556,132 @@ function PerfilCompleto({ perfil, onAtualizado }) {
         {salvando ? "Salvando..." : "Salvar perfil"}
       </button>
       {msg && <p className="text-sm">{msg}</p>}
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- MEU DIA (Fase 30) — Profissional: checklist diário + indicadores operacionais
+// dela mesma (sessões de hoje, repasse pendente, tempo de resposta, clientes perto de renovar).
+// Nunca o consolidado da clínica — só o que já é dela em outras abas (Agenda/Financeiro).
+// ----------------
+// ================================================================================================
+
+const ITENS_CHECKLIST_HOJE_PROFISSIONAL = [
+  { chave: "revisar_agenda_hoje_prof", texto: "Revisar as sessões de hoje" },
+  { chave: "responder_mensagens_prof", texto: "Responder mensagens pendentes dos clientes" },
+  { chave: "marcar_realizadas_prof", texto: "Marcar as sessões de hoje como realizadas (ou falta)" },
+  { chave: "conferir_repasse_prof", texto: "Conferir se tem repasse pendente pra Renascer" },
+];
+
+const ITENS_CHECKLIST_IMPLANTACAO_PROFISSIONAL = [
+  { chave: "completar_perfil_prof", texto: "Completar o perfil (foto, título, especialidades, bio)" },
+  { chave: "configurar_disponibilidade_prof", texto: "Configurar os horários de disponibilidade" },
+  { chave: "ativar_push_prof", texto: "Ativar as notificações push no seu aparelho" },
+];
+
+function hojeISOProfissional() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function AbaMeuDiaProfissional() {
+  const [sub, setSub] = useState("hoje");
+  const SUBABAS = [
+    { id: "hoje", label: "Hoje" },
+    { id: "indicadores", label: "Indicadores" },
+    { id: "implantacao", label: "Implantação" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {SUBABAS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSub(s.id)}
+            className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "hoje" && (
+        <div className="card space-y-3">
+          <div>
+            <h3 className="font-semibold">Checklist de hoje</h3>
+            <p className="text-xs text-renascer-ink/50">
+              {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+            </p>
+          </div>
+          <ChecklistMeuDia itens={ITENS_CHECKLIST_HOJE_PROFISSIONAL} data={hojeISOProfissional()} />
+        </div>
+      )}
+      {sub === "indicadores" && <IndicadoresMeuDiaProfissional />}
+      {sub === "implantacao" && (
+        <div className="card space-y-3">
+          <div>
+            <h3 className="font-semibold">Checklist de implantação</h3>
+            <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só.</p>
+          </div>
+          <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_PROFISSIONAL} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IndicadoresMeuDiaProfissional() {
+  const [dados, setDados] = useState(null);
+  async function carregar() {
+    const { data } = await api.get("/profissional/meu-dia/indicadores");
+    setDados(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+
+  return (
+    <div className="card space-y-4">
+      <div>
+        <h3 className="font-semibold mb-2">Hoje</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="border border-renascer/10 rounded-xl p-3">
+            <p className="text-xs text-renascer-ink/50">Sessões hoje</p>
+            <p className="text-lg font-bold">{dados.agendaHoje.total}</p>
+          </div>
+          {Object.entries(dados.agendaHoje.porStatus).map(([status, total]) => (
+            <div key={status} className="border border-renascer/10 rounded-xl p-3">
+              <p className="text-xs text-renascer-ink/50">{status}</p>
+              <p className="text-lg font-bold">{total}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Pendente de repasse</p>
+          <p className="text-lg font-bold text-amber-700">R$ {dados.totalPendenteRepassar.toFixed(2)}</p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Taxa de faltas (mês)</p>
+          <p className="text-lg font-bold">
+            {dados.taxaFaltasMes.taxaFaltasPercentual !== null ? `${dados.taxaFaltasMes.taxaFaltasPercentual}%` : "—"}
+          </p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Tempo médio de resposta</p>
+          <p className="text-lg font-bold">
+            {dados.tempoRespostaMedioMes.tempoMedioMinutos !== null ? `${dados.tempoRespostaMedioMes.tempoMedioMinutos} min` : "—"}
+          </p>
+        </div>
+        <div className="border border-renascer/10 rounded-xl p-3">
+          <p className="text-xs text-renascer-ink/50">Clientes perto de renovar</p>
+          <p className="text-lg font-bold">{dados.clientesPertoDeRenovar}</p>
+        </div>
+      </div>
     </div>
   );
 }

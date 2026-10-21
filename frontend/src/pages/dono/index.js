@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import Layout from "../../components/Layout";
+import LayoutNovo from "../../components/LayoutNovo";
 import api, { atualizarUsuarioLocal } from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
@@ -47,7 +47,7 @@ export default function AreaDono() {
   ];
 
   return (
-    <Layout user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+    <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "meudia" && <AbaMeuDia />}
       {aba === "dashboard" && <Dashboard />}
       {aba === "mapas" && <MapasMentais />}
@@ -64,7 +64,7 @@ export default function AreaDono() {
       {aba === "atender" && <AbaAtenderPacientes user={user} />}
       {aba === "renascerIA" && <AbaRenascerIA />}
       {aba === "formularios" && <AbaFormularios />}
-    </Layout>
+    </LayoutNovo>
   );
 }
 
