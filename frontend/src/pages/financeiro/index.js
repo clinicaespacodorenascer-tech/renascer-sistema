@@ -31,7 +31,7 @@ export default function AreaFinanceiro() {
   );
 }
 
-function formatarMoeda(v) {
+export function formatarMoeda(v) {
   return (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -39,7 +39,10 @@ function formatarMoeda(v) {
 // ---------------- Painel financeiro ----------------
 // ================================================================================================
 
-function PainelFinanceiro() {
+// Fase 51 — exportado pra ser reaproveitado direto na aba "Financeiro" do Dono (ver dono/index.js):
+// o mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa, já que as
+// rotas /financeiro/* sempre liberaram tanto FINANCEIRO quanto DONO (middleware desta rota, acima).
+export function PainelFinanceiro() {
   const [dados, setDados] = useState(null);
 
   const [investidoForm, setInvestidoForm] = useState("");
