@@ -3148,3 +3148,41 @@ implementado e no visual novo.
    cadastrada (presença, indicadores, gráfico, atividade).
 2. Se houver mais de um login de Atendente, confirmar que dá pra trocar entre eles pelas pílulas.
 3. Confirmar que o botão "Supervisão" dentro de "Usuários" continua funcionando como antes.
+
+# Fase 49 — Correção definitiva: conteúdo ainda cortado em telas largas (entregue em 23/10/2026)
+
+Depois da Fase 47 (que tinha aumentado a largura máxima do conteúdo de `1120px` pra `1600px`), o
+Dono mandou um novo print (tela "Clientes" da Atendente, num monitor bem largo) mostrando que
+ainda sobrava uma faixa em branco dos dois lados — "Essas bordas continuam o mesmo cortado... Isso
+também está em outras partes do sistema, corrija."
+
+## Causa
+
+A Fase 47 tinha aumentado o limite, mas continuava sendo um limite fixo (`max-w-[1600px]`) com
+`mx-auto` centralizando o conteúdo. Em qualquer tela MAIOR que 1600px (monitores grandes,
+widescreen, ou janela maximizada numa tela de alta resolução — exatamente o caso do print), sempre
+vai sobrar uma faixa vazia dos dois lados, não importa o quão alto for esse número — só muda o
+tamanho da faixa.
+
+## Correção
+
+- `frontend/src/components/LayoutNovo.js`: removido o `max-w-[1600px] mx-auto` do `<main>` — agora
+  o conteúdo preenche 100% da largura disponível (tela toda, menos o menu lateral de 264px e um
+  respiro de 42px de cada lado), em qualquer tamanho de monitor. Como o `LayoutNovo` é a casca
+  compartilhada por TODAS as telas de TODOS os papéis (Dono, Atendente, Profissional, Cliente,
+  Setor Financeiro), esse ajuste único resolve "em outras partes do sistema" de uma vez, igual já
+  tinha acontecido na Fase 47.
+
+## Arquivos alterados
+
+- `frontend/src/components/LayoutNovo.js`
+
+## O que foi testado nesta sessão
+
+- `babel parseSync` (preset React) no arquivo alterado — sem erro de sintaxe.
+
+## O que testar
+
+1. Em um monitor grande (ou janela do navegador bem larga), abrir qualquer tela do sistema —
+   Clientes, Agenda, Financeiro, etc. — em qualquer um dos papéis, e confirmar que o conteúdo
+   preenche a largura da tela, sem faixa em branco sobrando dos lados.
