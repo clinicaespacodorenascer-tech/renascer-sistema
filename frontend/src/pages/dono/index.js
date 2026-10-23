@@ -42,6 +42,7 @@ export default function AreaDono() {
     { id: "atender", label: "Atender pacientes" },
     { id: "renascerIA", label: "Renascer IA" },
     { id: "formularios", label: "Formulários" },
+    { id: "secretaria", label: "Secretaria" }, // Fase 47
   ];
 
   return (
@@ -62,6 +63,7 @@ export default function AreaDono() {
       {aba === "atender" && <AbaAtenderPacientes user={user} />}
       {aba === "renascerIA" && <AbaRenascerIA />}
       {aba === "formularios" && <AbaFormularios />}
+      {aba === "secretaria" && <AbaSecretaria />}
     </LayoutNovo>
   );
 }
@@ -1665,6 +1667,72 @@ function iniciaisNome(nome) {
   if (partes.length === 0) return "?";
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+// ---------- Secretaria (Fase 47) ----------
+// Aba própria no menu do Dono pra abrir direto a supervisão da recepção, sem precisar entrar em
+// Usuários primeiro e clicar em "Supervisão" na linha de cada login — mesmo painel (SupervisaoSecretaria,
+// Fase 33), só que agora também acessível como item do menu, igual no canvas de design.
+function AbaSecretaria() {
+  const [atendentes, setAtendentes] = useState(null); // null = carregando
+  const [selecionadoId, setSelecionadoId] = useState(null);
+
+  useEffect(() => {
+    api.get("/dono/usuarios").then(({ data }) => {
+      const lista = data.filter((u) => u.role === "ATENDENTE");
+      setAtendentes(lista);
+      setSelecionadoId((atual) => atual || lista[0]?.id || null);
+    });
+  }, []);
+
+  return (
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel do Dono</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Secretaria</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Supervisão dos logins da recepção: presença, indicadores do dia e atividade</p>
+      </div>
+
+      {atendentes === null && <p className="text-sm text-nv-muted">Carregando...</p>}
+
+      {atendentes !== null && atendentes.length === 0 && (
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">
+            Nenhum login de Secretaria cadastrado ainda. Crie um em{" "}
+            <span className="font-semibold text-nv-ink">Usuários</span>.
+          </p>
+        </div>
+      )}
+
+      {atendentes !== null && atendentes.length > 0 && (
+        <div className="space-y-4">
+          {atendentes.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {atendentes.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setSelecionadoId(a.id)}
+                  className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${
+                    selecionadoId === a.id ? "bg-nv-blue text-white" : "bg-nv-bg text-nv-muted2 border border-nv-borderLight"
+                  }`}
+                >
+                  {a.nome}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="nv-card">
+            {selecionadoId && (
+              <SupervisaoSecretaria
+                usuarioId={selecionadoId}
+                nome={atendentes.find((a) => a.id === selecionadoId)?.nome || ""}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Usuarios() {

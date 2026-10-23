@@ -3058,3 +3058,93 @@ o redesign completo pedido está entregue.
 
 O redesign de conteúdo das 4 personas está completo. Qualquer ajuste fino ou novo pedido, é só
 avisar.
+
+# Fase 47 — Ajustes pós-deploy: layout cortado, remoção do Meu dia da Atendente e horários da Profissional sem estilo (entregue em 22/10/2026)
+
+Depois do deploy do redesign completo (Fases 35-46), o Dono reportou três problemas vendo o site
+no ar, com prints de cada um. Os três eram reais (não era confusão de deploy) e foram corrigidos
+nesta fase.
+
+## O que mudou
+
+- **"Está cortado dos dois lados" (Clientes, Reativar, Histórico, Repasses, Usuários do Dono e
+  Clientes da Atendente, inclusive a ficha do cliente expandida)**: o `LayoutNovo` (casca
+  compartilhada por todas as 4 personas) tinha uma largura máxima de conteúdo de `1120px`, baixa
+  demais pra telas maiores. Aumentada pra `1600px`. Esse ajuste único resolveu a reclamação em
+  todas as telas diferentes que o Dono mandou print — todas compartilham o mesmo `LayoutNovo`.
+- **"Remova Meu dia da Atendente"**: a aba "Meu dia" (checklist de implantação/indicadores/
+  marketing) foi tirada inteiramente do menu da Atendente — removida a aba, o componente
+  `AbaMeuDiaAtendente` e todo o código morto que só ele usava (checklists, indicadores, cards de
+  marketing). Dono e Profissional continuam com o próprio "Meu dia" normalmente — só saiu da
+  Atendente.
+- **"Não mudou nada nessa parte" (horários dos profissionais, na aba "Profissionais e agendar" da
+  Atendente)**: a lista de horários liberados de cada profissional tinha ficado de fora do
+  redesign da Fase 42 — ainda em texto corrido simples. Agora em pílulas, no mesmo padrão do resto
+  do sistema (cinza pra livre, âmbar pra horário fixo de algum cliente).
+- Um quarto ponto (ficha de cliente com nome em branco e zero estatísticas) foi conferido e **não é
+  bug de tela** — é um registro de teste/incompleto no banco, não uma falha de código.
+
+## Arquivos alterados
+
+- `frontend/src/components/LayoutNovo.js`
+- `frontend/src/pages/atendente/index.js`
+
+## O que testar
+
+1. Abrir qualquer tela que antes parecia cortada (Clientes, Reativar, Histórico, Repasses,
+   Usuários do Dono; Clientes da Atendente) e confirmar que o conteúdo preenche bem a largura da
+   tela.
+2. Entrar como Atendente: confirmar que "Meu dia" não aparece mais no menu.
+3. Na aba "Profissionais e agendar" da Atendente, confirmar que os horários de cada profissional
+   aparecem como pílulas (não mais texto corrido).
+
+# Fase 48 — Menu "Secretaria" no Dono (entregue em 23/10/2026)
+
+O Dono comparou o site no ar com o canvas de design ("Novo Layout — Espaço do Renascer") e notou
+que o item **Secretaria**, que aparece no menu lateral do canvas, não existe como aba separada no
+sistema — pediu pra revisar o projeto todo e repor o que estivesse faltando.
+
+## Investigação
+
+A funcionalidade de supervisão da Secretaria **já existia** desde a Fase 33 (presença, cadastros/
+reativações/suportes do dia, gráfico de 7 dias e feed de atividade) e já tinha sido redesenhada
+pro visual novo na Fase 40 — só que acessível de um jeito diferente do canvas: dentro da aba
+"Usuários", clicando no botão "Supervisão" na linha de um login Atendente, em vez de uma aba
+própria no menu. Por isso o Dono não achou: ele está procurando um item de menu chamado
+"Secretaria", que não existia.
+
+Nenhum outro ponto do canvas (26 telas) ficou de fora na comparação: Setor Financeiro (Fase 31,
+Painel/Clientes pra renovar/Repasses/Agenda geral), Avisos da Profissional, Ficha do cliente,
+Disponibilidade, Suporte escalado e as demais telas do Dono — todas batem com o que já está
+implementado e no visual novo.
+
+## O que mudou
+
+- Nova aba **"Secretaria"** no menu do Dono (depois de "Formulários", igual na ordem do canvas).
+- Ela lista os logins com papel Atendente e mostra o painel de supervisão de um deles (o mesmo
+  componente `SupervisaoSecretaria` da Fase 33/40 — presença, indicadores do dia, gráfico de 7
+  dias, atividade) direto, sem precisar entrar em Usuários primeiro.
+- Com mais de uma Atendente cadastrada, aparecem pílulas pra trocar entre elas; com nenhuma,
+  mostra um aviso pra criar o login em Usuários.
+- O botão "Supervisão" dentro de Usuários continua funcionando do mesmo jeito — essa aba nova é um
+  segundo caminho pro mesmo painel, não substitui o antigo.
+- Nenhuma rota de backend nova: reaproveita a mesma `GET /dono/usuarios/:id/supervisao` da Fase 33.
+
+## Arquivos alterados
+
+- `frontend/src/pages/dono/index.js` — aba nova "Secretaria" no menu + componente `AbaSecretaria`
+  (lista de Atendentes + seletor, quando houver mais de uma) reaproveitando `SupervisaoSecretaria`.
+
+## O que foi testado nesta sessão
+
+- `babel parseSync` (preset React) no arquivo alterado — sem erro de sintaxe.
+- Contagem de chaves/parênteses/colchetes — todos equilibrados (1918/1918, 2298/2298, 488/488).
+- Conferido que o botão "Supervisão" dentro de Usuários não foi tocado (continua existindo do
+  mesmo jeito).
+
+## O que testar
+
+1. Entrar como Dono e abrir "Secretaria" no menu: deve aparecer a supervisão de uma Atendente
+   cadastrada (presença, indicadores, gráfico, atividade).
+2. Se houver mais de um login de Atendente, confirmar que dá pra trocar entre eles pelas pílulas.
+3. Confirmar que o botão "Supervisão" dentro de "Usuários" continua funcionando como antes.
