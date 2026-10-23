@@ -315,9 +315,17 @@ const FORMAS_ICONE = {
     </>
   ),
   ponto: <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />,
+  // Fase 30 — "Meu dia": sol nascendo, pro ritual do começo do dia.
+  sol: (
+    <>
+      <circle cx="12" cy="15" r="4.5" />
+      <path d="M12 3.5v2.3M4.5 12H2M22 12h-2.5M5.5 5.5l1.6 1.6M18.5 5.5l-1.6 1.6M3.5 19.5h17" />
+    </>
+  ),
 };
 
 const MAPA_ICONE_POR_ABA = {
+  meudia: "sol",
   dashboard: "casa",
   painel: "casa",
   clientes: "pessoas",

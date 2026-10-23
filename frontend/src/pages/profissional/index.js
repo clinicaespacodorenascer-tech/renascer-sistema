@@ -56,7 +56,7 @@ const CATEGORIAS_SUGERIDAS = [
 const STATUS_COR = {
   AGENDADO: "bg-blue-100 text-blue-700",
   CONFIRMADO: "bg-emerald-100 text-emerald-700",
-  REALIZADO: "bg-renascer-light text-renascer",
+  REALIZADO: "bg-nv-green/10 text-nv-green",
   CANCELADO: "bg-red-100 text-red-700",
   REAGENDADO: "bg-amber-100 text-amber-700",
   FALTOU: "bg-gray-200 text-gray-600",
@@ -144,15 +144,20 @@ export function AbaCadastrarCliente() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <p className="text-sm text-renascer-ink/60">Seus clientes no Espaço do Renascer</p>
-        <p className="text-3xl font-bold text-renascer">{total === null ? "..." : total}</p>
+    <div className="font-publicSans space-y-4">
+      <div className="mb-1">
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Cadastrar cliente</h1>
       </div>
 
-      <div className="card">
-        <h2 className="font-semibold mb-1">Cadastrar cliente que você já atende</h2>
-        <p className="text-xs text-renascer-ink/50 mb-3">
+      <div className="nv-card">
+        <p className="text-sm text-nv-muted">Seus clientes no Espaço do Renascer</p>
+        <p className="font-sora text-3xl font-bold text-nv-blue">{total === null ? "..." : total}</p>
+      </div>
+
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-1">Cadastrar cliente que você já atende</h2>
+        <p className="text-xs text-nv-muted mb-3">
           Use isso pra colocar no sistema os clientes que você já atendia antes, já com o pacote e o dia/horário fixo que
           vocês combinaram. Se preencher o dia e o horário, a sessão já entra direto na sua Agenda.
         </p>
@@ -174,8 +179,8 @@ export function AbaCadastrarCliente() {
           />
         </div>
 
-        <div className="border-t border-renascer/10 mt-4 pt-4">
-          <p className="text-sm font-medium mb-2">Pacote atual (opcional)</p>
+        <div className="border-t border-nv-borderLight mt-4 pt-4">
+          <p className="text-sm font-semibold text-nv-ink mb-2">Pacote atual (opcional)</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
               <option value="MIN30">30 minutos</option>
@@ -204,13 +209,13 @@ export function AbaCadastrarCliente() {
               onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
             />
           </div>
-          <p className="text-xs text-renascer-ink/40 mt-1">
+          <p className="text-xs text-nv-muted3 mt-1">
             Deixe "Sessões que faltam" igual ao total do pacote se ele está no início.
           </p>
         </div>
 
-        <div className="border-t border-renascer/10 mt-4 pt-4">
-          <p className="text-sm font-medium mb-2">Dia e horário fixo já combinado (opcional)</p>
+        <div className="border-t border-nv-borderLight mt-4 pt-4">
+          <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo já combinado (opcional)</p>
           <div className="grid grid-cols-2 gap-2">
             <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
               <option value="">Sem dia fixo</option>
@@ -235,18 +240,18 @@ export function AbaCadastrarCliente() {
         {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
         {resultado && (
           <div className="text-sm mt-2 space-y-1">
-            <p className="text-emerald-600">
+            <p className="text-nv-green">
               Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
               um canal seguro)
             </p>
             {resultado.transacao && (
-              <p className="text-emerald-600">
+              <p className="text-nv-green">
                 Pagamento contabilizado! Seu repasse: R$ {resultado.transacao.valorProfissional.toFixed(2)} · Parte da
                 Renascer (você ainda deve repassar): R$ {resultado.transacao.valorRenascer.toFixed(2)}
               </p>
             )}
             {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
-            {resultado.agendamento && <p className="text-emerald-600">Sessão fixa já criada direto na sua Agenda ✅</p>}
+            {resultado.agendamento && <p className="text-nv-green">Sessão fixa já criada direto na sua Agenda ✅</p>}
             {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
           </div>
         )}
@@ -303,20 +308,23 @@ export function AbaAgenda() {
     }
   }
 
-  if (!colunas) return <p>Carregando agenda...</p>;
+  if (!colunas) return <p className="text-sm text-nv-muted">Carregando agenda...</p>;
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-1">Sua semana</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
-        Arraste o card de uma sessão pra outro dia (no computador) ou use o menu "Mover para..." (no celular) — o horário continua o mesmo.
-      </p>
+    <div className="font-publicSans">
+      <div className="mb-3">
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Sua semana</h1>
+        <p className="text-xs text-nv-muted mt-0.5">
+          Arraste o card de uma sessão pra outro dia (no computador) ou use o menu "Mover para..." (no celular) — o horário continua o mesmo.
+        </p>
+      </div>
       {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-3">{erro}</p>}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
         {DIAS.map(([chave, label]) => (
           <div
             key={chave}
-            className={`card !p-3 min-h-[200px] ${colunaSobre === chave ? "ring-2 ring-renascer" : ""}`}
+            className={`nv-card !p-3 min-h-[200px] ${colunaSobre === chave ? "!border-nv-blue ring-2 ring-nv-blue/30" : ""}`}
             onDragOver={(e) => {
               e.preventDefault();
               setColunaSobre(chave);
@@ -330,9 +338,9 @@ export function AbaAgenda() {
             }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-renascer text-sm">{label}</h3>
+              <h3 className="font-sora font-semibold text-nv-blue text-sm">{label}</h3>
               <button
-                className="text-renascer text-base leading-none w-6 h-6 rounded-full border border-renascer/30 hover:bg-renascer-light"
+                className="text-nv-blue text-base leading-none w-6 h-6 rounded-full border border-nv-blue/30 hover:bg-nv-blue/10"
                 title="Adicionar sessão de um cliente já cadastrado"
                 onClick={() => setColunaAberta(colunaAberta === chave ? null : chave)}
               >
@@ -340,7 +348,7 @@ export function AbaAgenda() {
               </button>
             </div>
             <div className="space-y-2">
-              {colunas[chave]?.length === 0 && <p className="text-xs text-renascer-ink/40">Sem sessões</p>}
+              {colunas[chave]?.length === 0 && <p className="text-xs text-nv-muted3">Sem sessões</p>}
               {colunas[chave]?.map((ag) => {
                 const podeMover = ag.status !== "REALIZADO" && ag.status !== "CANCELADO";
                 return (
@@ -348,16 +356,16 @@ export function AbaAgenda() {
                     key={ag.id}
                     draggable={podeMover}
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", ag.id)}
-                    className={`border border-renascer/10 rounded-lg p-2 bg-renascer-light/40 ${podeMover ? "cursor-move" : ""}`}
+                    className={`border border-nv-borderLight rounded-lg p-2 bg-nv-bg ${podeMover ? "cursor-move" : ""}`}
                   >
-                    <p className="text-sm font-medium flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-nv-ink2 flex items-center gap-1.5">
                       <StatusCliente status={ag.statusCliente} />
                       {ag.horaInicio} · {ag.cliente.user.nome}
                     </p>
                     <div className="flex items-center gap-1 flex-wrap mt-1">
                       <span className={`badge ${STATUS_COR[ag.status]}`}>{ag.status}</span>
                       {ag.pacote && (
-                        <span className="badge bg-renascer-light text-renascer" title="Sessões realizadas / total do pacote">
+                        <span className="badge bg-nv-blue/10 text-nv-blue" title="Sessões realizadas / total do pacote">
                           {ag.pacote.sessoesUsadas}/{ag.pacote.totalSessoes} sessões
                         </span>
                       )}
@@ -380,18 +388,18 @@ export function AbaAgenda() {
                         </select>
                         <Link
                           href={`/profissional/videochamada/${ag.id}`}
-                          className="block text-xs text-renascer underline mt-2"
+                          className="block text-xs text-nv-blue underline mt-2"
                         >
                           🎥 Entrar na videochamada
                         </Link>
                         <div className="flex gap-2 mt-1 flex-wrap">
-                          <button className="text-xs text-emerald-700 underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
+                          <button className="text-xs text-nv-green underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
                             Realizada
                           </button>
                           <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
                             Cancelar
                           </button>
-                          <button className="text-xs text-renascer underline" onClick={() => setReagendando(ag)}>
+                          <button className="text-xs text-nv-blue underline" onClick={() => setReagendando(ag)}>
                             Mudar data/horário
                           </button>
                         </div>
@@ -482,28 +490,28 @@ function ReagendarModal({ agendamento, onReagendado, onFechar }) {
     >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-renascer text-lg">Mudar data/horário · {agendamento.cliente.user.nome}</h3>
-          <button className="text-renascer-ink/40 hover:text-renascer-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
+          <h3 className="font-sora font-semibold text-nv-ink text-lg">Mudar data/horário · {agendamento.cliente.user.nome}</h3>
+          <button className="text-nv-muted3 hover:text-nv-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
             ×
           </button>
         </div>
-        <p className="text-xs text-renascer-ink/50">
+        <p className="text-xs text-nv-muted">
           Data e horário atuais: {new Date(agendamento.data).toLocaleDateString("pt-BR")} às {agendamento.horaInicio}.
         </p>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Nova data</label>
+            <label className="text-xs font-medium text-nv-muted block mb-1">Nova data</label>
             <input type="date" className="input" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Novo horário</label>
+            <label className="text-xs font-medium text-nv-muted block mb-1">Novo horário</label>
             <input type="time" className="input" value={novaHora} onChange={(e) => setNovaHora(e.target.value)} />
           </div>
         </div>
 
         <div>
-          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Motivo (opcional, o cliente vê no aviso)</label>
+          <label className="text-xs font-medium text-nv-muted block mb-1">Motivo (opcional, o cliente vê no aviso)</label>
           <input className="input" placeholder="Ex: imprevisto, remarcação da última sessão..." value={motivo} onChange={(e) => setMotivo(e.target.value)} />
         </div>
 
@@ -578,14 +586,14 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
     >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-renascer text-lg">Nova sessão · {diaLabel}</h3>
-          <button className="text-renascer-ink/40 hover:text-renascer-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
+          <h3 className="font-sora font-semibold text-nv-ink text-lg">Nova sessão · {diaLabel}</h3>
+          <button className="text-nv-muted3 hover:text-nv-ink text-2xl leading-none" onClick={onFechar} title="Fechar">
             ×
           </button>
         </div>
 
         <div>
-          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Cliente</label>
+          <label className="text-xs font-medium text-nv-muted block mb-1">Cliente</label>
           <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
             <option value="">Escolha o cliente...</option>
             {clientes.map((c) => (
@@ -598,11 +606,11 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Data</label>
+            <label className="text-xs font-medium text-nv-muted block mb-1">Data</label>
             <input type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Duração</label>
+            <label className="text-xs font-medium text-nv-muted block mb-1">Duração</label>
             <select className="input" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
               <option value="MIN30">30 minutos</option>
               <option value="MIN50">50 minutos</option>
@@ -611,8 +619,8 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
         </div>
 
         <div>
-          <label className="text-xs font-medium text-renascer-ink/60 block mb-1">Horário</label>
-          {buscando && <p className="text-xs text-renascer-ink/40">Buscando horários livres...</p>}
+          <label className="text-xs font-medium text-nv-muted block mb-1">Horário</label>
+          {buscando && <p className="text-xs text-nv-muted3">Buscando horários livres...</p>}
           {!buscando && horarios?.length === 0 && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
               Nenhum horário livre nesse dia. Tente outra data ou libere um horário na aba Disponibilidade.
@@ -627,8 +635,8 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
                   onClick={() => setHoraEscolhida(h)}
                   className={`text-sm px-3 py-1.5 rounded-full border ${
                     horaEscolhida === h
-                      ? "bg-renascer text-white border-renascer"
-                      : "border-renascer/20 text-renascer-ink/70 hover:border-renascer/50"
+                      ? "bg-nv-blue text-white border-nv-blue"
+                      : "border-nv-border text-nv-ink2 hover:border-nv-blue/50"
                   }`}
                 >
                   {h}
@@ -669,38 +677,43 @@ export function AbaClientes() {
   const selecionado = clientes.find((c) => c.id === selecionadoId) || null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="card md:col-span-1">
-        <h2 className="font-semibold mb-1">Meus clientes</h2>
-        <p className="text-xs text-renascer-ink/50 mb-3">Você tem {clientes.length} cliente(s) no Espaço do Renascer.</p>
-        <div className="space-y-2">
-          {clientes.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setSelecionadoId(c.id)}
-              className={`w-full text-left px-3 py-2 rounded-lg border ${
-                selecionadoId === c.id ? "border-renascer bg-renascer-light" : "border-renascer/10"
-              }`}
-            >
-              <p className="font-medium flex items-center gap-1.5">
-                <StatusCliente status={c.statusCliente} />
-                {c.user.nome}
-              </p>
-              <p className="text-xs text-renascer-ink/50">
-                {c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes} sessões` : "sem pacote ativo"}
-              </p>
-              <IndicadorPresenca ultimoAcessoEm={c.user.ultimoAcessoEm} className="mt-0.5" />
-            </button>
-          ))}
-          {clientes.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum cliente ainda.</p>}
-        </div>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meus clientes</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Você tem {clientes.length} cliente(s) no Espaço do Renascer.</p>
       </div>
-      <div className="md:col-span-2">
-        {selecionado ? (
-          <DetalheCliente cliente={selecionado} onMudouSituacao={() => { carregar(); setSelecionadoId(null); }} />
-        ) : (
-          <p className="text-renascer-ink/50">Selecione um cliente.</p>
-        )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="nv-card md:col-span-1">
+          <div className="space-y-2">
+            {clientes.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelecionadoId(c.id)}
+                className={`w-full text-left px-3 py-2 rounded-lg border ${
+                  selecionadoId === c.id ? "border-nv-blue bg-nv-blue/5" : "border-nv-borderLight"
+                }`}
+              >
+                <p className="font-medium text-nv-ink2 flex items-center gap-1.5">
+                  <StatusCliente status={c.statusCliente} />
+                  {c.user.nome}
+                </p>
+                <p className="text-xs text-nv-muted">
+                  {c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes} sessões` : "sem pacote ativo"}
+                </p>
+                <IndicadorPresenca ultimoAcessoEm={c.user.ultimoAcessoEm} className="mt-0.5" />
+              </button>
+            ))}
+            {clientes.length === 0 && <p className="text-sm text-nv-muted">Nenhum cliente ainda.</p>}
+          </div>
+        </div>
+        <div className="md:col-span-2">
+          {selecionado ? (
+            <DetalheCliente cliente={selecionado} onMudouSituacao={() => { carregar(); setSelecionadoId(null); }} />
+          ) : (
+            <p className="text-nv-muted">Selecione um cliente.</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -709,8 +722,8 @@ export function AbaClientes() {
 function DetalheCliente({ cliente, onMudouSituacao }) {
   const [sub, setSub] = useState("chat");
   return (
-    <div className="card">
-      <h2 className="font-semibold text-lg flex items-center gap-2">
+    <div className="nv-card">
+      <h2 className="font-sora font-semibold text-lg text-nv-ink flex items-center gap-2">
         <StatusCliente status={cliente.statusCliente} />
         {cliente.user.nome}
       </h2>
@@ -726,7 +739,9 @@ function DetalheCliente({ cliente, onMudouSituacao }) {
           <button
             key={id}
             onClick={() => setSub(id)}
-            className={`text-sm px-3 py-1.5 rounded-full ${sub === id ? "bg-renascer text-white" : "bg-renascer-light"}`}
+            className={`text-sm px-3 py-1.5 rounded-full font-semibold transition-colors ${
+              sub === id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
+            }`}
           >
             {label}
           </button>
@@ -1155,26 +1170,32 @@ export function AbaFinanceiro() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Financeiro</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Repasses, comprovantes e transações do mês</p>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Faturado no mês (sua parte)</p>
-          <p className="text-2xl font-bold text-renascer">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
-          <p className="text-xs text-renascer-ink/50 mt-1">Só o que é seu — não conta a parte que fica com a Renascer.</p>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Faturado no mês (sua parte)</p>
+          <p className="nv-num text-2xl font-bold text-nv-blue">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
+          <p className="text-xs text-nv-muted mt-1">Só o que é seu — não conta a parte que fica com a Renascer.</p>
         </div>
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Repasse Renascer</p>
-          <p className="text-2xl font-bold text-renascer-ink/70">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Repasse Renascer</p>
+          <p className="nv-num text-2xl font-bold text-nv-ink2">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
         </div>
-        <div className="card !border-amber-300 bg-amber-50">
-          <p className="text-sm text-renascer-ink/60">Você ainda deve repassar</p>
-          <p className="text-2xl font-bold text-amber-700">R$ {resumo?.totalPendenteRepassar?.toFixed(2) ?? "0,00"}</p>
-          <p className="text-xs text-renascer-ink/50 mt-1">Dinheiro que você recebeu direto do cliente e ainda não repassou pra Renascer.</p>
+        <div className="nv-card !border-amber-300 bg-amber-50">
+          <p className="text-sm text-nv-muted">Você ainda deve repassar</p>
+          <p className="nv-num text-2xl font-bold text-amber-700">R$ {resumo?.totalPendenteRepassar?.toFixed(2) ?? "0,00"}</p>
+          <p className="text-xs text-nv-muted mt-1">Dinheiro que você recebeu direto do cliente e ainda não repassou pra Renascer.</p>
         </div>
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold mb-3">Calculadora rápida de repasse</h3>
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-3">Calculadora rápida de repasse</h3>
         <div className="flex flex-wrap gap-2">
           <input className="input flex-1 min-w-[150px]" placeholder="Valor total recebido (ex: 170)" value={valorCalc} onChange={(e) => setValorCalc(e.target.value)} />
           <button className="btn-secondary" onClick={calcular}>
@@ -1182,15 +1203,15 @@ export function AbaFinanceiro() {
           </button>
         </div>
         {repasse && (
-          <p className="mt-2 text-sm">
+          <p className="mt-2 text-sm text-nv-ink2">
             Seu repasse: <strong>R$ {repasse.valorProfissional}</strong> · Renascer: <strong>R$ {repasse.valorRenascer}</strong>
           </p>
         )}
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold mb-1">Anexar renovação ou pagamento</h3>
-        <p className="text-xs text-renascer-ink/50 mb-3">
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-1">Anexar renovação ou pagamento</h3>
+        <p className="text-xs text-nv-muted mb-3">
           Escolha o cliente, coloque o valor e anexe o comprovante — o comprovante fica guardado pra poder ver depois, e o
           sistema já calcula sozinho quanto você vai receber (seu repasse). A IA tenta reconhecer o valor automaticamente
           pela imagem; se não conseguir, você confirma manualmente.
@@ -1222,18 +1243,18 @@ export function AbaFinanceiro() {
         </button>
         {resultado?.erro && <p className="text-red-600 text-sm mt-2">{resultado.erro}</p>}
         {resultado?.transacao && (
-          <p className="text-emerald-600 text-sm mt-2">
+          <p className="text-nv-green text-sm mt-2">
             Registrado: R$ {resultado.transacao.valorTotal} (você vai receber R$ {resultado.transacao.valorProfissional})
             {resultado.transacao.reconhecidoPorIA ? " — reconhecido automaticamente pela IA." : " — valor manual."}
           </p>
         )}
       </div>
 
-      <div className="card overflow-x-auto">
-        <h3 className="font-semibold mb-3">Transações do mês</h3>
+      <div className="nv-card overflow-x-auto">
+        <h3 className="font-sora font-semibold text-nv-ink mb-3">Transações do mês</h3>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-renascer-ink/50">
+            <tr className="text-left text-nv-muted">
               <th className="py-1">Data</th>
               <th>Cliente</th>
               <th>Tipo</th>
@@ -1245,38 +1266,38 @@ export function AbaFinanceiro() {
           </thead>
           <tbody>
             {resumo?.transacoes?.map((t) => (
-              <tr key={t.id} className="border-t border-renascer/10">
-                <td className="py-1">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
-                <td>{t.cliente?.user?.nome || "-"}</td>
-                <td>
+              <tr key={t.id} className="border-t border-nv-borderLight">
+                <td className="py-1 text-nv-ink2">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
+                <td className="text-nv-ink2">{t.cliente?.user?.nome || "-"}</td>
+                <td className="text-nv-ink2">
                   {TIPO_LABEL[t.tipo] || t.tipo}
                   {t.origem === "ATENDENTE" && (
-                    <span className="block text-[10px] text-renascer-ink/40">fechado pela recepção</span>
+                    <span className="block text-[10px] text-nv-muted3">fechado pela recepção</span>
                   )}
                 </td>
-                <td>R$ {t.valorTotal.toFixed(2)}</td>
-                <td>R$ {t.valorProfissional.toFixed(2)}</td>
+                <td className="text-nv-ink2">R$ {t.valorTotal.toFixed(2)}</td>
+                <td className="text-nv-ink2">R$ {t.valorProfissional.toFixed(2)}</td>
                 <td>
                   {t.recebidoPor === "PROFISSIONAL" ? (
                     <LinhaRepasse t={t} onMudou={carregar} />
                   ) : (
-                    <span className="text-renascer-ink/30 text-xs">recebido pela clínica</span>
+                    <span className="text-nv-muted3 text-xs">recebido pela clínica</span>
                   )}
                 </td>
                 <td className="text-right">
                   {t.temComprovante ? (
-                    <button className="text-renascer text-xs underline" onClick={() => verComprovante(t.id)}>
+                    <button className="text-nv-blue text-xs underline" onClick={() => verComprovante(t.id)}>
                       Ver comprovante
                     </button>
                   ) : (
-                    <span className="text-renascer-ink/30 text-xs">sem comprovante</span>
+                    <span className="text-nv-muted3 text-xs">sem comprovante</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {resumo?.transacoes?.length === 0 && <p className="text-sm text-renascer-ink/50 mt-2">Nenhuma transação neste mês.</p>}
+        {resumo?.transacoes?.length === 0 && <p className="text-sm text-nv-muted mt-2">Nenhuma transação neste mês.</p>}
       </div>
     </div>
   );
@@ -1337,13 +1358,13 @@ function LinhaRepasse({ t, onMudou }) {
       <div className="space-y-0.5">
         <span className="badge bg-amber-100 text-amber-700">Aguardando confirmação do dono</span>
         {t.repasseValorInformado != null && (
-          <p className="text-[11px] text-renascer-ink/50">
+          <p className="text-[11px] text-nv-muted">
             Valor no comprovante: R$ {t.repasseValorInformado.toFixed(2)}
             {!bateComEsperado && " — diferente do esperado"}
           </p>
         )}
         {t.temComprovanteRepasse && (
-          <button className="text-renascer text-[11px] underline block" onClick={() => verComprovanteRepasse(t.id)}>
+          <button className="text-nv-blue text-[11px] underline block" onClick={() => verComprovanteRepasse(t.id)}>
             Ver comprovante enviado
           </button>
         )}
@@ -1358,7 +1379,7 @@ function LinhaRepasse({ t, onMudou }) {
           Enviar comprovante do repasse (R$ {t.valorRenascer.toFixed(2)})
         </button>
       ) : (
-        <div className="bg-renascer-light/50 border border-renascer/10 rounded-lg p-2 space-y-1 min-w-[220px]">
+        <div className="bg-nv-bg border border-nv-borderLight rounded-lg p-2 space-y-1 min-w-[220px]">
           <input type="file" accept="image/*" className="text-xs" onChange={(e) => setArquivo(e.target.files[0])} />
           <input
             className="input !py-1 !text-xs"
@@ -1374,13 +1395,13 @@ function LinhaRepasse({ t, onMudou }) {
             >
               {enviando ? "Enviando..." : "Enviar"}
             </button>
-            <button className="text-xs text-renascer-ink/50 underline" onClick={() => setAberto(false)}>
+            <button className="text-xs text-nv-muted underline" onClick={() => setAberto(false)}>
               Cancelar
             </button>
           </div>
         </div>
       )}
-      {msg && <p className="text-[11px] mt-1">{msg}</p>}
+      {msg && <p className="text-[11px] mt-1 text-nv-ink2">{msg}</p>}
     </div>
   );
 }
@@ -1392,19 +1413,24 @@ function AbaNotificacoes() {
     api.get("/comum/notificacoes").then((r) => setLista(r.data));
   }, []);
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-3">Avisos de renovação e sistema</h2>
-      <p className="text-sm text-renascer-ink/50 mb-3">
-        Você recebe um aviso automático aqui sempre que um cliente estiver na 2ª ou 3ª sessão de um pacote de 4, ou faltando a última sessão de um pacote menor.
-      </p>
-      <div className="space-y-2">
-        {lista.map((n) => (
-          <div key={n.id} className={`border rounded-lg p-3 ${n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"}`}>
-            <p className="font-medium text-sm">{n.titulo}</p>
-            <p className="text-sm text-renascer-ink/60">{n.mensagem}</p>
-          </div>
-        ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum aviso por enquanto.</p>}
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Notificações</h1>
+      </div>
+      <div className="nv-card">
+        <p className="text-sm text-nv-muted mb-3">
+          Você recebe um aviso automático aqui sempre que um cliente estiver na 2ª ou 3ª sessão de um pacote de 4, ou faltando a última sessão de um pacote menor.
+        </p>
+        <div className="space-y-2">
+          {lista.map((n) => (
+            <div key={n.id} className={`border rounded-lg p-3 ${n.lida ? "border-nv-borderLight" : "border-nv-blue/40 bg-nv-blue/5"}`}>
+              <p className="font-medium text-sm text-nv-ink">{n.titulo}</p>
+              <p className="text-sm text-nv-muted">{n.mensagem}</p>
+            </div>
+          ))}
+          {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhum aviso por enquanto.</p>}
+        </div>
       </div>
     </div>
   );
@@ -1431,7 +1457,11 @@ export function AbaConfig() {
     .map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, nome: d.ocupadoPorCliente.user.nome }));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Configurações</h1>
+      </div>
       <PerfilCompleto perfil={perfil} onAtualizado={carregarPerfil} />
       <DisponibilidadeSemanal
         disponibilidades={disponibilidades}
@@ -1495,16 +1525,16 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   }
 
   return (
-    <div className="card space-y-3">
-      <h2 className="font-semibold">Seu perfil (o que a atendente e o time vê de você)</h2>
+    <div className="nv-card space-y-3">
+      <h2 className="font-sora font-semibold text-nv-ink">Seu perfil (o que a atendente e o time vê de você)</h2>
       <div className="flex items-center gap-4">
         <img
           src={foto ? URL.createObjectURL(foto) : perfil.user.fotoUrl || "https://via.placeholder.com/80?text=Foto"}
           alt="Foto de perfil"
-          className="w-20 h-20 rounded-full object-cover border border-renascer/20"
+          className="w-20 h-20 rounded-full object-cover border border-nv-border"
         />
         <div>
-          <label className="text-sm text-renascer-ink/60 block mb-1">Trocar foto</label>
+          <label className="text-sm text-nv-muted block mb-1">Trocar foto</label>
           <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files[0])} />
         </div>
       </div>
@@ -1518,7 +1548,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
       </div>
 
       <div>
-        <p className="text-sm text-renascer-ink/60 mb-1">O que você atende</p>
+        <p className="text-sm text-nv-muted mb-1">O que você atende</p>
         <div className="flex flex-wrap gap-2">
           {CATEGORIAS_SUGERIDAS.map((cat) => (
             <button
@@ -1526,7 +1556,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
               type="button"
               onClick={() => alternarCategoria(cat)}
               className={`text-sm px-3 py-1.5 rounded-full border ${
-                especialidades.includes(cat) ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
+                especialidades.includes(cat) ? "bg-nv-blue text-white border-nv-blue" : "border-nv-border text-nv-ink2"
               }`}
             >
               {cat}
@@ -1538,7 +1568,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
       <textarea className="input" rows={3} placeholder="Bio curta" value={bio} onChange={(e) => setBio(e.target.value)} />
 
       <div>
-        <label className="text-sm text-renascer-ink/60 block mb-1">
+        <label className="text-sm text-nv-muted block mb-1">
           Link fixo da sua sala no Google Meet (usado em todas as suas sessões)
         </label>
         <input
@@ -1547,7 +1577,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
           value={linkMeet}
           onChange={(e) => setLinkMeet(e.target.value)}
         />
-        <p className="text-xs text-renascer-ink/50 mt-1">
+        <p className="text-xs text-nv-muted mt-1">
           Pra criar: entre no Google Meet, clique em "Nova reunião" → "Iniciar uma reunião instantânea" (ou "Criar reunião para mais tarde") e copie o link gerado aqui.
         </p>
       </div>
@@ -1555,7 +1585,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
       <button className="btn-primary" onClick={salvar} disabled={salvando}>
         {salvando ? "Salvando..." : "Salvar perfil"}
       </button>
-      {msg && <p className="text-sm">{msg}</p>}
+      {msg && <p className="text-sm text-nv-ink2">{msg}</p>}
     </div>
   );
 }
@@ -1593,14 +1623,19 @@ function AbaMeuDiaProfissional() {
     { id: "implantacao", label: "Implantação" },
   ];
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu dia</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Checklist e indicadores do seu dia a dia</p>
+      </div>
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {SUBABAS.map((s) => (
           <button
             key={s.id}
             onClick={() => setSub(s.id)}
             className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+              sub === s.id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
             }`}
           >
             {s.label}
@@ -1608,10 +1643,10 @@ function AbaMeuDiaProfissional() {
         ))}
       </div>
       {sub === "hoje" && (
-        <div className="card space-y-3">
+        <div className="nv-card space-y-3">
           <div>
-            <h3 className="font-semibold">Checklist de hoje</h3>
-            <p className="text-xs text-renascer-ink/50">
+            <h3 className="font-sora font-semibold text-nv-ink">Checklist de hoje</h3>
+            <p className="text-xs text-nv-muted">
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
             </p>
           </div>
@@ -1620,10 +1655,10 @@ function AbaMeuDiaProfissional() {
       )}
       {sub === "indicadores" && <IndicadoresMeuDiaProfissional />}
       {sub === "implantacao" && (
-        <div className="card space-y-3">
+        <div className="nv-card space-y-3">
           <div>
-            <h3 className="font-semibold">Checklist de implantação</h3>
-            <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só.</p>
+            <h3 className="font-sora font-semibold text-nv-ink">Checklist de implantação</h3>
+            <p className="text-xs text-nv-muted">Itens de configuração inicial — marque uma vez só.</p>
           </div>
           <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_PROFISSIONAL} />
         </div>
@@ -1641,45 +1676,45 @@ function IndicadoresMeuDiaProfissional() {
   useEffect(() => {
     carregar();
   }, []);
-  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+  if (!dados) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
   return (
-    <div className="card space-y-4">
+    <div className="nv-card space-y-4">
       <div>
-        <h3 className="font-semibold mb-2">Hoje</h3>
+        <h3 className="font-sora font-semibold text-nv-ink mb-2">Hoje</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="border border-renascer/10 rounded-xl p-3">
-            <p className="text-xs text-renascer-ink/50">Sessões hoje</p>
-            <p className="text-lg font-bold">{dados.agendaHoje.total}</p>
+          <div className="border border-nv-border rounded-xl p-3">
+            <p className="text-xs text-nv-muted">Sessões hoje</p>
+            <p className="text-lg font-bold text-nv-ink">{dados.agendaHoje.total}</p>
           </div>
           {Object.entries(dados.agendaHoje.porStatus).map(([status, total]) => (
-            <div key={status} className="border border-renascer/10 rounded-xl p-3">
-              <p className="text-xs text-renascer-ink/50">{status}</p>
-              <p className="text-lg font-bold">{total}</p>
+            <div key={status} className="border border-nv-border rounded-xl p-3">
+              <p className="text-xs text-nv-muted">{status}</p>
+              <p className="text-lg font-bold text-nv-ink">{total}</p>
             </div>
           ))}
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Pendente de repasse</p>
+        <div className="border border-nv-border rounded-xl p-3">
+          <p className="text-xs text-nv-muted">Pendente de repasse</p>
           <p className="text-lg font-bold text-amber-700">R$ {dados.totalPendenteRepassar.toFixed(2)}</p>
         </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Taxa de faltas (mês)</p>
-          <p className="text-lg font-bold">
+        <div className="border border-nv-border rounded-xl p-3">
+          <p className="text-xs text-nv-muted">Taxa de faltas (mês)</p>
+          <p className="text-lg font-bold text-nv-ink">
             {dados.taxaFaltasMes.taxaFaltasPercentual !== null ? `${dados.taxaFaltasMes.taxaFaltasPercentual}%` : "—"}
           </p>
         </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Tempo médio de resposta</p>
-          <p className="text-lg font-bold">
+        <div className="border border-nv-border rounded-xl p-3">
+          <p className="text-xs text-nv-muted">Tempo médio de resposta</p>
+          <p className="text-lg font-bold text-nv-ink">
             {dados.tempoRespostaMedioMes.tempoMedioMinutos !== null ? `${dados.tempoRespostaMedioMes.tempoMedioMinutos} min` : "—"}
           </p>
         </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Clientes perto de renovar</p>
-          <p className="text-lg font-bold">{dados.clientesPertoDeRenovar}</p>
+        <div className="border border-nv-border rounded-xl p-3">
+          <p className="text-xs text-nv-muted">Clientes perto de renovar</p>
+          <p className="text-lg font-bold text-nv-ink">{dados.clientesPertoDeRenovar}</p>
         </div>
       </div>
     </div>

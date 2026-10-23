@@ -59,51 +59,56 @@ export default function AreaCliente() {
 function AbaContrato({ contrato }) {
   if (!contrato) {
     return (
-      <div className="card">
-        <p className="text-sm text-renascer-ink/50">Nenhum contrato encontrado.</p>
+      <div className="nv-card">
+        <p className="text-sm text-nv-muted">Nenhum contrato encontrado.</p>
       </div>
     );
   }
 
   return (
-    <div className="card space-y-3">
-      <h2 className="font-semibold mb-1">Seu contrato</h2>
-      <p className="text-xs text-renascer-ink/50 mb-2">
-        Esses são os dados e as fotos que você enviou quando aceitou o contrato do Espaço do Renascer.
-      </p>
-      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
-        <p>
-          <span className="text-renascer-ink/50">Nome informado:</span> {contrato.nomeCompleto}
-        </p>
-        <p>
-          <span className="text-renascer-ink/50">CPF:</span> {contrato.cpf}
-        </p>
-        <p className="sm:col-span-2">
-          <span className="text-renascer-ink/50">Aceito em:</span>{" "}
-          {contrato.aceitoEm ? new Date(contrato.aceitoEm).toLocaleString("pt-BR") : "-"}
-        </p>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu contrato</h1>
       </div>
-      <div className="flex flex-wrap gap-4 pt-2">
-        <button
-          type="button"
-          className="flex flex-col items-center gap-1"
-          onClick={() => abrirImagem(contrato.fotoDocumentoUrl, "Foto do documento")}
-          title="Ver em tamanho grande"
-        >
-          <img src={contrato.fotoDocumentoUrl} alt="Foto do documento" className="w-24 h-24 object-cover rounded-lg border border-renascer/20" />
-          <span className="text-xs text-renascer underline">Foto do documento</span>
-        </button>
-        {contrato.fotoRostoUrl && (
+      <div className="nv-card space-y-3">
+        <p className="text-xs text-nv-muted mb-2">
+          Esses são os dados e as fotos que você enviou quando aceitou o contrato do Espaço do Renascer.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm text-nv-ink2">
+          <p>
+            <span className="text-nv-muted">Nome informado:</span> {contrato.nomeCompleto}
+          </p>
+          <p>
+            <span className="text-nv-muted">CPF:</span> {contrato.cpf}
+          </p>
+          <p className="sm:col-span-2">
+            <span className="text-nv-muted">Aceito em:</span>{" "}
+            {contrato.aceitoEm ? new Date(contrato.aceitoEm).toLocaleString("pt-BR") : "-"}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-4 pt-2">
           <button
             type="button"
             className="flex flex-col items-center gap-1"
-            onClick={() => abrirImagem(contrato.fotoRostoUrl, "Foto do rosto")}
+            onClick={() => abrirImagem(contrato.fotoDocumentoUrl, "Foto do documento")}
             title="Ver em tamanho grande"
           >
-            <img src={contrato.fotoRostoUrl} alt="Foto do rosto" className="w-24 h-24 object-cover rounded-lg border border-renascer/20" />
-            <span className="text-xs text-renascer underline">Foto do rosto</span>
+            <img src={contrato.fotoDocumentoUrl} alt="Foto do documento" className="w-24 h-24 object-cover rounded-lg border border-nv-border" />
+            <span className="text-xs text-nv-blue underline">Foto do documento</span>
           </button>
-        )}
+          {contrato.fotoRostoUrl && (
+            <button
+              type="button"
+              className="flex flex-col items-center gap-1"
+              onClick={() => abrirImagem(contrato.fotoRostoUrl, "Foto do rosto")}
+              title="Ver em tamanho grande"
+            >
+              <img src={contrato.fotoRostoUrl} alt="Foto do rosto" className="w-24 h-24 object-cover rounded-lg border border-nv-border" />
+              <span className="text-xs text-nv-blue underline">Foto do rosto</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -147,24 +152,24 @@ function TelaContrato({ textoContrato, onAceito }) {
   }
 
   return (
-    <div className="min-h-screen bg-renascer-light flex items-center justify-center px-4 py-10">
-      <div className="card max-w-2xl w-full">
-        <h1 className="text-xl font-semibold mb-4">Contrato de prestação de serviços</h1>
-        <div className="h-56 overflow-y-auto border border-renascer/10 rounded-lg p-3 text-sm whitespace-pre-line bg-renascer-light/40 mb-4">
+    <div className="min-h-screen bg-nv-bg flex items-center justify-center px-4 py-10 font-publicSans">
+      <div className="nv-card max-w-2xl w-full">
+        <h1 className="font-sora text-xl font-semibold text-nv-ink mb-4">Contrato de prestação de serviços</h1>
+        <div className="h-56 overflow-y-auto border border-nv-border rounded-lg p-3 text-sm text-nv-ink2 whitespace-pre-line bg-nv-bg mb-4">
           {textoContrato}
         </div>
         <div className="space-y-3">
           <input className="input" placeholder="Nome completo" value={nomeCompleto} onChange={(e) => setNomeCompleto(e.target.value)} />
           <input className="input" placeholder="CPF" value={cpf} onChange={(e) => setCpf(e.target.value)} />
           <div>
-            <label className="text-sm text-renascer-ink/60">Foto do documento (obrigatória)</label>
+            <label className="text-sm text-nv-muted">Foto do documento (obrigatória)</label>
             <input type="file" accept="image/*" onChange={(e) => setFotoDocumento(e.target.files[0])} />
           </div>
           <div>
-            <label className="text-sm text-renascer-ink/60">Foto do seu rosto (opcional)</label>
+            <label className="text-sm text-nv-muted">Foto do seu rosto (opcional)</label>
             <input type="file" accept="image/*" onChange={(e) => setFotoRosto(e.target.files[0])} />
           </div>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm text-nv-ink2">
             <input type="checkbox" checked={concordo} onChange={(e) => setConcordo(e.target.checked)} />
             Li e concordo com os termos do contrato acima.
           </label>
@@ -237,29 +242,29 @@ function AvisoEntrada({ onIrParaAvisos }) {
   // em vez dos dois se sobrepondo ao mesmo tempo.
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
-      <div className="max-w-md w-full rounded-2xl p-6 shadow-2xl bg-white">
+      <div className="max-w-md w-full rounded-2xl p-6 shadow-2xl bg-white font-publicSans">
         {temNovidades && (
           <>
-            <p className="text-xs uppercase tracking-wide text-renascer/70 mb-1">
+            <p className="text-xs uppercase tracking-wide text-nv-blue/70 mb-1">
               {naoLidas.length === 1 ? "Você tem 1 novidade" : `Você tem ${naoLidas.length} novidades`}
             </p>
-            <h3 className="text-lg font-bold text-renascer-ink mb-3">Enquanto você esteve fora...</h3>
+            <h3 className="font-sora text-lg font-bold text-nv-ink mb-3">Enquanto você esteve fora...</h3>
             <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
               {naoLidas.slice(0, 4).map((n) => (
-                <div key={n.id} className="border border-renascer/10 rounded-lg p-2.5 bg-renascer-light/40">
-                  <p className="font-medium text-sm">{n.titulo}</p>
-                  <p className="text-xs text-renascer-ink/60 mt-0.5">{n.mensagem}</p>
+                <div key={n.id} className="border border-nv-borderLight rounded-lg p-2.5 bg-nv-bg">
+                  <p className="font-medium text-sm text-nv-ink">{n.titulo}</p>
+                  <p className="text-xs text-nv-muted mt-0.5">{n.mensagem}</p>
                 </div>
               ))}
-              {naoLidas.length > 4 && <p className="text-xs text-renascer-ink/50">e mais {naoLidas.length - 4}...</p>}
+              {naoLidas.length > 4 && <p className="text-xs text-nv-muted">e mais {naoLidas.length - 4}...</p>}
             </div>
           </>
         )}
 
         {pushPendente && (
-          <div className={temNovidades ? "border-t border-renascer/10 pt-3" : ""}>
-            {!temNovidades && <h3 className="text-lg font-bold text-renascer-ink mb-2">Não perca nenhum aviso</h3>}
-            <p className="text-sm text-renascer-ink/70 mb-2">
+          <div className={temNovidades ? "border-t border-nv-borderLight pt-3" : ""}>
+            {!temNovidades && <h3 className="font-sora text-lg font-bold text-nv-ink mb-2">Não perca nenhum aviso</h3>}
+            <p className="text-sm text-nv-muted mb-2">
               Ative as notificações no seu aparelho pra saber na hora quando chegar uma mensagem da sua
               profissional, um aviso de renovação ou de sessão — mesmo com o app fechado.
             </p>
@@ -273,7 +278,7 @@ function AvisoEntrada({ onIrParaAvisos }) {
         <div className="flex items-center gap-3 mt-1">
           {temNovidades && (
             <button
-              className="text-sm text-renascer underline"
+              className="text-sm text-nv-blue underline"
               onClick={() => {
                 onIrParaAvisos?.();
                 fechar();
@@ -282,7 +287,7 @@ function AvisoEntrada({ onIrParaAvisos }) {
               Ver todos os avisos
             </button>
           )}
-          <button className="text-sm text-renascer-ink/50 underline ml-auto" onClick={fechar}>
+          <button className="text-sm text-nv-muted underline ml-auto" onClick={fechar}>
             {pushPendente ? "Agora não" : "Fechar"}
           </button>
         </div>
@@ -315,11 +320,15 @@ function AbaPainel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-publicSans">
       {popupAberto && <PopupRenovacao pacoteAtivo={painel.pacoteAtivo} onFechar={fecharPopup} />}
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Início</h1>
+      </div>
       {painel.pendencias.length > 0 && (
-        <div className="card border-amber-300 bg-amber-50">
-          <h3 className="font-semibold text-amber-700 mb-1">Pendências</h3>
+        <div className="nv-card border-amber-300 bg-amber-50">
+          <h3 className="font-sora font-semibold text-amber-700 mb-1">Pendências</h3>
           {painel.pendencias.map((p, i) => (
             <p key={i} className="text-sm text-amber-800">
               {p}
@@ -328,17 +337,17 @@ function AbaPainel() {
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Sua profissional</p>
-          <p className="font-semibold">{painel.cliente.profissionalAtual?.user?.nome || "Não vinculada ainda"}</p>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Sua profissional</p>
+          <p className="font-semibold text-nv-ink">{painel.cliente.profissionalAtual?.user?.nome || "Não vinculada ainda"}</p>
         </div>
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Sessões restantes</p>
-          <p className="text-2xl font-bold text-renascer">{painel.sessoesRestantes}</p>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Sessões restantes</p>
+          <p className="nv-num text-2xl font-bold text-nv-blue">{painel.sessoesRestantes}</p>
         </div>
-        <div className="card">
-          <p className="text-sm text-renascer-ink/60">Próxima sessão</p>
-          <p className="font-semibold">
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Próxima sessão</p>
+          <p className="font-semibold text-nv-ink">
             {painel.proximaSessao ? new Date(painel.proximaSessao.data).toLocaleString("pt-BR") : "Nenhuma agendada"}
           </p>
         </div>
@@ -374,7 +383,7 @@ function PopupRenovacao({ pacoteAtivo, onFechar }) {
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           <button
-            className="flex-1 text-center bg-white text-renascer font-semibold rounded-lg py-2.5 hover:opacity-90"
+            className="flex-1 text-center bg-white text-nv-blue font-semibold rounded-lg py-2.5 hover:opacity-90"
             onClick={() => {
               window.open(linkWhatsapp(mensagem), "_blank");
               onFechar?.();
@@ -404,9 +413,9 @@ function ContatoWhatsapp() {
     },
   ];
   return (
-    <div className="card">
-      <h3 className="font-semibold mb-1">Fale com a gente no WhatsApp</h3>
-      <p className="text-xs text-renascer-ink/50 mb-3">
+    <div className="nv-card">
+      <h3 className="font-sora font-semibold text-nv-ink mb-1">Fale com a gente no WhatsApp</h3>
+      <p className="text-xs text-nv-muted mb-3">
         Pra trocar de plano, renovar seu pacote ou tirar outras dúvidas, é só chamar.
       </p>
       <div className="flex flex-wrap gap-2">
@@ -424,7 +433,7 @@ function ContatoWhatsapp() {
 const STATUS_COR_CLIENTE = {
   AGENDADO: "bg-blue-100 text-blue-700",
   CONFIRMADO: "bg-emerald-100 text-emerald-700",
-  REALIZADO: "bg-renascer-light text-renascer",
+  REALIZADO: "bg-nv-green/10 text-nv-green",
   CANCELADO: "bg-red-100 text-red-700",
   REAGENDADO: "bg-amber-100 text-amber-700",
   FALTOU: "bg-gray-200 text-gray-600",
@@ -443,26 +452,30 @@ function AbaAgenda() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-1">Suas sessões</h2>
-        <p className="text-xs text-renascer-ink/50 mb-3">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-1">Suas sessões</h2>
+        <p className="text-xs text-nv-muted mb-3">
           Quem marca sua sessão é a recepção do Espaço do Renascer, de acordo com os horários da sua profissional.
           Fale com a recepção pra marcar uma nova sessão.
         </p>
-        {sessoes === null && <p className="text-sm text-renascer-ink/50">Carregando...</p>}
-        {sessoes?.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma sessão marcada ainda.</p>}
+        {sessoes === null && <p className="text-sm text-nv-muted">Carregando...</p>}
+        {sessoes?.length === 0 && <p className="text-sm text-nv-muted">Nenhuma sessão marcada ainda.</p>}
         <div className="space-y-2">
           {sessoes?.map((ag) => (
-            <div key={ag.id} className="border border-renascer/10 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
+            <div key={ag.id} className="border border-nv-borderLight rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
               <div>
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium text-nv-ink2">
                   {new Date(ag.data).toLocaleDateString("pt-BR")} às {ag.horaInicio} · {ag.profissional?.user?.nome}
                 </p>
                 <span className={`badge mt-1 ${STATUS_COR_CLIENTE[ag.status] || ""}`}>{ag.status}</span>
               </div>
               {ag.status !== "REALIZADO" && ag.status !== "CANCELADO" && (
-                <a href={`/cliente/videochamada/${ag.id}`} className="text-sm text-renascer underline">
+                <a href={`/cliente/videochamada/${ag.id}`} className="text-sm text-nv-blue underline">
                   🎥 Entrar na videochamada
                 </a>
               )}
@@ -473,9 +486,9 @@ function AbaAgenda() {
 
       <ReagendarSessao sessoes={sessoes || []} onReagendado={carregar} />
 
-      <div className="card">
-        <h2 className="font-semibold mb-2">Quer trocar de profissional?</h2>
-        <p className="text-sm text-renascer-ink/60 mb-3">
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-2">Quer trocar de profissional?</h2>
+        <p className="text-sm text-nv-muted mb-3">
           Você precisa encerrar seu pacote atual antes de trocar. Ao escolher uma nova profissional, você será redirecionado ao WhatsApp para finalizar o pagamento do novo pacote.
         </p>
         <button className="btn-secondary" onClick={() => setMostrarTroca(!mostrarTroca)}>
@@ -537,16 +550,16 @@ function ReagendarSessao({ sessoes, onReagendado }) {
   }
 
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-2">Reagendar uma sessão existente</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
+    <div className="nv-card">
+      <h2 className="font-sora font-semibold text-nv-ink mb-2">Reagendar uma sessão existente</h2>
+      <p className="text-xs text-nv-muted mb-3">
         Escolha qual sessão marcada você quer mudar e a nova data — só aparecem os horários realmente livres na agenda
         da sua profissional (já considerando se a sessão é de 30 ou 50 minutos). Só é possível reagendar com pelo menos
         24h de antecedência da sessão original.
       </p>
       <div className="space-y-2">
         <div>
-          <label className="text-sm text-renascer-ink/60 block mb-1">Qual sessão você quer reagendar?</label>
+          <label className="text-sm text-nv-muted block mb-1">Qual sessão você quer reagendar?</label>
           <select
             className="input"
             value={id}
@@ -566,12 +579,12 @@ function ReagendarSessao({ sessoes, onReagendado }) {
             ))}
           </select>
           {elegiveis.length === 0 && (
-            <p className="text-xs text-renascer-ink/40 mt-1">Você não tem sessões marcadas pra reagendar.</p>
+            <p className="text-xs text-nv-muted3 mt-1">Você não tem sessões marcadas pra reagendar.</p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="flex-1 min-w-[150px]">
-            <label className="text-sm text-renascer-ink/60 block mb-1">Para qual data você quer mudar?</label>
+            <label className="text-sm text-nv-muted block mb-1">Para qual data você quer mudar?</label>
             <input type="date" className="input w-full" value={data} onChange={(e) => setData(e.target.value)} />
           </div>
           <button className="btn-secondary whitespace-nowrap self-end" onClick={buscarHorarios} disabled={!id || !data || buscando}>
@@ -581,7 +594,7 @@ function ReagendarSessao({ sessoes, onReagendado }) {
 
         {horarios && (
           <div>
-            <p className="text-xs text-renascer-ink/50 mb-1">
+            <p className="text-xs text-nv-muted mb-1">
               Horários livres em {horarios.diaSemana.toLowerCase()} pra uma sessão de {horarios.duracao === "MIN30" ? "30min" : "50min"}:
             </p>
             <div className="flex flex-wrap gap-2">
@@ -593,7 +606,7 @@ function ReagendarSessao({ sessoes, onReagendado }) {
                   key={h}
                   onClick={() => setHoraEscolhida(h)}
                   className={`text-sm px-3 py-1.5 rounded-full border ${
-                    horaEscolhida === h ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
+                    horaEscolhida === h ? "bg-nv-blue text-white border-nv-blue" : "border-nv-border text-nv-ink2"
                   }`}
                 >
                   {h}
@@ -606,7 +619,7 @@ function ReagendarSessao({ sessoes, onReagendado }) {
       <button className="btn-secondary mt-3" onClick={reagendar} disabled={!horaEscolhida}>
         Reagendar
       </button>
-      {msg && <p className="text-sm mt-2">{msg}</p>}
+      {msg && <p className="text-sm mt-2 text-nv-ink2">{msg}</p>}
     </div>
   );
 }
@@ -638,10 +651,10 @@ function TrocaProfissional() {
     <div className="mt-3 space-y-2">
       {msg && <p className="text-amber-700 text-sm">{msg}</p>}
       {lista.map((p) => (
-        <div key={p.id} className="flex items-center justify-between border border-renascer/10 rounded-lg p-2">
+        <div key={p.id} className="flex items-center justify-between border border-nv-borderLight rounded-lg p-2">
           <div>
-            <p className="font-medium">{p.nome}</p>
-            <p className="text-xs text-renascer-ink/50">{p.titulo}</p>
+            <p className="font-medium text-nv-ink2">{p.nome}</p>
+            <p className="text-xs text-nv-muted">{p.titulo}</p>
           </div>
           <button className="btn-secondary !py-1.5 !px-3 text-sm" onClick={() => escolher(p.id)}>
             Escolher
@@ -690,13 +703,17 @@ function AbaFinanceiro() {
   if (!planos) return <p>Carregando planos...</p>;
 
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-3">Renovar pacote / trocar de plano</h2>
-        <p className="text-xs text-renascer-ink/50 mb-3">Ao escolher, você será redirecionado ao WhatsApp para finalizar o pagamento.</p>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Pacotes</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Renovar pacote / trocar de plano</h2>
+        <p className="text-xs text-nv-muted mb-3">Ao escolher, você será redirecionado ao WhatsApp para finalizar o pagamento.</p>
         {["MIN30", "MIN50"].map((dur) => (
           <div key={dur} className="mb-4">
-            <p className="font-medium mb-2">Sessões de {dur === "MIN30" ? "30 minutos" : "50 minutos"}</p>
+            <p className="font-medium text-nv-ink2 mb-2">Sessões de {dur === "MIN30" ? "30 minutos" : "50 minutos"}</p>
             <div className="flex flex-wrap gap-2">
               {planos[dur].map((p) => (
                 <button key={p.totalSessoes} className="btn-secondary" onClick={() => escolherPlano(dur, p.totalSessoes)}>
@@ -708,8 +725,8 @@ function AbaFinanceiro() {
         ))}
       </div>
 
-      <div className="card">
-        <h2 className="font-semibold mb-3">Solicitar sessão extra</h2>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Solicitar sessão extra</h2>
         <div className="flex flex-wrap gap-2">
           <button className="btn-secondary" onClick={() => sessaoExtra("MIN30")}>
             Extra de 30min
@@ -754,34 +771,39 @@ function AbaChat() {
   }
 
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-1">Chat com sua profissional</h2>
-      <p className="text-xs text-renascer-ink/50 mb-3">
-        Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
-      </p>
-      <div className="h-64 overflow-y-auto border border-renascer/10 rounded-lg p-3 space-y-2 mb-3 bg-renascer-light/30">
-        {mensagens.map((m) => (
-          <div key={m.id} className={`text-sm ${m.autor === "CLIENTE" ? "text-right" : ""}`}>
-            <span className="inline-block bg-white px-3 py-1.5 rounded-lg border border-renascer/10">
-              {m.tipo === "recado_diario" && <span className="block text-xs text-renascer font-medium mb-0.5">Recado do dia</span>}
-              {m.texto}
-            </span>
-          </div>
-        ))}
-        {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Chat</h1>
       </div>
-      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
-      <div className="flex flex-wrap gap-2">
-        <input
-          className="input flex-1 min-w-[150px]"
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && enviar()}
-          placeholder="Escreva sua mensagem..."
-        />
-        <button className="btn-primary" onClick={enviar} disabled={enviando}>
-          Enviar
-        </button>
+      <div className="nv-card">
+        <p className="text-xs text-nv-muted mb-3">
+          Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
+        </p>
+        <div className="h-64 overflow-y-auto border border-nv-borderLight rounded-lg p-3 space-y-2 mb-3 bg-nv-bg">
+          {mensagens.map((m) => (
+            <div key={m.id} className={`text-sm ${m.autor === "CLIENTE" ? "text-right" : ""}`}>
+              <span className="inline-block bg-white px-3 py-1.5 rounded-lg border border-nv-border text-nv-ink2">
+                {m.tipo === "recado_diario" && <span className="block text-xs text-nv-blue font-medium mb-0.5">Recado do dia</span>}
+                {m.texto}
+              </span>
+            </div>
+          ))}
+          {mensagens.length === 0 && <p className="text-xs text-nv-muted3">Sem mensagens ainda.</p>}
+        </div>
+        {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
+        <div className="flex flex-wrap gap-2">
+          <input
+            className="input flex-1 min-w-[150px]"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && enviar()}
+            placeholder="Escreva sua mensagem..."
+          />
+          <button className="btn-primary" onClick={enviar} disabled={enviando}>
+            Enviar
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -823,34 +845,38 @@ function AbaDiario() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <h2 className="font-semibold mb-1">Como foi seu dia?</h2>
-        <p className="text-xs text-renascer-ink/50 mb-3">Totalmente opcional — só compartilhe se quiser.</p>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu dia</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-1">Como foi seu dia?</h2>
+        <p className="text-xs text-nv-muted mb-3">Totalmente opcional — só compartilhe se quiser.</p>
         <div className="flex gap-3 text-3xl mb-3">
           {HUMORES.map(([valor, emoji]) => (
             <button
               key={valor}
               onClick={() => setHumor(valor)}
-              className={`p-2 rounded-full ${humor === valor ? "bg-renascer-light ring-2 ring-renascer" : ""}`}
+              className={`p-2 rounded-full ${humor === valor ? "bg-nv-blue/10 ring-2 ring-nv-blue" : ""}`}
             >
               {emoji}
             </button>
           ))}
         </div>
         <textarea className="input mb-2" rows={3} placeholder="Quer contar mais alguma coisa?" value={nota} onChange={(e) => setNota(e.target.value)} />
-        <label className="flex items-center gap-2 text-sm mb-3">
+        <label className="flex items-center gap-2 text-sm text-nv-ink2 mb-3">
           <input type="checkbox" checked={!!tarefaFeita} onChange={(e) => setTarefaFeita(e.target.checked)} />
           Consegui fazer a tarefa que me passaram
         </label>
         <button className="btn-primary" onClick={enviar} disabled={!humor}>
           Enviar
         </button>
-        {enviado && <p className="text-emerald-600 text-sm mt-2">Registrado! Obrigado por compartilhar.</p>}
+        {enviado && <p className="text-nv-green text-sm mt-2">Registrado! Obrigado por compartilhar.</p>}
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold mb-2">Histórico recente</h3>
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-2">Histórico recente</h3>
         <div className="flex flex-wrap gap-2">
           {historico.map((h) => (
             <span key={h.id} title={new Date(h.data).toLocaleDateString("pt-BR")} className="text-2xl">
@@ -883,14 +909,18 @@ function AbaTarefas() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-3">Tarefas que sua profissional te enviou</h2>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Tarefas</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Tarefas que sua profissional te enviou</h2>
         {minhas.map((t) => (
-          <div key={t.id} className="border border-renascer/10 rounded-lg p-3 mb-2 flex justify-between items-center">
+          <div key={t.id} className="border border-nv-borderLight rounded-lg p-3 mb-2 flex justify-between items-center">
             <div>
-              <p className="font-medium">{t.tarefa.titulo}</p>
-              <p className="text-sm text-renascer-ink/60">{t.tarefa.descricao}</p>
+              <p className="font-medium text-nv-ink2">{t.tarefa.titulo}</p>
+              <p className="text-sm text-nv-muted">{t.tarefa.descricao}</p>
             </div>
             {!t.concluida ? (
               <button className="btn-secondary !py-1 !px-3 text-sm" onClick={() => concluir(t.id)}>
@@ -901,18 +931,18 @@ function AbaTarefas() {
             )}
           </div>
         ))}
-        {minhas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma tarefa atribuída ainda.</p>}
+        {minhas.length === 0 && <p className="text-sm text-nv-muted">Nenhuma tarefa atribuída ainda.</p>}
       </div>
 
-      <div className="card">
-        <h2 className="font-semibold mb-1">Biblioteca de apoio por tema</h2>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-1">Biblioteca de apoio por tema</h2>
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">{biblioteca?.aviso}</p>
         <div className="grid sm:grid-cols-2 gap-2">
           {biblioteca?.tarefas?.map((t) => (
-            <div key={t.id} className="border border-renascer/10 rounded-lg p-3">
-              <span className="badge bg-renascer-light text-renascer mb-1">{t.tema}</span>
-              <p className="font-medium">{t.titulo}</p>
-              <p className="text-sm text-renascer-ink/60">{t.descricao}</p>
+            <div key={t.id} className="border border-nv-borderLight rounded-lg p-3">
+              <span className="badge bg-nv-blue/10 text-nv-blue mb-1">{t.tema}</span>
+              <p className="font-medium text-nv-ink2">{t.titulo}</p>
+              <p className="text-sm text-nv-muted">{t.descricao}</p>
             </div>
           ))}
         </div>
@@ -928,15 +958,21 @@ function AbaRelatorios() {
     api.get("/cliente/relatorios").then((r) => setLista(r.data));
   }, []);
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-3">Relatórios disponibilizados pela sua profissional</h2>
-      {lista.map((r) => (
-        <div key={r.id} className="border border-renascer/10 rounded-lg p-3 mb-2">
-          <p className="font-medium">{r.titulo}</p>
-          <p className="text-sm text-renascer-ink/60">{r.conteudo}</p>
-        </div>
-      ))}
-      {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum relatório disponibilizado ainda.</p>}
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Relatórios</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Relatórios disponibilizados pela sua profissional</h2>
+        {lista.map((r) => (
+          <div key={r.id} className="border border-nv-borderLight rounded-lg p-3 mb-2">
+            <p className="font-medium text-nv-ink2">{r.titulo}</p>
+            <p className="text-sm text-nv-muted">{r.conteudo}</p>
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-nv-muted">Nenhum relatório disponibilizado ainda.</p>}
+      </div>
     </div>
   );
 }
@@ -959,23 +995,28 @@ function AbaAvisos() {
   }
 
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-3">Seus avisos</h2>
-      <div className="space-y-2">
-        {lista.map((n) => (
-          <div key={n.id} className={`border rounded-lg p-3 flex justify-between items-start ${n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"}`}>
-            <div>
-              <p className="font-medium text-sm">{n.titulo}</p>
-              <p className="text-sm text-renascer-ink/60">{n.mensagem}</p>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Avisos</h1>
+      </div>
+      <div className="nv-card">
+        <div className="space-y-2">
+          {lista.map((n) => (
+            <div key={n.id} className={`border rounded-lg p-3 flex justify-between items-start ${n.lida ? "border-nv-borderLight" : "border-nv-blue/40 bg-nv-blue/5"}`}>
+              <div>
+                <p className="font-medium text-sm text-nv-ink">{n.titulo}</p>
+                <p className="text-sm text-nv-muted">{n.mensagem}</p>
+              </div>
+              {!n.lida && (
+                <button className="text-xs text-nv-blue underline whitespace-nowrap ml-2" onClick={() => marcarLida(n.id)}>
+                  marcar como lida
+                </button>
+              )}
             </div>
-            {!n.lida && (
-              <button className="text-xs text-renascer underline whitespace-nowrap ml-2" onClick={() => marcarLida(n.id)}>
-                marcar como lida
-              </button>
-            )}
-          </div>
-        ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum aviso por enquanto.</p>}
+          ))}
+          {lista.length === 0 && <p className="text-sm text-nv-muted">Nenhum aviso por enquanto.</p>}
+        </div>
       </div>
     </div>
   );
@@ -1006,12 +1047,16 @@ function AbaSuporte() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-3">Abrir novo chamado</h2>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Suporte</h1>
+      </div>
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Abrir novo chamado</h2>
         <input className="input mb-2" placeholder="Assunto" value={assunto} onChange={(e) => setAssunto(e.target.value)} />
         <textarea className="input mb-2" rows={3} placeholder="Descreva sua dúvida ou situação (pode anexar prints depois, no chat do chamado)" value={texto} onChange={(e) => setTexto(e.target.value)} />
-        <label className="flex items-center gap-2 text-sm mb-2">
+        <label className="flex items-center gap-2 text-sm text-nv-ink2 mb-2">
           <input type="checkbox" checked={escalonar} onChange={(e) => setEscalonar(e.target.checked)} />
           Quero falar diretamente com a gerência (ex: para relatar algo sobre minha profissional)
         </label>
@@ -1022,13 +1067,13 @@ function AbaSuporte() {
 
       <div className="space-y-2">
         {tickets.map((t) => (
-          <div key={t.id} className="card">
+          <div key={t.id} className="nv-card">
             <div className="flex justify-between">
-              <p className="font-medium">{t.assunto}</p>
-              <span className="badge bg-renascer-light text-renascer">{t.status}</span>
+              <p className="font-medium text-nv-ink2">{t.assunto}</p>
+              <span className="badge bg-nv-blue/10 text-nv-blue">{t.status}</span>
             </div>
             {t.mensagens.map((m) => (
-              <p key={m.id} className="text-sm text-renascer-ink/70 mt-1">
+              <p key={m.id} className="text-sm text-nv-muted mt-1">
                 {m.texto}
               </p>
             ))}
@@ -1047,18 +1092,24 @@ function AbaMateriais() {
   }, []);
   if (!materiais) return null;
   return (
-    <div className="card">
-      <h2 className="font-semibold mb-3">Materiais e cursos</h2>
-      <div className="border border-renascer/10 rounded-lg p-4 flex items-center justify-between">
-        <div>
-          <p className="font-medium">{materiais.ebook.titulo}</p>
-          <p className="text-sm text-renascer-ink/60">Disponível para compra</p>
-        </div>
-        <a className="btn-primary" href={materiais.ebook.linkHotmart} target="_blank" rel="noreferrer">
-          Ver e-book
-        </a>
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Materiais</h1>
       </div>
-      {materiais.cursos.length === 0 && <p className="text-sm text-renascer-ink/50 mt-3">Cursos e vídeo-aulas em breve.</p>}
+      <div className="nv-card">
+        <h2 className="font-sora font-semibold text-nv-ink mb-3">Materiais e cursos</h2>
+        <div className="border border-nv-borderLight rounded-lg p-4 flex items-center justify-between">
+          <div>
+            <p className="font-medium text-nv-ink2">{materiais.ebook.titulo}</p>
+            <p className="text-sm text-nv-muted">Disponível para compra</p>
+          </div>
+          <a className="btn-primary" href={materiais.ebook.linkHotmart} target="_blank" rel="noreferrer">
+            Ver e-book
+          </a>
+        </div>
+        {materiais.cursos.length === 0 && <p className="text-sm text-nv-muted mt-3">Cursos e vídeo-aulas em breve.</p>}
+      </div>
     </div>
   );
 }
@@ -1070,14 +1121,19 @@ function AbaDuvidas() {
     api.get("/cliente/duvidas").then((r) => setFaq(r.data));
   }, []);
   return (
-    <div className="card space-y-3">
-      <h2 className="font-semibold">Dúvidas frequentes</h2>
-      {faq.map((f, i) => (
-        <details key={i} className="border border-renascer/10 rounded-lg p-3">
-          <summary className="font-medium cursor-pointer">{f.pergunta}</summary>
-          <p className="text-sm text-renascer-ink/70 mt-2">{f.resposta}</p>
-        </details>
-      ))}
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Dúvidas</h1>
+      </div>
+      <div className="nv-card space-y-3">
+        {faq.map((f, i) => (
+          <details key={i} className="border border-nv-borderLight rounded-lg p-3">
+            <summary className="font-medium text-nv-ink2 cursor-pointer">{f.pergunta}</summary>
+            <p className="text-sm text-nv-muted mt-2">{f.resposta}</p>
+          </details>
+        ))}
+      </div>
     </div>
   );
 }

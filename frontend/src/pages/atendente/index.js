@@ -4,7 +4,6 @@ import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
-import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
@@ -147,6 +146,8 @@ const DIAS_LABEL = {
   DOMINGO: "Domingo",
 };
 
+const NV_CORES_AVATAR_ATENDENTE = ["#0B5FA8", "#1C7C54", "#8A4FA3", "#B4622E"];
+
 // ---------------- PROFISSIONAIS: perfil completo + agendar exatamente o que o cliente quer ----------------
 function ProfissionaisEAgendar() {
   const [profissionais, setProfissionais] = useState([]);
@@ -164,60 +165,86 @@ function ProfissionaisEAgendar() {
   }, []);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {profissionais.map((p) => (
-        <div key={p.id} className="card">
-          <div className="flex gap-3">
-            <img
-              src={p.user.fotoUrl || "https://via.placeholder.com/72?text=Foto"}
-              alt={p.user.nome}
-              className="w-16 h-16 rounded-full object-cover border border-renascer/20"
-            />
-            <div className="flex-1">
-              <p className="font-semibold flex items-center gap-1.5 flex-wrap">
-                {p.user.nome} {p.idade ? `· ${p.idade} anos` : ""}
-                {p.user.role === "DONO" && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Dono</span>
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Profissionais e agendar</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Veja os horários de cada profissional, agende uma sessão ou ajuste a disponibilidade dela</p>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {profissionais.map((p, i) => {
+          const cor = NV_CORES_AVATAR_ATENDENTE[i % NV_CORES_AVATAR_ATENDENTE.length];
+          const iniciais = p.user.nome
+            .split(" ")
+            .slice(0, 2)
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase();
+          return (
+            <div key={p.id} className="nv-card">
+              <div className="flex gap-3">
+                {p.user.fotoUrl ? (
+                  <img src={p.user.fotoUrl} alt={p.user.nome} className="w-14 h-14 rounded-full object-cover border border-nv-border shrink-0" />
+                ) : (
+                  <div
+                    className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-base text-white shrink-0"
+                    style={{ background: cor }}
+                  >
+                    {iniciais}
+                  </div>
                 )}
-              </p>
-              <p className="text-sm text-renascer-ink/60">{p.titulo}{p.registro ? ` · ${p.registro}` : ""}</p>
-              {p.abordagens && <p className="text-xs text-renascer-ink/50">Abordagem: {p.abordagens}</p>}
-              <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-sora font-semibold text-nv-ink flex items-center gap-1.5 flex-wrap">
+                    {p.user.nome} {p.idade ? <span className="font-publicSans font-normal text-nv-muted3">· {p.idade} anos</span> : ""}
+                    {p.user.role === "DONO" && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-nv-gold/15 text-nv-gold">Dono</span>
+                    )}
+                  </p>
+                  <p className="text-sm text-nv-muted2">
+                    {p.titulo}
+                    {p.registro ? ` · ${p.registro}` : ""}
+                  </p>
+                  {p.abordagens && <p className="text-xs text-nv-muted3">Abordagem: {p.abordagens}</p>}
+                  <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
+                </div>
+              </div>
+
+              {p.especialidades?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                  {p.especialidades.map((e) => (
+                    <span key={e} className="text-[11px] font-semibold text-[#3E6FA3] bg-[#EAF1FA] rounded-full px-2.5 py-1">
+                      {e}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-xs text-nv-muted3 mt-2.5 border-t border-nv-borderLight pt-2.5">
+                {p.disponibilidades.length === 0 && "Nenhum horário liberado ainda."}
+                {p.disponibilidades.map((d) => (
+                  <span key={d.id} className={`inline-block mr-2.5 ${d.ocupadoPorCliente ? "text-[#B0580F] font-medium" : ""}`}>
+                    {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
+                    {d.ocupadoPorCliente ? ` (fixo: ${d.ocupadoPorCliente.user.nome})` : ""}
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button className="btn-secondary text-sm" onClick={() => setSelecionada(selecionada?.id === p.id ? null : p)}>
+                  {selecionada?.id === p.id ? "Fechar" : "Ver horários e agendar"}
+                </button>
+                <button className="btn-secondary text-sm" onClick={() => setEditando(editando === p.id ? null : p.id)}>
+                  {editando === p.id ? "Fechar edição de horários" : "Editar horários dela"}
+                </button>
+              </div>
+
+              {selecionada?.id === p.id && <AgendarComProfissional profissional={p} clientes={clientes} onAgendado={carregar} />}
+              {editando === p.id && <EditarDisponibilidadeProfissional profissional={p} onSalvo={carregar} />}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-1 mt-2">
-            {(p.especialidades || []).map((e) => (
-              <span key={e} className="badge bg-renascer-light text-renascer">
-                {e}
-              </span>
-            ))}
-          </div>
-
-          <div className="text-xs text-renascer-ink/50 mt-2">
-            {p.disponibilidades.length === 0 && "Nenhum horário liberado ainda."}
-            {p.disponibilidades.map((d) => (
-              <span key={d.id} className={`inline-block mr-2 ${d.ocupadoPorCliente ? "text-amber-700" : ""}`}>
-                {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
-                {d.ocupadoPorCliente ? ` (fixo: ${d.ocupadoPorCliente.user.nome})` : ""}
-              </span>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2 mt-3">
-            <button className="btn-secondary text-sm" onClick={() => setSelecionada(selecionada?.id === p.id ? null : p)}>
-              {selecionada?.id === p.id ? "Fechar" : "Ver horários e agendar"}
-            </button>
-            <button className="btn-secondary text-sm" onClick={() => setEditando(editando === p.id ? null : p.id)}>
-              {editando === p.id ? "Fechar edição de horários" : "Editar horários dela"}
-            </button>
-          </div>
-
-          {selecionada?.id === p.id && <AgendarComProfissional profissional={p} clientes={clientes} onAgendado={carregar} />}
-          {editando === p.id && <EditarDisponibilidadeProfissional profissional={p} onSalvo={carregar} />}
-        </div>
-      ))}
-      {profissionais.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma profissional cadastrada ainda.</p>}
+          );
+        })}
+        {profissionais.length === 0 && <p className="text-sm text-nv-muted">Nenhuma profissional cadastrada ainda.</p>}
+      </div>
     </div>
   );
 }
@@ -235,7 +262,7 @@ function EditarDisponibilidadeProfissional({ profissional, onSalvo }) {
     .map((d) => ({ diaSemana: d.diaSemana, horaInicio: d.horaInicio, nome: d.ocupadoPorCliente.user.nome }));
 
   return (
-    <div className="mt-3 border-t border-renascer/10 pt-3">
+    <div className="mt-3 border-t border-nv-borderLight pt-3">
       <DisponibilidadeSemanal
         disponibilidades={disponibilidades}
         setDisponibilidades={setDisponibilidades}
@@ -284,7 +311,7 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
   }
 
   return (
-    <div className="mt-3 border-t border-renascer/10 pt-3 space-y-2">
+    <div className="mt-3 border-t border-nv-borderLight pt-3 space-y-2">
       <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
         <option value="">Escolha o cliente</option>
         {clientes.map((c) => (
@@ -306,13 +333,15 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
 
       {horarios && (
         <div className="flex flex-wrap gap-2">
-          {horarios.livres.length === 0 && <p className="text-sm text-amber-700">Nenhum horário livre nesse dia ({horarios.diaSemana}).</p>}
+          {horarios.livres.length === 0 && (
+            <p className="text-sm text-[#B0580F]">Nenhum horário livre nesse dia ({horarios.diaSemana}).</p>
+          )}
           {horarios.livres.map((h) => (
             <button
               key={h}
               onClick={() => setHoraEscolhida(h)}
               className={`text-sm px-3 py-1.5 rounded-full border ${
-                horaEscolhida === h ? "bg-renascer text-white border-renascer" : "border-renascer/20 text-renascer-ink/70"
+                horaEscolhida === h ? "bg-nv-blue text-white border-nv-blue" : "border-nv-border text-nv-ink2"
               }`}
             >
               {h}
@@ -324,10 +353,10 @@ function AgendarComProfissional({ profissional, clientes, onAgendado }) {
       <button className="btn-primary" onClick={confirmar} disabled={!horaEscolhida}>
         Confirmar agendamento
       </button>
-      {msg && <p className="text-sm">{msg}</p>}
+      {msg && <p className="text-sm text-nv-ink">{msg}</p>}
 
       <details className="text-sm mt-2">
-        <summary className="cursor-pointer text-renascer">Registrar contratação, pagamento ou renovação</summary>
+        <summary className="cursor-pointer text-nv-blue font-semibold">Registrar contratação, pagamento ou renovação</summary>
         <RegistrarPacote clienteId={clienteId} onRegistrado={() => setMsg("Pagamento registrado! Agora já pode escolher o horário.")} />
       </details>
     </div>
@@ -402,7 +431,7 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
         <input className="input !w-32" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
       </div>
       <div>
-        <label className="text-xs text-renascer-ink/50 block mb-1">
+        <label className="text-xs text-nv-muted block mb-1">
           Anexar comprovante do pagamento (fica guardado no cadastro do cliente pra poder ver depois)
         </label>
         <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
@@ -410,7 +439,7 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
       <button className="btn-secondary" onClick={registrar} disabled={enviando}>
         {enviando ? "Registrando..." : "Registrar pagamento"}
       </button>
-      {msg && <p className="text-sm w-full">{msg}</p>}
+      {msg && <p className="text-sm w-full text-nv-ink">{msg}</p>}
     </div>
   );
 }
@@ -439,6 +468,11 @@ const CANAL_ORIGEM_OPCOES = [
   { valor: "OUTRO", label: "Outro" },
 ];
 
+function PontoStatus({ status }) {
+  const classe = status === "VERMELHO" ? "nv-dot-urgente" : status === "AMARELO" ? "nv-dot-atencao" : "nv-dot-ok";
+  return <span className={`nv-dot ${classe}`} />;
+}
+
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
@@ -447,6 +481,7 @@ function Clientes() {
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
   const [expandido, setExpandido] = useState(null);
+  const [mostrarForm, setMostrarForm] = useState(false);
 
   async function carregar() {
     const [c, p] = await Promise.all([api.get("/atendente/clientes"), api.get("/atendente/profissionais")]);
@@ -485,143 +520,155 @@ function Clientes() {
     }
   }
 
+  const ordenados = [...lista].sort((a, b) => a.user.nome.localeCompare(b.user.nome));
+
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <h2 className="font-semibold mb-3">Cadastrar novo cliente</h2>
-        <div className="grid sm:grid-cols-2 gap-2">
-          <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-          <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
-          <input className="input" placeholder="Senha do login (opcional, senão é gerada uma)" value={form.senhaProvisoria} onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })} />
-          <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
-            <option value="">Vincular profissional (opcional)</option>
-            {profissionais.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.user.nome}
-                {p.user.role === "DONO" ? " (Dono)" : ""}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
-            {CANAL_ORIGEM_OPCOES.map((c) => (
-              <option key={c.valor} value={c.valor}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Clientes</h1>
+          <p className="text-nv-muted text-sm mt-0.5">{lista.length} clientes cadastrados, em ordem alfabética</p>
         </div>
-
-        <div className="border-t border-renascer/10 mt-4 pt-4">
-          <p className="text-sm font-medium mb-1">Já lançar pagamento agora (opcional)</p>
-          <p className="text-xs text-renascer-ink/50 mb-2">
-            Se o cliente já pagou, preencha o valor aqui — escolha a profissional acima antes: isso já cria o pacote e
-            conta na hora no financeiro (aparece no "A receber hoje" do Dono).
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
-              <option value="PACOTE_NOVO">Contratação nova</option>
-              <option value="RENOVACAO">Renovação</option>
-              <option value="SESSAO_EXTRA">Sessão extra</option>
-              <option value="OUTRO">Outro</option>
-            </select>
-            <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
-              <option value="MIN30">30 minutos</option>
-              <option value="MIN50">50 minutos</option>
-            </select>
-            <input
-              type="number"
-              min="1"
-              className="input"
-              placeholder="Nº de sessões"
-              value={form.totalSessoes}
-              onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
-            />
-            <input className="input" placeholder="Valor (opcional)" value={form.valorTotal} onChange={(e) => setForm({ ...form, valorTotal: e.target.value })} />
-          </div>
-          <div className="mt-2">
-            <label className="text-xs text-renascer-ink/50 block mb-1">Anexar comprovante (opcional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
-          </div>
-        </div>
-
-        <button className="btn-primary mt-4" onClick={cadastrar}>
-          Cadastrar
+        <button className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
+          {mostrarForm ? "Fechar" : "+ Novo cliente"}
         </button>
-        {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
-        {resultado && (
-          <div className="text-sm mt-2 space-y-1">
-            <p className="text-emerald-600">
-              Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um canal seguro)
-            </p>
-            {resultado.transacao && (
-              <p className="text-emerald-600">
-                Pagamento contabilizado! A profissional recebe direto e deve repassar R${" "}
-                {resultado.transacao.valorRenascer.toFixed(2)} pra Renascer (vai aparecer em Repasses assim que ela mandar o
-                comprovante).
-              </p>
-            )}
-            {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
-          </div>
-        )}
       </div>
 
-      <div className="card overflow-x-auto">
-        <h2 className="font-semibold mb-2">Clientes cadastrados</h2>
-        <p className="text-xs text-renascer-ink/50 mb-2">Clique num cliente pra ver tempo de casa e renovações.</p>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-renascer-ink/50">
-              <th>Nome</th>
-              <th>E-mail</th>
-              <th>Profissional</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.flatMap((c) => {
-              const linhas = [
-                <tr
-                  key={c.id}
-                  className="border-t border-renascer/10 cursor-pointer hover:bg-renascer-light/30"
-                  onClick={() => setExpandido(expandido === c.id ? null : c.id)}
-                >
-                  <td className="py-1 flex items-center gap-1.5">
-                    <StatusCliente status={c.statusCliente} />
-                    {c.user.nome}
-                  </td>
-                  <td>{c.user.email}</td>
-                  <td>
-                    {c.profissionalAtual?.user?.nome || "-"}
+      {mostrarForm && (
+        <div className="nv-card mb-4">
+          <h2 className="font-sora font-semibold text-nv-ink mb-3">Cadastrar novo cliente</h2>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+            <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+            <input
+              className="input"
+              placeholder="Senha do login (opcional, senão é gerada uma)"
+              value={form.senhaProvisoria}
+              onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })}
+            />
+            <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
+              <option value="">Vincular profissional (opcional)</option>
+              {profissionais.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.user.nome}
+                  {p.user.role === "DONO" ? " (Dono)" : ""}
+                </option>
+              ))}
+            </select>
+            <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
+              {CANAL_ORIGEM_OPCOES.map((c) => (
+                <option key={c.valor} value={c.valor}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="border-t border-nv-borderLight mt-4 pt-4">
+            <p className="text-sm font-semibold text-nv-ink mb-1">Já lançar pagamento agora (opcional)</p>
+            <p className="text-xs text-nv-muted mb-2">
+              Se o cliente já pagou, preencha o valor aqui — escolha a profissional acima antes: isso já cria o pacote e
+              conta na hora no financeiro (aparece no "A receber hoje" do Dono).
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+                <option value="PACOTE_NOVO">Contratação nova</option>
+                <option value="RENOVACAO">Renovação</option>
+                <option value="SESSAO_EXTRA">Sessão extra</option>
+                <option value="OUTRO">Outro</option>
+              </select>
+              <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
+                <option value="MIN30">30 minutos</option>
+                <option value="MIN50">50 minutos</option>
+              </select>
+              <input
+                type="number"
+                min="1"
+                className="input"
+                placeholder="Nº de sessões"
+                value={form.totalSessoes}
+                onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Valor (opcional)"
+                value={form.valorTotal}
+                onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
+              />
+            </div>
+            <div className="mt-2">
+              <label className="text-xs text-nv-muted block mb-1">Anexar comprovante (opcional)</label>
+              <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
+            </div>
+          </div>
+
+          <button className="btn-primary mt-4" onClick={cadastrar}>
+            Cadastrar
+          </button>
+          {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
+          {resultado && (
+            <div className="text-sm mt-2 space-y-1">
+              <p className="text-nv-green">
+                Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um
+                canal seguro)
+              </p>
+              {resultado.transacao && (
+                <p className="text-nv-green">
+                  Pagamento contabilizado! A profissional recebe direto e deve repassar R${" "}
+                  {resultado.transacao.valorRenascer.toFixed(2)} pra Renascer (vai aparecer em Repasses assim que ela mandar o
+                  comprovante).
+                </p>
+              )}
+              {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="nv-card !p-0 px-5">
+        {ordenados.map((c) => (
+          <div key={c.id}>
+            <div
+              className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight first:border-t-0 cursor-pointer"
+              onClick={() => setExpandido(expandido === c.id ? null : c.id)}
+            >
+              <span className="flex items-center gap-2.5 min-w-0">
+                <PontoStatus status={c.statusCliente} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-nv-ink2 truncate">{c.user.nome}</span>
+                  <span className="block text-xs text-nv-muted3 truncate">
+                    {c.user.email} · com {c.profissionalAtual?.user?.nome || "sem profissional"}
                     {c.profissionalAtual?.user?.role === "DONO" ? " (Dono)" : ""}
-                  </td>
-                </tr>,
-              ];
-              if (expandido === c.id) {
-                linhas.push(
-                  <tr key={`${c.id}-metricas`} className="border-t border-renascer/10 bg-renascer-light/20">
-                    <td colSpan={3} className="py-2 space-y-3">
-                      <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
-                      <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
-                      <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
-                      <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />
-                      <TrocarProfissionalCliente
-                        clienteId={c.id}
-                        profissionalAtualNome={
-                          c.profissionalAtual?.user?.nome &&
-                          c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "")
-                        }
-                        profissionais={profissionais}
-                        rotaBase="/atendente"
-                        onTrocou={carregar}
-                      />
-                    </td>
-                  </tr>
-                );
-              }
-              return linhas;
-            })}
-          </tbody>
-        </table>
+                  </span>
+                </span>
+              </span>
+              <span className="text-xs font-semibold text-nv-blue shrink-0 whitespace-nowrap">
+                {expandido === c.id ? "Fechar ficha" : "Ver ficha"}
+              </span>
+            </div>
+            {expandido === c.id && (
+              <div className="pb-4 space-y-3 bg-nv-bg -mx-5 px-5 pt-3">
+                <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
+                <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
+                <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
+                <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />
+                <TrocarProfissionalCliente
+                  clienteId={c.id}
+                  profissionalAtualNome={
+                    c.profissionalAtual?.user?.nome &&
+                    c.profissionalAtual.user.nome + (c.profissionalAtual.user.role === "DONO" ? " (Dono)" : "")
+                  }
+                  profissionais={profissionais}
+                  rotaBase="/atendente"
+                  onTrocou={carregar}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum cliente cadastrado ainda.</p>}
       </div>
     </div>
   );
@@ -754,42 +801,60 @@ function MetricasCliente({ clienteId, rotaBase }) {
   );
 }
 
+// Cor estável por profissional (mesma lógica da Fase 38 no painel do Dono) — a mesma profissional
+// sempre com a mesma cor, mesmo a lista mudando de ordem.
+function corPorNomeAtendente(nome) {
+  let soma = 0;
+  for (let i = 0; i < nome.length; i++) soma += nome.charCodeAt(i);
+  return NV_CORES_AVATAR_ATENDENTE[soma % NV_CORES_AVATAR_ATENDENTE.length];
+}
+
 function AgendaGeral() {
   const [lista, setLista] = useState([]);
   useEffect(() => {
     api.get("/atendente/agenda-geral").then((r) => setLista(r.data));
   }, []);
+
+  const porDia = {};
+  for (const a of lista) {
+    const chave = new Date(a.data).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+    (porDia[chave] = porDia[chave] || []).push(a);
+  }
+
   return (
-    <div className="card overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-renascer-ink/50">
-            <th>Data</th>
-            <th>Profissional</th>
-            <th>Cliente</th>
-            <th>Status</th>
-            <th>Sessão</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map((a) => {
-            const sessao = statusSessao(a);
-            return (
-              <tr key={a.id} className="border-t border-renascer/10">
-                <td className="py-1">{new Date(a.data).toLocaleString("pt-BR")}</td>
-                <td>{a.profissional.user.nome}</td>
-                <td>{a.cliente.user.nome}</td>
-                <td>{a.status}</td>
-                <td>
-                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda geral</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Próximos agendamentos de todas as profissionais, em ordem cronológica</p>
+      </div>
+      <div className="nv-card !p-0 px-5">
+        {Object.entries(porDia).map(([dia, agendamentos]) => (
+          <div key={dia}>
+            <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-4 pb-1.5 capitalize">{dia}</p>
+            {agendamentos.map((a) => {
+              const sessao = statusSessao(a);
+              return (
+                <div key={a.id} className="flex items-center justify-between gap-3 py-2.5 border-t border-nv-borderLight">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: corPorNomeAtendente(a.profissional.user.nome) }} />
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-nv-ink2">
+                        {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {a.cliente.user.nome}
+                      </p>
+                      <p className="text-xs text-nv-muted3">com {a.profissional.user.nome}</p>
+                    </div>
+                  </div>
+                  <span className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 ${CORES_STATUS_SESSAO[sessao.cor]}`}>
                     {sessao.texto}
                   </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum agendamento futuro.</p>}
+      </div>
     </div>
   );
 }
@@ -800,20 +865,28 @@ function SuporteEscalado() {
     api.get("/atendente/suporte-gerencia").then((r) => setTickets(r.data));
   }, []);
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-renascer-ink/50">Você pode visualizar os chamados escalados; a resposta cabe à gerência (donos).</p>
-      {tickets.map((t) => (
-        <div key={t.id} className="card">
-          <p className="font-semibold">{t.assunto}</p>
-          <p className="text-xs text-renascer-ink/50 mb-2">Cliente: {t.cliente.user.nome}</p>
-          {t.mensagens.map((m) => (
-            <p key={m.id} className="text-sm">
-              {m.texto}
-            </p>
-          ))}
-        </div>
-      ))}
-      {tickets.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhum chamado escalado.</p>}
+    <div className="font-publicSans">
+      <div className="mb-4">
+        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Suporte escalado</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Você pode visualizar os chamados escalados; a resposta cabe à gerência (donos)</p>
+      </div>
+      <div className="flex flex-col gap-3">
+        {tickets.map((t) => (
+          <div key={t.id} className="nv-card">
+            <p className="text-[13.5px] font-semibold text-nv-ink">{t.assunto}</p>
+            <p className="text-xs text-nv-muted2 mt-0.5 mb-2">Cliente: {t.cliente.user.nome}</p>
+            <div className="space-y-1.5">
+              {t.mensagens.map((m) => (
+                <p key={m.id} className="text-[13.5px] text-nv-ink bg-nv-bg rounded-[10px] px-3 py-2.5">
+                  {m.texto}
+                </p>
+              ))}
+            </div>
+          </div>
+        ))}
+        {tickets.length === 0 && <p className="text-sm text-nv-muted">Nenhum chamado escalado.</p>}
+      </div>
     </div>
   );
 }
@@ -852,14 +925,19 @@ function AbaMeuDiaAtendente() {
     { id: "implantacao", label: "Implantação" },
   ];
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu dia</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Checklist e registros do dia a dia da recepção</p>
+      </div>
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {SUBABAS.map((s) => (
           <button
             key={s.id}
             onClick={() => setSub(s.id)}
             className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+              sub === s.id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
             }`}
           >
             {s.label}
@@ -867,10 +945,10 @@ function AbaMeuDiaAtendente() {
         ))}
       </div>
       {sub === "hoje" && (
-        <div className="card space-y-3">
+        <div className="nv-card space-y-3">
           <div>
-            <h3 className="font-semibold">Checklist de hoje</h3>
-            <p className="text-xs text-renascer-ink/50">
+            <h3 className="font-sora font-semibold text-nv-ink">Checklist de hoje</h3>
+            <p className="text-xs text-nv-muted capitalize">
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
             </p>
           </div>
@@ -880,14 +958,23 @@ function AbaMeuDiaAtendente() {
       {sub === "indicadores" && <IndicadoresMeuDiaAtendente />}
       {sub === "marketing" && <MarketingMeuDiaAtendente />}
       {sub === "implantacao" && (
-        <div className="card space-y-3">
+        <div className="nv-card space-y-3">
           <div>
-            <h3 className="font-semibold">Checklist de implantação</h3>
-            <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só.</p>
+            <h3 className="font-sora font-semibold text-nv-ink">Checklist de implantação</h3>
+            <p className="text-xs text-nv-muted">Itens de configuração inicial — marque uma vez só, não voltam a aparecer.</p>
           </div>
           <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_ATENDENTE} />
         </div>
       )}
+    </div>
+  );
+}
+
+function CardIndicadorAtendente({ titulo, valor }) {
+  return (
+    <div className="border border-nv-border rounded-xl p-3">
+      <p className="text-xs text-nv-muted">{titulo}</p>
+      <p className="text-lg font-bold text-nv-ink">{valor}</p>
     </div>
   );
 }
@@ -901,42 +988,24 @@ function IndicadoresMeuDiaAtendente() {
   useEffect(() => {
     carregar();
   }, []);
-  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+  if (!dados) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
   return (
-    <div className="card space-y-4">
+    <div className="nv-card space-y-4">
       <div>
-        <h3 className="font-semibold mb-2">Agenda de hoje</h3>
+        <h3 className="font-sora font-semibold text-nv-ink mb-2">Agenda de hoje</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="border border-renascer/10 rounded-xl p-3">
-            <p className="text-xs text-renascer-ink/50">Total</p>
-            <p className="text-lg font-bold">{dados.agendaHoje.total}</p>
-          </div>
+          <CardIndicadorAtendente titulo="Total" valor={dados.agendaHoje.total} />
           {Object.entries(dados.agendaHoje.porStatus).map(([status, total]) => (
-            <div key={status} className="border border-renascer/10 rounded-xl p-3">
-              <p className="text-xs text-renascer-ink/50">{status}</p>
-              <p className="text-lg font-bold">{total}</p>
-            </div>
+            <CardIndicadorAtendente key={status} titulo={status} valor={total} />
           ))}
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Fila de reativação</p>
-          <p className="text-lg font-bold">{dados.clientesEsperandoReativacao}</p>
-        </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Clientes novos hoje</p>
-          <p className="text-lg font-bold">{dados.clientesNovosHoje}</p>
-        </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Clientes novos no mês</p>
-          <p className="text-lg font-bold">{dados.clientesNovosMes}</p>
-        </div>
-        <div className="border border-renascer/10 rounded-xl p-3">
-          <p className="text-xs text-renascer-ink/50">Seus registros de marketing (mês)</p>
-          <p className="text-lg font-bold">{dados.registrosMarketingMeusMes}</p>
-        </div>
+        <CardIndicadorAtendente titulo="Fila de reativação" valor={dados.clientesEsperandoReativacao} />
+        <CardIndicadorAtendente titulo="Clientes novos hoje" valor={dados.clientesNovosHoje} />
+        <CardIndicadorAtendente titulo="Clientes novos no mês" valor={dados.clientesNovosMes} />
+        <CardIndicadorAtendente titulo="Seus registros de marketing (mês)" valor={dados.registrosMarketingMeusMes} />
       </div>
     </div>
   );
@@ -972,8 +1041,8 @@ function MarketingMeuDiaAtendente() {
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Registrar ação de marketing</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Registrar ação de marketing</h3>
         <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
           {Object.entries(TIPO_MARKETING_LABEL_ATENDENTE).map(([v, l]) => (
             <option key={v} value={v}>
@@ -987,21 +1056,21 @@ function MarketingMeuDiaAtendente() {
           {salvando ? "Salvando..." : "Registrar"}
         </button>
       </div>
-      <div className="card space-y-2">
-        <h3 className="font-semibold">Histórico (de toda a equipe)</h3>
+      <div className="nv-card space-y-2">
+        <h3 className="font-sora font-semibold text-nv-ink">Histórico (de toda a equipe)</h3>
         {lista.map((r) => (
-          <div key={r.id} className="border-b border-renascer-ink/5 py-2">
+          <div key={r.id} className="border-b border-nv-borderLight py-2">
             <span className="badge-gold">{TIPO_MARKETING_LABEL_ATENDENTE[r.tipo] || r.tipo}</span>
-            <p className="text-sm mt-1">{r.descricao}</p>
+            <p className="text-sm mt-1 text-nv-ink">{r.descricao}</p>
             {r.link && (
-              <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-renascer underline">
+              <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-nv-blue underline">
                 {r.link}
               </a>
             )}
-            <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+            <p className="text-[11px] text-nv-muted3 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
           </div>
         ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum registro ainda.</p>}
+        {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhum registro ainda.</p>}
       </div>
     </div>
   );

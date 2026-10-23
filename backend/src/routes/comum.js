@@ -3,9 +3,19 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { autenticar } = require("../middleware/auth");
 const { vapidPublicKey } = require("../utils/push");
+const { inicioDoDia } = require("../utils/meuDia");
 
 const router = express.Router();
 router.use(autenticar);
+
+// Checklist de "Meu dia" (Fase 30) — só pros 3 papéis de gestão (Dono, Atendente, Profissional).
+// Cliente e usuário da Renascer IA não têm painel de gestão, então não têm checklist.
+function bloquearSemPainelDeGestao(req, res, next) {
+  if (req.user.role === "CLIENTE" || req.user.role === "USUARIO_IA") {
+    return res.status(403).json({ erro: "Você não tem permissão para acessar isso." });
+  }
+  next();
+}
 
 // ---------- Notificações push (toque/vibração no aparelho) ----------
 // A chave pública é a mesma pra todo mundo — é ela que o navegador usa pra criar a inscrição
@@ -120,6 +130,39 @@ router.get("/transacoes/:id/repasse-comprovante", async (req, res) => {
   }
 
   res.json({ base64: transacao.repasseComprovanteBase64, mimeType: transacao.repasseComprovanteMimeType || "image/jpeg" });
+});
+
+// ---------- Checklist de "Meu dia" (Fase 30) ----------
+// Serve tanto o checklist DIÁRIO ("Hoje" — manda `data`) quanto o PERMANENTE ("Implantação" —
+// não manda `data`, marca uma vez só e nunca mais reaparece). Cada papel define sua própria
+// lista de itens (itemChave) no frontend; aqui só guarda o que já foi marcado.
+router.get("/meu-dia/checklist", bloquearSemPainelDeGestao, async (req, res) => {
+  const { data } = req.query; // YYYY-MM-DD, opcional (sem isso = itens permanentes)
+  const concluidos = await prisma.checklistConclusao.findMany({
+    where: { userId: req.user.id, data: data ? inicioDoDia(data) : null },
+    select: { itemChave: true, concluidoEm: true },
+  });
+  res.json({ itensConcluidos: concluidos.map((c) => c.itemChave), detalhes: concluidos });
+});
+
+router.post("/meu-dia/checklist/alternar", bloquearSemPainelDeGestao, async (req, res) => {
+  const { itemChave, data } = req.body;
+  if (!itemChave) return res.status(400).json({ erro: "Informe o item do checklist." });
+  const diaOuNulo = data ? inicioDoDia(data) : null;
+
+  const existente = await prisma.checklistConclusao.findFirst({
+    where: { userId: req.user.id, itemChave, data: diaOuNulo },
+  });
+
+  if (existente) {
+    await prisma.checklistConclusao.delete({ where: { id: existente.id } });
+    return res.json({ concluido: false });
+  }
+
+  await prisma.checklistConclusao.create({
+    data: { userId: req.user.id, itemChave, data: diaOuNulo },
+  });
+  res.json({ concluido: true });
 });
 
 module.exports = router;

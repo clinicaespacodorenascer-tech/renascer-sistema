@@ -2688,3 +2688,373 @@ inventado. Nada mudou na lógica de quem deve o quê pra quem.
 ## Próxima parte
 
 Formulários, Meu dia, Mapas mentais e Secretaria do Dono — sem parar.
+
+# Fase 40 — Redesign visual (lote 2, parte 6): Formulários, Mapas mentais, Meu dia e Secretaria — conclui o redesign do Dono (entregue em 22/10/2026)
+
+## O que mudou (visual)
+
+- **Formulários (Dono)**: visual novo (cartões, selo de status, botão de copiar link, interruptor
+  visual pra ativar/desativar). Toda a funcionalidade continua igual: criar formulário com várias
+  perguntas (texto curto, múltipla escolha, escala, sim/não, obrigatória ou não), copiar link
+  público, ver/esconder respostas, ativar/desativar, excluir.
+- **Mapas mentais (Dono)**: visual da moldura (cabeçalho, lista de mapas, cartões) atualizado pro
+  padrão novo. O mapa em si (os nós que você arrasta, as linhas conectando) continua exatamente
+  igual — não tocamos nisso pra não arriscar quebrar o arrastar e soltar.
+- **Meu dia (Dono)**: cabeçalho novo e as abas internas (Hoje, Indicadores, Implantação, Marketing,
+  Gestão de pessoas, Fechamento de caixa, Diário de decisões, Metas do trimestre) todas com o
+  visual atualizado — cartões, textos e cores no padrão novo. Toda a funcionalidade de cada aba
+  continua idêntica (os formulários de lançamento, os indicadores, o histórico de cada uma).
+- **Secretaria (Dono)**: o painel de "Supervisão" que abre na aba Usuários (ao clicar em
+  "Supervisão" numa Atendente) ganhou o visual novo — avatar, bolinha de presença "Online agora"
+  pulsando, cartões de indicador, gráfico de barras dos últimos 7 dias e lista de atividades.
+
+## Um ajuste importante: a tela "Hoje" do Meu dia
+
+O desenho novo do "Hoje" mostra uma rotina do dia dividida em 3 blocos (Abertura, Tema do dia,
+Fechamento) organizados em hexágonos, com tarefas que mudam de acordo com o dia da semana e até
+com a semana do mês (um "rodízio"). Isso é uma ideia nova de como organizar a rotina diária — hoje
+o sistema tem uma lista única de tarefas do dia (o checklist que já existia desde a Fase 30), sem
+esse conceito de blocos de horário nem de rodízio por semana. Como isso seria construir uma
+funcionalidade nova (e não só redesenhar uma tela que já existe), preferi manter o checklist real
+que já funciona, só com o visual atualizado — e avisar aqui pra você decidir se quer que eu
+construa esse sistema de rotina por blocos de verdade, numa fase própria, caso faça sentido pro
+seu dia a dia.
+
+## Arquivos alterados
+
+- `frontend/src/pages/dono/index.js`
+
+## O que testar
+
+1. Como Dono, abrir "Formulários": criar um formulário de teste, copiar o link, ativar/desativar,
+   ver respostas e excluir.
+2. Abrir "Mapas mentais": confirmar que arrastar os nós, criar nó filho, editar texto e excluir nó
+   continuam funcionando normalmente.
+3. Abrir "Meu dia" e passar por todas as abas (Hoje, Indicadores, Implantação, Marketing, Gestão de
+   pessoas, Fechamento de caixa, Diário de decisões, Metas do trimestre) conferindo que tudo
+   carrega e os formulários de cada uma salvam normalmente.
+4. Em "Usuários", clicar em "Supervisão" numa Atendente e confirmar que o painel abre certinho.
+
+## Isso conclui o redesign de conteúdo do Dono
+
+Com essa fase, as 13 telas do Dono (Visão geral, Clientes, Histórico, Usuários, Agenda geral,
+Profissionais, Repasses, Formulários, Suporte escalado, Reativar clientes, Meu dia, Mapas mentais
+e Secretaria) estão todas com o visual novo. Próximo passo: seguir pro redesign de conteúdo da
+Atendente (Meu dia, Clientes, Profissionais e agendar, Reativar, Agenda, Suporte — Reativar já saiu
+pronto como efeito colateral da Fase 36, porque o componente é compartilhado com o Dono).
+
+## Próxima parte
+
+Redesign de conteúdo da Atendente — sem parar.
+
+# Fase 41 — Rotina por blocos de verdade (Meu dia → Hoje, Dono) (entregue em 22/10/2026)
+
+## Por quê
+
+Na Fase 40 eu avisei que o desenho novo da aba "Hoje" mostra uma rotina real em 3 blocos de
+horário com tarefas que mudam por dia da semana e por semana do mês ("rodízio") — uma
+funcionalidade nova, que eu não tinha construído ainda. Você confirmou: **"Quero que construa sim
+essa rotina por bloco/dia da semana de verdade"**. Esta fase entrega exatamente isso.
+
+## O que foi construído
+
+- **3 blocos de horário, de verdade**: Abertura (18:00–18:50), Tema do dia (18:50–21:20) e
+  Fechamento (21:20–22:00). Cada bloco é um cartão que você clica pra abrir/fechar, mostrando
+  quantos itens já foram concluídos daquele bloco (ex.: "4/9").
+- **Tema do dia**: cada dia da semana (segunda a sexta) tem um tema fixo — Segunda = Estratégia e
+  visão, Terça = Financeiro, Quarta = Pessoas e parceiros, Quinta = Marketing e crescimento, Sexta
+  = Administração e processos. Isso é **regra fixa numa tabela, sem IA e sem sorteio** — o sistema
+  só olha o dia da semana de hoje e escolhe a área correspondente.
+- **Rodízio semanal**: de segunda a quinta, tem uma tarefa extra que muda de acordo com a semana do
+  mês (2ª, 3ª ou 4ª semana) — por exemplo, toda segunda-feira na 2ª semana do mês aparece
+  "Concorrentes — atualizar o mapa", na 3ª semana "Tendências e notícias do setor", etc. Também é
+  regra fixa (tabela dia × semana), calculada pela data de hoje — nunca aleatório. Sexta-feira e
+  fins de semana não têm rodízio. Dentro do bloco "Tema do dia" tem uma caixinha mostrando as 3
+  variantes da semana, com a de hoje destacada.
+- **Implantação pendente dentro do tema do dia**: os itens de implantação que ainda faltam
+  concluir na área do dia aparecem junto no bloco "Tema do dia" (ex.: na quarta-feira, aparecem os
+  itens pendentes de "Pessoas e parceiros"). Quando você marca um, ele não volta a aparecer nunca
+  mais (nem hoje, nem nos próximos dias) — é o mesmo checklist permanente da aba Implantação.
+- **Fim de semana**: o bloco "Tema do dia" mostra um aviso de que a rotina por tema é de segunda a
+  sexta; os blocos de Abertura e Fechamento continuam disponíveis todo dia.
+- **Nada foi inventado**: toda explicação de item que parecia um "número ao vivo" vem de dado real
+  que já existe no sistema — "Hoje já tem R$ X de clientes + Y entrada(s) extra lançada(s)" vem do
+  Fechamento de caixa de hoje; "Post de hoje já está registrado" vem do histórico de Marketing;
+  "Decisão de hoje já registrada" vem do Diário de decisões. Onde não existe like uma contagem real
+  de "leads" no sistema, o item foi escrito sem afirmar um número que não existe (mesmo cuidado já
+  usado na Fase 35).
+- **Nenhuma marcação anterior se perde**: as chaves dos itens que você já pode ter marcado antes
+  (`config_financeira`, `primeira_meta`, `revisar_repasses_implantacao`, `ativar_push_implantacao`,
+  `revisar_agenda_geral`) foram mantidas exatamente iguais dentro da nova estrutura.
+- **Aba Implantação também atualizada**: agora mostra as 5 áreas com barra de progresso cada uma
+  (clique pra abrir e ver/marcar os itens), em vez da lista única de antes.
+
+## O que NÃO muda
+
+- Nenhuma alteração no backend — a rotina inteira usa o mecanismo de checklist que já existia
+  desde a Fase 30 (`/comum/meu-dia/checklist` e `/comum/meu-dia/checklist/alternar`), tanto pros
+  itens diários (resetam todo dia) quanto pros permanentes (implantação, marca uma vez só).
+- Marketing, Decisões, Caixa, Indicadores, Pessoas, Metas: todas continuam exatamente como estavam.
+
+## Arquivos alterados
+
+- `frontend/src/pages/dono/index.js`
+
+## O que testar
+
+1. Abrir "Meu dia" → "Hoje" e confirmar que aparece o tema do dia de hoje certo (de acordo com o
+   dia da semana) e os 3 blocos com a fração de itens concluídos.
+2. Marcar e desmarcar alguns itens de cada bloco e confirmar que a fração e a % do topo atualizam.
+3. Marcar um item de "Implantação pendente" dentro do bloco Tema do dia, depois abrir a aba
+   "Implantação" e confirmar que ele já aparece marcado lá (e vice-versa).
+4. Lançar uma entrada/saída na aba "Fechamento de caixa" hoje e voltar pra "Hoje" — a explicação do
+   item de caixa deve mostrar o valor atualizado.
+5. Registrar um post de marketing hoje e voltar pra "Hoje" — o item "Post do dia publicado" deve
+   mostrar que já foi registrado.
+6. Conferir que itens já marcados antes desta fase (ex. "Revisar a agenda geral do dia", se você
+   já tinha marcado) continuam marcados.
+
+## Próxima parte
+
+Redesign de conteúdo da Atendente — sem parar.
+
+# Fase 42 — Redesign visual: conclui o redesign de conteúdo da Atendente (entregue em 22/10/2026)
+
+Redesign de conteúdo da Atendente (Task #8), numa fase só, seguindo direto depois da Fase 41. A
+tela "Reativar clientes" já tinha saído pronta como efeito colateral da Fase 36 (componente
+compartilhado com o Dono); esta fase cobre todo o resto: Clientes, Profissionais e agendar, Agenda
+geral, Suporte escalado e Meu dia.
+
+## O que mudou
+
+- **Clientes (Atendente)**: visual novo igual ao padrão do Dono — lista em cartão único, nome com
+  bolinha de status (verde/amarelo/vermelho), e-mail e profissional na linha de baixo, "Ver ficha"
+  pra expandir. O formulário de "Cadastrar novo cliente" (com o lançamento de pagamento opcional
+  junto) ganhou o mesmo tratamento do formulário de criar usuário do Dono (Fase 39): fica escondido
+  atrás de um botão "+ Novo cliente", pra não poluir a tela. Toda a funcionalidade continua igual
+  — cadastro, vínculo de profissional, canal de origem, lançar pagamento na hora com comprovante,
+  e a ficha expandida (métricas, contato de notificação, excluir login, histórico de pagamentos,
+  situação do cliente, trocar de profissional).
+- **Profissionais e agendar (Atendente)**: cartões no visual novo (avatar com iniciais coloridas
+  quando não tem foto, badge "Dono", especialidades, horários). Os botões "Ver horários e agendar"
+  e "Editar horários dela" continuam abrindo os mesmos formulários de sempre (buscar horário livre,
+  confirmar agendamento, registrar contratação/pagamento/renovação, editar a disponibilidade
+  semanal da profissional), só com os campos e cores no padrão novo.
+- **Agenda geral (Atendente)**: era uma tabela simples; virou uma lista agrupada por dia (igual ao
+  painel lateral "Dia X" que o Dono já tem desde a Fase 38), com uma bolinha colorida por
+  profissional e o selo de status da sessão (confirmada, em andamento, não iniciada etc.).
+  Continua mostrando só os próximos agendamentos — esta tela da Atendente não tem o calendário por
+  mês que o Dono ganhou na Fase 38 (aquele exigiu um ajuste de backend que só foi feito pra rota do
+  Dono); se fizer sentido ter o mesmo calendário aqui, é só pedir numa fase própria.
+- **Suporte escalado (Atendente)**: visual novo nos cartões de chamado, mantendo o aviso de que só
+  visualiza (quem responde é a gerência) — função 100% igual.
+- **Meu dia (Atendente)**: cabeçalho e as 4 subabas (Hoje, Indicadores, Marketing, Implantação) no
+  visual novo. Mantido o checklist simples que já existia (sem o sistema de rotina por blocos/
+  rodízio que só o Dono pediu pra construir de verdade na Fase 41) — se fizer sentido ter a mesma
+  rotina por blocos aqui pra Atendente também, é só avisar que construo numa fase própria.
+
+## Arquivos alterados
+
+- `frontend/src/pages/atendente/index.js`
+
+## O que testar
+
+1. Como Atendente, abrir "Clientes": clicar em "+ Novo cliente", cadastrar um cliente de teste (com
+   e sem pagamento junto), depois abrir a ficha de um cliente existente e conferir que tudo (métricas,
+   notificação, excluir, histórico de pagamentos, situação, trocar profissional) continua funcionando.
+2. Abrir "Profissionais e agendar": testar "Ver horários e agendar" (buscar horário, confirmar) e
+   "Editar horários dela" (salvar nova disponibilidade) numa profissional de teste.
+3. Abrir "Agenda geral" e "Suporte escalado" e conferir que a lista carrega certinho.
+4. Abrir "Meu dia" e passar pelas 4 subabas, conferindo que o checklist, os indicadores e o registro
+   de marketing continuam salvando normalmente.
+
+## Isso conclui o redesign de conteúdo da Atendente
+
+Com essa fase, as 6 telas da Atendente (Meu dia, Clientes, Profissionais e agendar, Reativar
+clientes, Agenda geral, Suporte escalado) estão todas com o visual novo. Próximo passo: seguir pro
+redesign de conteúdo da Profissional.
+
+## Próxima parte
+
+Redesign de conteúdo da Profissional — sem parar.
+
+# Fase 43 — Redesign visual: Agenda e Cadastrar cliente da Profissional (entregue em 22/10/2026)
+
+Início do redesign de conteúdo da Profissional (Task #9). A tela da Profissional é a maior de
+todas (bem mais código que Dono e Atendente juntos), então em vez de fazer tudo numa fase só, vou
+dividir em partes — igual foi feito com o Dono (Fases 35 a 41). Esta primeira parte cobre as duas
+telas que a profissional mais usa no dia a dia: Agenda e Cadastrar cliente.
+
+## O que mudou
+
+- **Cadastrar cliente (Profissional)**: visual novo igual ao padrão das outras telas de cadastro —
+  cabeçalho, cartão com o total de clientes cadastrados, e o formulário de cadastro no visual novo.
+  Nada mudou na função: continua cadastrando o cliente e vinculando a esta profissional.
+- **Agenda (Profissional)**: o quadro semanal (os 7 dias da semana em colunas, com as sessões em
+  cada dia) ganhou o visual novo — cartões de sessão, selos de status e de pacote, cores dos
+  botões de ação. Continuam funcionando exatamente como antes: arrastar uma sessão pra outro dia da
+  mesma semana, marcar como realizada, mudar data/horário pra qualquer data (o popup "Mudar
+  data/horário" também ganhou o visual novo), marcar nova sessão pra um cliente já cadastrado (o
+  popup "Nova sessão", com a busca automática de horários livres, também ganhou o visual novo) e
+  cancelar/excluir sessão. Nenhuma lógica de agenda, arrastar-e-soltar ou busca de horário foi
+  alterada — só cores e estilo.
+- **Efeito colateral (esperado): tela "Atender pacientes" do Dono.** O Dono usa exatamente esse
+  mesmo código de Agenda e Cadastrar cliente quando entra em "Atender pacientes" (pra atender como
+  se fosse uma profissional). Então essa mesma atualização visual já aparece lá também — sem
+  precisar fazer nada a mais.
+
+## O que NÃO mudou nesta fase (ainda no visual antigo)
+
+Dentro da tela da Profissional, ainda faltam: Clientes (lista, ficha completa, agendar sessão,
+notificar, novo pacote, chat, relatórios), Financeiro (repasses), Notificações, Configurações
+(perfil) e Meu dia. Essas partes continuam no visual de antes por enquanto — vêm nas próximas
+fases, sem parar.
+
+## Arquivos alterados
+
+- `frontend/src/pages/profissional/index.js`
+
+## O que testar
+
+1. Como Profissional, abrir "Cadastrar cliente" e cadastrar um cliente de teste.
+2. Abrir "Agenda": arrastar uma sessão pra outro dia da mesma semana, clicar em "+ " pra marcar uma
+   nova sessão (confirmar que a busca de horários livres funciona), abrir "Mudar data/horário" numa
+   sessão existente e confirmar uma nova data, e marcar uma sessão como realizada.
+3. Como Dono, entrar em "Atender pacientes" e repetir o teste do item 2 — deve aparecer com o mesmo
+   visual novo.
+
+## Próxima parte
+
+Continuar o redesign de conteúdo da Profissional: Clientes (lista e ficha completa) — sem parar.
+
+# Fase 44 — Redesign visual: Clientes da Profissional (entregue em 22/10/2026)
+
+Segunda parte do redesign de conteúdo da Profissional (Task #9): a tela "Meus clientes".
+
+## O que mudou
+
+- **Lista de clientes**: visual novo (cabeçalho, cartão da lista, bolinha de status, nome,
+  pacote ativo e indicador de presença de cada cliente, destaque de quem está selecionado).
+- **Ficha do cliente (cabeçalho e abas)**: o nome do cliente e a fileira de abas (Chat/recados,
+  Agendar sessão, Relatórios, Pacote/pagamento, Notificação, Corrigir login) ganharam o visual
+  novo. Dentro de cada aba, os formulários e telas (chat, agendar sessão, relatórios, pacote,
+  notificação, corrigir login) e o bloco de "situação do cliente" continuam no visual de antes
+  por enquanto — são partes bem aninhadas e específicas, seguindo o mesmo critério usado nas
+  fichas de cliente do Dono e da Atendente (o "miolo" de cada ficha fica pra uma passada
+  específica, se fizer sentido).
+- **Efeito colateral (esperado)**: assim como a Agenda, essa tela de Clientes também é usada pelo
+  Dono em "Atender pacientes" — então o mesmo visual novo já aparece lá.
+
+## Arquivos alterados
+
+- `frontend/src/pages/profissional/index.js`
+
+## O que testar
+
+1. Como Profissional, abrir "Meus clientes", clicar em alguns clientes da lista e conferir que a
+   ficha abre certinho com as 6 abas (chat, agendar, relatórios, pacote, notificação, login).
+2. Testar pelo menos uma ação em cada aba (mandar um recado no chat, agendar uma sessão, lançar um
+   pacote, etc.) pra confirmar que nada da funcionalidade mudou.
+3. Como Dono, em "Atender pacientes", repetir o teste do item 1.
+
+## Próxima parte
+
+Continuar o redesign de conteúdo da Profissional: Financeiro (repasses), Notificações,
+Configurações (perfil) e Meu dia — sem parar.
+
+# Fase 45 — Redesign visual: conclui o redesign de conteúdo da Profissional (entregue em 22/10/2026)
+
+Terceira e última parte do redesign de conteúdo da Profissional (Task #9) — Financeiro,
+Notificações, Configurações e Meu dia. Com essa fase, as 6 telas da Profissional (Meu dia, Agenda,
+Cadastrar cliente, Clientes, Financeiro, Notificações/Configurações) estão todas com o visual
+novo.
+
+## O que mudou
+
+- **Financeiro**: cabeçalho novo; os 3 cartões de resumo (faturado, repasse Renascer, pendente de
+  repassar), a calculadora rápida, o formulário de anexar comprovante e a tabela de transações do
+  mês ganharam o visual novo. O widget de "enviar comprovante do repasse" que aparece dentro da
+  tabela (quando você recebeu o pagamento direto do cliente) também foi atualizado. Nada mudou na
+  função — cálculo automático do repasse, leitura de comprovante por IA, fluxo de confirmação com
+  o dono, tudo igual.
+- **Notificações**: lista de avisos de renovação no visual novo.
+- **Configurações**: cabeçalho novo e o cartão de "Seu perfil" (foto, nome, categoria, registro,
+  abordagem, especialidades, bio, link do Meet) no visual novo. O bloco de disponibilidade semanal
+  (componente compartilhado) continua como estava.
+- **Meu dia**: cabeçalho e as 3 subabas (Hoje, Indicadores, Implantação) no visual novo, incluindo
+  os cartões de indicadores (sessões de hoje por status, pendente de repasse, taxa de faltas,
+  tempo médio de resposta, clientes perto de renovar). O checklist em si (componente compartilhado)
+  continua como estava — sem o sistema de rotina por blocos que só o Dono pediu (Fase 41); se fizer
+  sentido ter a mesma rotina aqui também, é só avisar.
+
+## O que continua no visual antigo (por escolha, mesmo critério usado no Dono e na Atendente)
+
+Dentro da ficha do cliente (aba Clientes → abrir um cliente), as telas de Chat/recados, Agendar
+sessão, Relatórios, Pacote/pagamento, Notificação e Corrigir login continuam no visual de antes —
+são partes bem aninhadas e específicas da ficha.
+
+## Isso conclui o redesign de conteúdo da Profissional
+
+Com essa fase (43 + 44 + 45), a Profissional está com o visual novo em todas as telas principais.
+Como o código da Profissional é reaproveitado pelo Dono em "Atender pacientes", essa tela do Dono
+também ficou atualizada de brinde. Próximo passo: seguir pro redesign de conteúdo do Cliente
+(Task #10) — sem parar.
+
+## Arquivos alterados
+
+- `frontend/src/pages/profissional/index.js`
+
+## O que testar
+
+1. Abrir "Financeiro": conferir os 3 cartões de resumo, usar a calculadora rápida, anexar um
+   comprovante de teste e ver a tabela de transações atualizar.
+2. Se tiver uma transação recebida direto pela profissional, testar o fluxo de "Enviar comprovante
+   do repasse" dentro da tabela.
+3. Abrir "Notificações" e "Configurações" (editar o perfil e salvar) e conferir que tudo continua
+   salvando normalmente.
+4. Abrir "Meu dia" e passar pelas 3 subabas, conferindo o checklist e os indicadores.
+
+## Próxima parte
+
+Redesign de conteúdo do Cliente (Task #10) — sem parar.
+
+# Fase 46 — Redesign visual: conclui o redesign de conteúdo do Cliente (entregue em 22/10/2026)
+
+Redesign de conteúdo do Cliente (Task #10), numa fase só — igual foi feito com a Atendente. Com
+essa fase, as 4 personas (Dono, Atendente, Profissional, Cliente) estão todas com o visual novo.
+
+## O que mudou
+
+Todas as telas do Cliente ganharam o visual novo: tela de aceite de contrato (antes de entrar no
+app), o pop-up de boas-vindas (novidades + convite pra ativar notificações), Início (profissional
+vinculada, sessões restantes, próxima sessão, atalhos de WhatsApp), Agenda (lista de sessões,
+reagendar, trocar de profissional), Pacotes (renovar/trocar plano, sessão extra), Chat com a
+profissional, Meu dia (check-in de humor opcional), Tarefas (as que a profissional passou +
+biblioteca de apoio por tema), Relatórios, Avisos, Suporte (abrir chamado, inclusive escalonar pra
+gerência) e Materiais. Nada mudou na função de nenhuma tela — contrato, reagendamento, troca de
+plano/profissional, chat, check-in, tarefas, chamados, tudo funciona exatamente como antes.
+
+O cabeçalho e o menu de abas (o `LayoutNovo`, compartilhado por todas as personas) já estava no
+visual novo desde antes — essa fase foi só o conteúdo de dentro de cada aba.
+
+## Isso conclui o redesign de conteúdo de todas as 4 personas
+
+Dono (Fases 35-41), Atendente (Fase 42), Profissional (Fases 43-45) e agora Cliente (Fase 46) —
+o redesign completo pedido está entregue.
+
+## Arquivos alterados
+
+- `frontend/src/pages/cliente/index.js`
+
+## O que testar
+
+1. Entrar como Cliente (ou criar um cliente de teste): conferir a tela de contrato (se ainda não
+   aceito), o pop-up de boas-vindas, e passar por todas as abas (Início, Agenda, Pacotes, Chat,
+   Meu dia, Tarefas, Relatórios, Avisos, Suporte, Materiais, Dúvidas, Meu contrato).
+2. Testar pelo menos uma ação em cada tela: reagendar uma sessão, mandar uma mensagem no chat,
+   fazer o check-in de humor, marcar uma tarefa como feita, abrir um chamado de suporte.
+
+## Próxima parte
+
+O redesign de conteúdo das 4 personas está completo. Qualquer ajuste fino ou novo pedido, é só
+avisar.

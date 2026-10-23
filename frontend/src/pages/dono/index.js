@@ -6,7 +6,6 @@ import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/co
 import StatusCliente from "../../components/StatusCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/presenca";
-import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 // Reaproveita os mesmos componentes da área da Profissional (agenda, clientes, cadastro,
 // financeiro, perfil/disponibilidade) pro Dono conseguir atender pacientes pelo próprio login,
 // sem duplicar esse código todo — o backend libera as rotas de /profissional/* pra quem tem um
@@ -1976,69 +1975,76 @@ function SupervisaoSecretaria({ usuarioId, nome }) {
   }, [usuarioId]);
 
   if (erro) return <p className="text-sm text-red-600">{erro}</p>;
-  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando supervisão de {nome}...</p>;
+  if (!dados) return <p className="text-sm text-nv-muted">Carregando supervisão de {nome}...</p>;
 
   const { presenca, indicadores, cadastrosPorDia, atividades } = dados;
   const maxCadastro = Math.max(1, ...cadastrosPorDia.map((d) => d.total));
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-sm font-semibold">Supervisão de {nome}</p>
+    <div className="space-y-3 font-publicSans">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white shrink-0"
+          style={{ background: "#1B3153" }}
+        >
+          {iniciaisNome(nome)}
+        </div>
+        <div>
+          <p className="nv-eyebrow mb-0.5">Supervisão de setor</p>
+          <p className="font-sora font-bold text-[17px] text-nv-ink leading-tight">{nome} · Secretaria</p>
+        </div>
         <span
-          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
-            presenca.onlineAgora ? "bg-emerald-100 text-emerald-700" : "bg-renascer-ink/10 text-renascer-ink/50"
+          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ml-auto ${
+            presenca.onlineAgora ? "bg-emerald-50 text-emerald-700" : "bg-nv-bg text-nv-muted3"
           }`}
         >
-          <span className={`w-2 h-2 rounded-full ${presenca.onlineAgora ? "bg-emerald-500 animate-pulse" : "bg-renascer-ink/30"}`} />
+          <span className={presenca.onlineAgora ? "nv-dot nv-dot-ok" : "w-2 h-2 rounded-full bg-nv-muted3 inline-block"} />
           {presenca.onlineAgora ? `Online agora · ${formatarHaQuanto(presenca.onlineDesde)}` : "Offline no momento"}
         </span>
       </div>
 
       <div className="grid sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-renascer/10 rounded-lg p-3">
-          <p className="text-xs text-renascer-ink/50 mb-1">Tempo online hoje</p>
-          <p className="font-semibold text-lg tabular-nums">{formatarTempoOnline(presenca.tempoOnlineHojeSegundos)}</p>
+        <div className="nv-card !p-3">
+          <p className="text-xs text-nv-muted mb-1">Tempo online hoje</p>
+          <p className="nv-num font-sora font-bold text-lg text-nv-ink">{formatarTempoOnline(presenca.tempoOnlineHojeSegundos)}</p>
         </div>
-        <div className="bg-white border border-renascer/10 rounded-lg p-3">
-          <p className="text-xs text-renascer-ink/50 mb-1">Clientes cadastrados hoje</p>
-          <p className="font-semibold text-lg tabular-nums">{indicadores.clientesCadastradosHoje}</p>
+        <div className="nv-card !p-3">
+          <p className="text-xs text-nv-muted mb-1">Clientes cadastrados hoje</p>
+          <p className="nv-num font-sora font-bold text-lg text-nv-ink">{indicadores.clientesCadastradosHoje}</p>
         </div>
-        <div className="bg-white border border-renascer/10 rounded-lg p-3">
-          <p className="text-xs text-renascer-ink/50 mb-1">Reativações hoje</p>
-          <p className="font-semibold text-lg tabular-nums">{indicadores.reativacoesHoje}</p>
+        <div className="nv-card !p-3">
+          <p className="text-xs text-nv-muted mb-1">Reativações hoje</p>
+          <p className="nv-num font-sora font-bold text-lg text-nv-ink">{indicadores.reativacoesHoje}</p>
         </div>
-        <div className="bg-white border border-renascer/10 rounded-lg p-3">
-          <p className="text-xs text-renascer-ink/50 mb-1">Suportes atendidos</p>
-          <p className="font-semibold text-lg tabular-nums">{indicadores.suportesAtendidosHoje}</p>
+        <div className="nv-card !p-3">
+          <p className="text-xs text-nv-muted mb-1">Suportes atendidos</p>
+          <p className="nv-num font-sora font-bold text-lg text-nv-ink">{indicadores.suportesAtendidosHoje}</p>
         </div>
       </div>
 
-      <div className="bg-white border border-renascer/10 rounded-lg p-3">
-        <p className="text-sm font-semibold mb-2">Cadastros por dia — últimos 7 dias</p>
+      <div className="nv-card !p-3">
+        <p className="font-sora font-semibold text-sm text-nv-ink mb-2">Cadastros por dia — últimos 7 dias</p>
         <div className="flex items-end gap-2 h-24">
           {cadastrosPorDia.map((d) => (
             <div key={d.data} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
               <div
-                className="w-full max-w-[26px] bg-renascer rounded-t"
+                className="w-full max-w-[26px] bg-nv-blue rounded-t opacity-90"
                 style={{ height: `${Math.max(4, (d.total / maxCadastro) * 100)}%` }}
                 title={`${d.total} cadastro(s)`}
               />
-              <span className="text-[10px] text-renascer-ink/50 font-semibold">{d.label}</span>
+              <span className="text-[10px] text-nv-muted3 font-semibold">{d.label}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="bg-white border border-renascer/10 rounded-lg p-3">
-        <p className="text-sm font-semibold mb-2">Atividade de hoje</p>
-        {atividades.length === 0 && (
-          <p className="text-xs text-renascer-ink/40">Nenhuma atividade registrada hoje ainda.</p>
-        )}
+      <div className="nv-card !p-3">
+        <p className="font-sora font-semibold text-sm text-nv-ink mb-1">Atividade de hoje</p>
+        {atividades.length === 0 && <p className="text-xs text-nv-muted3">Nenhuma atividade registrada hoje ainda.</p>}
         {atividades.map((a, i) => (
-          <div key={i} className="flex justify-between py-1.5 border-t border-renascer/10 first:border-t-0">
-            <span className="text-sm text-renascer-ink/80">{a.texto}</span>
-            <span className="text-xs text-renascer-ink/40">{a.hora}</span>
+          <div key={i} className="flex justify-between py-1.5 border-t border-nv-borderLight first:border-t-0">
+            <span className="text-sm text-nv-ink">{a.texto}</span>
+            <span className="text-xs text-nv-muted3">{a.hora}</span>
           </div>
         ))}
       </div>
@@ -3259,13 +3265,13 @@ function AbaFormularios() {
     }
   }
 
-  if (carregando) return <p className="text-renascer-ink/50">Carregando...</p>;
+  if (carregando) return <p className="text-nv-muted">Carregando...</p>;
 
   if (erroCarregar && lista.length === 0) {
     return (
-      <div className="space-y-3 max-w-xl">
-        <h2 className="text-lg font-bold text-renascer-ink">Formulários</h2>
-        <div className="card space-y-3 border border-red-200 bg-red-50">
+      <div className="font-publicSans space-y-3 max-w-xl">
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Formulários</h1>
+        <div className="nv-card space-y-3 !border-red-200 bg-red-50">
           <p className="text-sm text-red-700">{erroCarregar}</p>
           <button className="btn-primary" onClick={carregar}>
             Tentar de novo
@@ -3276,24 +3282,23 @@ function AbaFormularios() {
   }
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-lg font-bold text-renascer-ink">Formulários</h2>
-          <p className="text-sm text-renascer-ink/60">
-            Crie uma pesquisa (ex: estudo de clima, satisfação do cliente) e gere um link pra qualquer pessoa responder,
-            sem precisar de login.
-          </p>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Formulários</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Pesquisas públicas com link compartilhável</p>
         </div>
-        <button className="btn-primary" onClick={() => setCriarAberto((v) => !v)}>
-          {criarAberto ? "Cancelar" : "Criar novo formulário"}
+        <button className="btn-primary text-sm" onClick={() => setCriarAberto((v) => !v)}>
+          {criarAberto ? "Cancelar" : "+ Novo formulário"}
         </button>
       </div>
 
-      {mensagem && <p className="text-sm text-renascer-ink/60">{mensagem}</p>}
+      {mensagem && <p className="text-sm text-nv-muted mb-3">{mensagem}</p>}
 
       {criarAberto && (
-        <div className="card space-y-4">
+        <div className="nv-card space-y-4 mb-4">
+          <p className="font-sora font-semibold text-nv-ink">Novo formulário</p>
           <div className="space-y-3">
             <input className="input" placeholder="Título (ex: Estudo de clima)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
             <textarea
@@ -3307,9 +3312,9 @@ function AbaFormularios() {
 
           <div className="space-y-3">
             {perguntas.map((p, i) => (
-              <div key={i} className="border border-renascer-ink/10 rounded-xl p-3 space-y-2">
+              <div key={i} className="border border-nv-border rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-bold text-renascer-ink/50">Pergunta {i + 1}</p>
+                  <p className="text-xs font-bold text-nv-muted3">Pergunta {i + 1}</p>
                   {perguntas.length > 1 && (
                     <button type="button" className="text-xs text-red-600 underline" onClick={() => removerPergunta(i)}>
                       Remover
@@ -3330,7 +3335,7 @@ function AbaFormularios() {
                       </option>
                     ))}
                   </select>
-                  <label className="flex items-center gap-1.5 text-sm text-renascer-ink/70">
+                  <label className="flex items-center gap-1.5 text-sm text-nv-muted">
                     <input
                       type="checkbox"
                       checked={p.obrigatoria}
@@ -3371,72 +3376,89 @@ function AbaFormularios() {
       )}
 
       {lista.length === 0 && (
-        <div className="card">
-          <p className="text-sm text-renascer-ink/50">Nenhum formulário criado ainda.</p>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Nenhum formulário criado ainda.</p>
         </div>
       )}
 
-      {lista.map((f) => (
-        <div key={f.id} className="card space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <p className="font-semibold text-renascer-ink">{f.titulo}</p>
-              <p className="text-xs text-renascer-ink/50">
-                {f.totalRespostas} resposta(s) · criado em {new Date(f.criadoEm).toLocaleDateString("pt-BR")}
-              </p>
+      <div className="space-y-3">
+        {lista.map((f) => (
+          <div key={f.id} className="nv-card">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="font-sora font-semibold text-nv-ink">{f.titulo}</p>
+                <p className="text-xs text-nv-muted2 mt-0.5">
+                  {f.totalRespostas} resposta(s) · criado em {new Date(f.criadoEm).toLocaleDateString("pt-BR")}
+                </p>
+              </div>
+              <span
+                className="text-[10.5px] font-bold rounded-full px-2.5 py-1"
+                style={f.ativo ? { background: "#E8F5EE", color: "#1C7C54" } : { background: "#EEF1F7", color: "#6B7A91" }}
+              >
+                {f.ativo ? "Ativo" : "Desativado"}
+              </span>
             </div>
-            <span className={`badge ${f.ativo ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"}`}>
-              {f.ativo ? "Ativo" : "Desativado"}
-            </span>
-          </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <code className="text-xs sm:text-sm bg-renascer-light px-3 py-2 rounded-lg break-all text-renascer-ink/80">
-              {linkPublico(f)}
-            </code>
-            <button className="btn-primary !py-1.5" onClick={() => copiarLink(f)} type="button">
-              {linkCopiadoId === f.id ? "Copiado!" : "Copiar link"}
-            </button>
-          </div>
+            <div className="flex items-center gap-2 flex-wrap mt-3">
+              <code className="text-xs sm:text-sm bg-nv-bg px-3 py-2 rounded-lg break-all text-nv-ink border border-nv-border">
+                {linkPublico(f)}
+              </code>
+              <button className="text-xs font-semibold rounded-lg bg-nv-blue/10 text-nv-blue px-3.5 py-2" onClick={() => copiarLink(f)} type="button">
+                {linkCopiadoId === f.id ? "Copiado!" : "Copiar link"}
+              </button>
+            </div>
 
-          <div className="flex items-center gap-3 flex-wrap text-sm border-t border-renascer-ink/[0.06] pt-3">
-            <button className="btn-secondary" onClick={() => abrirRespostas(f)}>
-              {verRespostasId === f.id ? "Fechar respostas" : "Ver respostas"}
-            </button>
-            <button className="text-renascer-ink/60 underline" onClick={() => alternarAtivo(f)}>
-              {f.ativo ? "Desativar" : "Reativar"}
-            </button>
-            <button className="text-red-600 underline" onClick={() => excluir(f)}>
-              Excluir
-            </button>
-          </div>
+            <div className="flex items-center gap-4 flex-wrap text-sm border-t border-nv-borderLight mt-3 pt-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={f.ativo}
+                onClick={() => alternarAtivo(f)}
+                className="w-9 h-[21px] rounded-full relative shrink-0 transition-colors"
+                style={{ background: f.ativo ? "#1C7C54" : "#DCE3EE" }}
+                title={f.ativo ? "Desativar" : "Reativar"}
+              >
+                <span
+                  className="absolute top-[2px] w-[17px] h-[17px] rounded-full bg-white transition-all"
+                  style={{ left: f.ativo ? "19px" : "2px" }}
+                />
+              </button>
+              <span className="text-xs text-nv-muted2">{f.ativo ? "Recebendo respostas" : "Formulário desativado"}</span>
+              <button className="text-nv-blue text-xs font-semibold underline ml-auto" onClick={() => abrirRespostas(f)}>
+                {verRespostasId === f.id ? "Fechar respostas" : "Ver respostas"}
+              </button>
+              <button className="text-red-600 text-xs font-semibold underline" onClick={() => excluir(f)}>
+                Excluir
+              </button>
+            </div>
 
-          {verRespostasId === f.id && (
-            <div className="border-t border-renascer-ink/[0.06] pt-3 space-y-3">
-              {carregandoRespostas && <p className="text-sm text-renascer-ink/50">Carregando respostas...</p>}
-              {!carregandoRespostas && respostas.length === 0 && (
-                <p className="text-sm text-renascer-ink/50">Ainda não tem nenhuma resposta.</p>
-              )}
-              {!carregandoRespostas &&
-                respostas.map((r) => (
-                  <div key={r.id} className="border border-renascer-ink/10 rounded-xl p-3 space-y-1.5">
-                    <p className="text-sm font-semibold text-renascer-ink">
-                      {r.nome} <span className="text-renascer-ink/50 font-normal">· {r.email}</span>
-                    </p>
-                    <p className="text-xs text-renascer-ink/40">{new Date(r.enviadoEm).toLocaleString("pt-BR")}</p>
-                    <div className="space-y-1.5 pt-1">
-                      {r.respostas.map((item, idx) => (
-                        <p key={idx} className="text-sm text-renascer-ink/80">
-                          <span className="font-semibold text-renascer-ink/60">{item.pergunta}:</span> {item.resposta || "—"}
-                        </p>
-                      ))}
+            {verRespostasId === f.id && (
+              <div className="border-t border-nv-borderLight mt-3 pt-3 space-y-3">
+                {carregandoRespostas && <p className="text-sm text-nv-muted">Carregando respostas...</p>}
+                {!carregandoRespostas && respostas.length === 0 && (
+                  <p className="text-sm text-nv-muted">Ainda não tem nenhuma resposta.</p>
+                )}
+                {!carregandoRespostas &&
+                  respostas.map((r) => (
+                    <div key={r.id} className="border border-nv-border rounded-xl p-3 space-y-1.5">
+                      <p className="text-sm font-semibold text-nv-ink">
+                        {r.nome} <span className="text-nv-muted2 font-normal">· {r.email}</span>
+                      </p>
+                      <p className="text-xs text-nv-muted3">{new Date(r.enviadoEm).toLocaleString("pt-BR")}</p>
+                      <div className="space-y-1.5 pt-1">
+                        {r.respostas.map((item, idx) => (
+                          <p key={idx} className="text-sm text-nv-ink">
+                            <span className="font-semibold text-nv-muted2">{item.pergunta}:</span> {item.resposta || "—"}
+                          </p>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-      ))}
+                  ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3446,20 +3468,188 @@ function AbaFormularios() {
 // gestão de pessoas, fechamento de caixa, diário de decisões e metas do trimestre. ----------------
 // ================================================================================================
 
-const ITENS_CHECKLIST_HOJE_DONO = [
-  { chave: "ver_dashboard", texto: "Conferir a visão geral (faturamento do dia, repasses pendentes)" },
-  { chave: "revisar_agenda_geral", texto: "Revisar a agenda geral do dia" },
-  { chave: "lancar_caixa", texto: "Lançar as entradas e saídas de hoje no Fechamento de caixa" },
-  { chave: "conferir_banco", texto: "Comparar o saldo do sistema com o saldo do banco/Pix" },
-  { chave: "registrar_marketing_dia", texto: "Registrar o que foi postado/respondido hoje no marketing (se houver)" },
-  { chave: "registrar_decisao_dia", texto: "Anotar alguma decisão ou ideia importante do dia (se houver)" },
+// ---------------- "Trilha do dia" (Fase 41) — rotina do Dono em 3 blocos de horário (Abertura,
+// Tema do dia, Fechamento), com o tema do dia e o "rodízio" semanal sendo uma REGRA FIXA — sem
+// IA, sem sorteio: uma tabela simples (dia da semana × semana do mês) decide tudo, igual o
+// mockup pedia. Substitui o checklist simples de "Hoje" que existia desde a Fase 30.
+
+const DIAS_SEMANA_LABEL_COMPLETO = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+// As 5 áreas de implantação — cada uma é o "tema do dia" de um dia da semana (seg a sex). Itens
+// com chave "config_financeira", "primeira_meta", "revisar_repasses_implantacao" e
+// "ativar_push_implantacao" são os 4 que já existiam desde a Fase 30 — mantive exatamente a
+// mesma chave, assim nada que você já tenha marcado se perde.
+const AREAS_IMPLANTACAO_DONO = [
+  {
+    id: "estrategia",
+    nome: "Estratégia e visão",
+    diaSemana: 1,
+    cor: "#0B5FA8",
+    itens: [
+      { chave: "impl_estrategia_missao", texto: "Escrever missão, visão e valores" },
+      { chave: "impl_estrategia_fofa", texto: "Fazer a análise FOFA (Forças, Fraquezas, Oportunidades, Ameaças)" },
+      { chave: "impl_estrategia_posicionamento", texto: "Definir o posicionamento" },
+      { chave: "impl_estrategia_concorrentes", texto: "Mapear de 5 a 10 concorrentes" },
+      { chave: "impl_estrategia_canvas", texto: "Desenhar o modelo de negócio (Canvas)" },
+      { chave: "primeira_meta", texto: "Cadastrar a primeira meta do trimestre" },
+      { chave: "impl_estrategia_pesquisa", texto: "Registrar as respostas da pesquisa com os profissionais e o plano de ação" },
+    ],
+  },
+  {
+    id: "financeiro",
+    nome: "Financeiro",
+    diaSemana: 2,
+    cor: "#1C7C54",
+    itens: [
+      { chave: "impl_financeiro_pj_pf", texto: "Separar conta da empresa (PJ) da conta pessoal (PF)" },
+      { chave: "impl_financeiro_plano_contas", texto: "Criar o plano de contas" },
+      { chave: "impl_financeiro_custos", texto: "Levantar todos os custos fixos e variáveis atuais" },
+      { chave: "impl_financeiro_margem", texto: "Calcular a margem por sessão" },
+      { chave: "config_financeira", texto: "Configurar o custo fixo mensal e a reserva de caixa da clínica" },
+      { chave: "impl_financeiro_5050", texto: "Revisar o modelo 50/50 e os preços sociais" },
+      { chave: "impl_financeiro_prolabore", texto: "Definir valor do pró-labore e meta da reserva de emergência" },
+      { chave: "impl_financeiro_data_repasse", texto: "Definir data fixa de repasse aos profissionais" },
+      { chave: "impl_financeiro_contador", texto: "Alinhar com o contador: regime tributário, notas fiscais e obrigações" },
+      { chave: "impl_financeiro_orcamento", texto: "Montar o orçamento mensal por área" },
+    ],
+  },
+  {
+    id: "pessoas",
+    nome: "Pessoas e parceiros",
+    diaSemana: 3,
+    cor: "#D6883B",
+    itens: [
+      { chave: "impl_pessoas_criterios", texto: "Definir critérios para aceitar novos profissionais" },
+      { chave: "impl_pessoas_contrato", texto: "Revisar o contrato de parceria com advogado" },
+      { chave: "impl_pessoas_funcao_atendente", texto: "Escrever a descrição da função da atendente, com metas" },
+      { chave: "impl_pessoas_script", texto: "Criar o script de atendimento e agendamento" },
+      { chave: "revisar_repasses_implantacao", texto: "Revisar o percentual de repasse de cada profissional" },
+      { chave: "impl_pessoas_manual", texto: "Escrever o manual do parceiro (onboarding)" },
+      { chave: "impl_pessoas_rodizio_prof", texto: "Criar o modelo de conversa 1:1 e o calendário de rodízio dos profissionais" },
+      { chave: "impl_pessoas_canais", texto: "Organizar os canais de comunicação (grupo de avisos e regras)" },
+    ],
+  },
+  {
+    id: "marketing",
+    nome: "Marketing e crescimento",
+    diaSemana: 4,
+    cor: "#8A4FA3",
+    itens: [
+      { chave: "impl_mkt_persona", texto: "Definir a persona: paciente ideal, dores, onde está" },
+      { chave: "impl_mkt_identidade", texto: "Definir a identidade: tom de voz, cores, mensagem principal" },
+      { chave: "impl_mkt_pilares", texto: "Definir os pilares de conteúdo e a frequência" },
+      { chave: "impl_mkt_gmn", texto: "Configurar ou otimizar Google Meu Negócio e site" },
+      { chave: "impl_mkt_conselho", texto: "Conferir as regras do conselho sobre publicidade" },
+      { chave: "impl_mkt_funil", texto: "Desenhar o funil (vê → chama → agenda → comparece → continua → indica)" },
+      { chave: "impl_mkt_indicacao", texto: "Criar o programa de indicação" },
+      { chave: "impl_mkt_reativacao", texto: "Criar a mensagem de reativação de pacientes que pararam" },
+      { chave: "impl_mkt_ideias", texto: "Listar ideias de novos produtos e parcerias" },
+    ],
+  },
+  {
+    id: "administracao",
+    nome: "Administração e processos",
+    diaSemana: 5,
+    cor: "#9C6B2E",
+    itens: [
+      { chave: "impl_adm_jornada", texto: "Mapear a jornada do paciente" },
+      { chave: "impl_adm_pop", texto: "Listar os processos que precisam de POP" },
+      { chave: "impl_adm_documentos", texto: "Organizar documentos (CNPJ, contratos, termos, LGPD, prontuários)" },
+      { chave: "impl_adm_senhas", texto: "Centralizar senhas e acessos em um gerenciador" },
+      { chave: "impl_adm_reclamacoes", texto: "Criar o registro de reclamações" },
+      { chave: "impl_adm_riscos", texto: "Mapear riscos e o plano B de cada um" },
+      { chave: "ativar_push_implantacao", texto: "Ativar as notificações push no seu aparelho" },
+    ],
+  },
 ];
 
-const ITENS_CHECKLIST_IMPLANTACAO_DONO = [
-  { chave: "config_financeira", texto: "Configurar o custo fixo mensal e a reserva de caixa da clínica" },
-  { chave: "primeira_meta", texto: "Cadastrar a primeira meta do trimestre" },
-  { chave: "revisar_repasses_implantacao", texto: "Revisar o percentual de repasse de cada profissional" },
-  { chave: "ativar_push_implantacao", texto: "Ativar as notificações push no seu aparelho" },
+// Rodízio — regra fixa por dia da semana × semana do mês (2ª, 3ª ou 4ª semana). Sem IA, sem
+// sorteio: é só esta tabela. Sexta e fim de semana não têm rodízio (sexta é só Administração).
+const RODIZIO_POR_DIA = {
+  1: {
+    2: "Concorrentes — atualizar o mapa (preços, serviços, anúncios, novidades)",
+    3: "Tendências e notícias do setor (terapia online, IA, convênios, saúde mental nas empresas)",
+    4: "Voz do paciente — o que as pessoas buscam e reclamam (comentários, avaliações, perguntas no atendimento)",
+  },
+  2: {
+    2: "Custos — o que pode ser cortado ou renegociado",
+    3: "Margem por sessão e preços — o modelo continua saudável?",
+    4: "Anúncios — CAC e ROI (quanto cada real investido trouxe de volta)",
+  },
+  3: {
+    2: "Atualizar manual, contrato ou script com o que apareceu nas conversas",
+    3: "Capacitação — organizar grupo de estudo, supervisão ou treinamento",
+    4: "Engajamento — reconhecer destaques e, se faltar profissional, recrutar",
+  },
+  4: {
+    2: "Reativação — chamar pacientes que pararam",
+    3: "Parcerias — contatar RH de empresas, escolas, igrejas, clínicas",
+    4: "Experimento — testar 1 ideia nova (produto, oferta, canal) e medir",
+  },
+};
+
+function semanaDoMes(data) {
+  return Math.min(5, Math.ceil(data.getDate() / 7));
+}
+
+// ---- Itens fixos de cada bloco do dia (checklist DIÁRIO — reseta todo dia, chave + data) ----
+const ITENS_ABERTURA_CAIXA_DONO = [
+  { chave: "md_ab_caixa_entradas", texto: "Lançar todas as entradas do dia (sessões pagas, Pix, cartão) com categoria" },
+  { chave: "md_ab_caixa_saidas", texto: "Lançar todas as saídas do dia (anúncios, repasses, contas) com categoria" },
+  { chave: "md_ab_caixa_bater", texto: "Bater o caixa — o saldo do sistema é igual ao saldo do banco?" },
+  {
+    chave: "md_ab_caixa_sessoes_pagamentos",
+    texto: "Conferir sessões realizadas x pagamentos recebidos",
+    explicacao: "Veja se toda sessão que aconteceu hoje já tem o pagamento correspondente lançado — evita esquecer de cobrar alguém.",
+  },
+  {
+    chave: "md_ab_caixa_saldo_final",
+    texto: "Registrar o saldo final do dia",
+    explicacao: "Anote o valor que fechou o caixa hoje, pra servir de ponto de partida amanhã.",
+  },
+  {
+    chave: "md_ab_caixa_contas_amanha",
+    texto: "Conferir contas que vencem amanhã",
+    explicacao: "Dê uma olhada rápida nas contas que vencem amanhã pra já deixar separado o pagamento.",
+  },
+];
+const ITENS_ABERTURA_PAINEL_DONO = [
+  {
+    chave: "revisar_agenda_geral",
+    texto: "Revisar a agenda geral do dia",
+    explicacao: "Veja quem confirmou presença hoje e quem ainda não confirmou.",
+  },
+  {
+    chave: "md_ab_painel_clientes_novos",
+    texto: "Clientes novos de hoje e de qual canal vieram",
+    explicacao: "Confira se chegou cliente novo hoje e por qual canal (Instagram, indicação etc.).",
+  },
+  {
+    chave: "md_ab_painel_pendencias",
+    texto: "Pendências da atendente e dos profissionais",
+    explicacao: "Veja se a atendente ou algum profissional deixou algo pendente esperando sua resposta.",
+  },
+];
+const ITENS_ABERTURA_MARKETING_DONO = [
+  { chave: "md_ab_mkt_post", texto: "Post do dia publicado" },
+  { chave: "md_ab_mkt_stories", texto: "Stories do dia publicados (mínimo 3 a 5)" },
+  { chave: "md_ab_mkt_respostas", texto: "Comentários e directs respondidos" },
+  {
+    chave: "md_ab_mkt_atendimento",
+    texto: "Atendimento respondeu os leads rápido?",
+    explicacao: "Confira se a atendente respondeu os novos contatos em poucos minutos — resposta lenta perde cliente.",
+  },
+  { chave: "md_ab_mkt_avaliacoes", texto: "Avaliações novas no Google respondidas" },
+];
+const ITENS_TEMA_FIXOS_DONO = [
+  { chave: "md_tema_reuniao_atendente", texto: "Reunião com a atendente — números da semana, dificuldades, treinamento", hora: "18:50" },
+  { chave: "md_tema_1a1", texto: "Conversas 1:1 com 2 profissionais (rodízio, até passar por todos)", hora: "19:20" },
+  { chave: "md_tema_indicadores_prof", texto: "Indicadores por profissional — ocupação, retenção, faltas, avaliações", hora: "20:20" },
+];
+const ITENS_FECHAMENTO_DONO = [
+  { chave: "md_fech_estudo", texto: "Estudo (25 min) — livro, curso ou caso de empresa ligado ao tema do dia" },
+  { chave: "md_fech_decisoes", texto: "Registrar decisões e ideias no diário de decisões (10 min)" },
+  { chave: "md_fech_tarefas_amanha", texto: "Definir as 3 tarefas principais de amanhã (5 min)" },
 ];
 
 const TIPO_MARKETING_LABEL = { POST: "Post", STORIES: "Stories", RESPOSTA: "Resposta", AVALIACAO: "Avaliação", OUTRO: "Outro" };
@@ -3484,14 +3674,19 @@ function AbaMeuDia() {
     { id: "implantacao", label: "Implantação" },
   ];
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Dono</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu dia</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Checklist, indicadores e registros do dia a dia da clínica</p>
+      </div>
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {SUBABAS.map((s) => (
           <button
             key={s.id}
             onClick={() => setSub(s.id)}
             className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-              sub === s.id ? "bg-gold-light text-gold-dark" : "bg-white text-renascer-ink/60 border border-renascer-ink/10"
+              sub === s.id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
             }`}
           >
             {s.label}
@@ -3510,39 +3705,451 @@ function AbaMeuDia() {
   );
 }
 
-function MeuDiaHoje() {
+function ItemChecklistDia({ item, feito, onToggle }) {
   return (
-    <div className="card space-y-3">
-      <div>
-        <h3 className="font-semibold">Checklist de hoje</h3>
-        <p className="text-xs text-renascer-ink/50">
-          {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })} — os números completos
-          estão na aba Indicadores.
-        </p>
-      </div>
-      <ChecklistMeuDia itens={ITENS_CHECKLIST_HOJE_DONO} data={hojeISO()} />
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-colors ${
+        feito ? "border-nv-green/30 bg-nv-green/5" : "border-nv-borderLight hover:bg-nv-bg"
+      }`}
+    >
+      <span
+        className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 text-xs ${
+          feito ? "bg-nv-green border-nv-green text-white" : "border-nv-border"
+        }`}
+      >
+        {feito && "✓"}
+      </span>
+      <span className="flex-1">
+        <span className={`text-sm block ${feito ? "text-nv-muted2 line-through" : "text-nv-ink"}`}>
+          {item.hora && <span className="text-nv-muted3 font-normal mr-1">{item.hora} ·</span>}
+          {item.texto}
+        </span>
+        {item.explicacao && <span className="text-xs text-nv-muted block mt-0.5">{item.explicacao}</span>}
+      </span>
+    </button>
+  );
+}
+
+function BlocoDoDia({ titulo, horario, concluidos, total, aberto, onClick, children }) {
+  const completo = total > 0 && concluidos === total;
+  return (
+    <div className="nv-card !p-0 overflow-hidden">
+      <button type="button" onClick={onClick} className="w-full flex items-center justify-between p-4 text-left">
+        <div>
+          <p className="font-sora font-semibold text-nv-ink">{titulo}</p>
+          <p className="text-xs text-nv-muted">{horario}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={`text-xs font-semibold px-2 py-1 rounded-full ${
+              completo ? "bg-nv-green/10 text-nv-green" : total === 0 ? "bg-nv-bg text-nv-muted3" : "bg-nv-blue/10 text-nv-blue"
+            }`}
+          >
+            {total === 0 ? "—" : `${concluidos}/${total}`}
+          </span>
+          <span className="text-nv-muted text-sm">{aberto ? "▲" : "▼"}</span>
+        </div>
+      </button>
+      {aberto && <div className="p-4 pt-0 space-y-2 border-t border-nv-borderLight">{children}</div>}
     </div>
   );
 }
 
-function MeuDiaImplantacao() {
-  return (
-    <div className="card space-y-3">
-      <div>
-        <h3 className="font-semibold">Checklist de implantação</h3>
-        <p className="text-xs text-renascer-ink/50">Itens de configuração inicial — marque uma vez só, não voltam a aparecer.</p>
+// "Trilha do dia" (Fase 41) — rotina de verdade em 3 blocos (Abertura, Tema do dia, Fechamento).
+// Tema do dia e rodízio vêm de tabelas fixas (AREAS_IMPLANTACAO_DONO / RODIZIO_POR_DIA) — regra
+// determinística, sem IA e sem sorteio. As explicações de cada item usam dado real já existente
+// no sistema (caixa de hoje, marketing de hoje, diário de decisões) — nunca número inventado;
+// quando não existe fonte real pra algo (ex.: "leads"), o item foi reescrito pra não afirmar o
+// que o sistema não sabe (ver histórico da Fase 41).
+function MeuDiaHoje() {
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [concluidosHoje, setConcluidosHoje] = useState([]);
+  const [concluidosPermanentes, setConcluidosPermanentes] = useState([]);
+  const [caixaHoje, setCaixaHoje] = useState(null);
+  const [marketingHoje, setMarketingHoje] = useState([]);
+  const [decisaoHojeRegistrada, setDecisaoHojeRegistrada] = useState(false);
+  const [blocoAberto, setBlocoAberto] = useState(null);
+
+  const agora = new Date();
+  const diaSemanaNum = agora.getDay();
+  const semanaAtual = semanaDoMes(agora);
+  const areaHoje = AREAS_IMPLANTACAO_DONO.find((a) => a.diaSemana === diaSemanaNum);
+  const rodizioHojeTexto = (RODIZIO_POR_DIA[diaSemanaNum] && RODIZIO_POR_DIA[diaSemanaNum][semanaAtual]) || null;
+
+  async function carregar() {
+    setCarregando(true);
+    setErro("");
+    try {
+      const [chkHoje, chkPerm, caixa, marketing, decisoes] = await Promise.all([
+        api.get("/comum/meu-dia/checklist", { params: { data: hojeISO() } }),
+        api.get("/comum/meu-dia/checklist"),
+        api.get("/dono/meu-dia/caixa", { params: { data: hojeISO() } }),
+        api.get("/dono/meu-dia/marketing"),
+        api.get("/dono/meu-dia/decisoes"),
+      ]);
+      setConcluidosHoje(chkHoje.data.itensConcluidos);
+      setConcluidosPermanentes(chkPerm.data.itensConcluidos);
+      setCaixaHoje(caixa.data);
+      setMarketingHoje(marketing.data.filter((m) => new Date(m.data).toISOString().slice(0, 10) === hojeISO()));
+      setDecisaoHojeRegistrada(decisoes.data.some((d) => new Date(d.data).toISOString().slice(0, 10) === hojeISO()));
+    } catch (e) {
+      setErro("Não consegui carregar a trilha de hoje agora. Tente de novo em alguns segundos.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function alternarDiario(chave) {
+    const estavaFeito = concluidosHoje.includes(chave);
+    setConcluidosHoje((prev) => (estavaFeito ? prev.filter((c) => c !== chave) : [...prev, chave]));
+    try {
+      await api.post("/comum/meu-dia/checklist/alternar", { itemChave: chave, data: hojeISO() });
+    } catch (e) {
+      setConcluidosHoje((prev) => (estavaFeito ? [...prev, chave] : prev.filter((c) => c !== chave)));
+      setErro("Não consegui salvar — tente de novo.");
+    }
+  }
+
+  async function alternarPermanente(chave) {
+    const estavaFeito = concluidosPermanentes.includes(chave);
+    setConcluidosPermanentes((prev) => (estavaFeito ? prev.filter((c) => c !== chave) : [...prev, chave]));
+    try {
+      await api.post("/comum/meu-dia/checklist/alternar", { itemChave: chave });
+    } catch (e) {
+      setConcluidosPermanentes((prev) => (estavaFeito ? [...prev, chave] : prev.filter((c) => c !== chave)));
+      setErro("Não consegui salvar — tente de novo.");
+    }
+  }
+
+  if (carregando) return <p className="text-sm text-nv-muted">Carregando...</p>;
+  if (erro && !caixaHoje) {
+    return (
+      <div className="nv-card space-y-2">
+        <p className="text-sm text-red-600">{erro}</p>
+        <button className="btn-secondary" onClick={carregar}>
+          Tentar de novo
+        </button>
       </div>
-      <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_DONO} />
+    );
+  }
+
+  // ---- explicações com dado real (caixa de hoje, marketing de hoje, decisões de hoje) ----
+  const qtdEntradasExtraHoje = caixaHoje.movimentos.filter((m) => m.tipo === "ENTRADA").length;
+  const qtdSaidasHoje = caixaHoje.movimentos.filter((m) => m.tipo === "SAIDA").length;
+
+  const itensCaixaComExplicacao = ITENS_ABERTURA_CAIXA_DONO.map((item) => {
+    if (item.chave === "md_ab_caixa_entradas") {
+      return {
+        ...item,
+        explicacao:
+          caixaHoje.totalEntradasClientes > 0 || qtdEntradasExtraHoje > 0
+            ? `Hoje já tem R$ ${caixaHoje.totalEntradasClientes.toFixed(2)} de clientes + ${qtdEntradasExtraHoje} entrada(s) extra lançada(s).`
+            : "Ainda não tem nenhuma entrada lançada hoje na aba Fechamento de caixa.",
+      };
+    }
+    if (item.chave === "md_ab_caixa_saidas") {
+      return {
+        ...item,
+        explicacao:
+          qtdSaidasHoje > 0
+            ? `${qtdSaidasHoje} saída(s) já lançada(s) hoje, totalizando R$ ${caixaHoje.totalSaidas.toFixed(2)}.`
+            : "Ainda não tem nenhuma saída lançada hoje na aba Fechamento de caixa.",
+      };
+    }
+    if (item.chave === "md_ab_caixa_bater") {
+      return {
+        ...item,
+        explicacao: caixaHoje.conferencia
+          ? Math.abs(caixaHoje.conferencia.diferenca) < 0.01
+            ? "Bateu certinho: saldo do sistema igual ao saldo do banco."
+            : `Não bateu ainda — diferença de R$ ${Math.abs(caixaHoje.conferencia.diferenca).toFixed(2)}.`
+          : "Compare o saldo que o sistema calculou com o saldo real do banco/Pix, na aba Fechamento de caixa.",
+      };
+    }
+    return item;
+  });
+
+  const feitoHojePost = marketingHoje.some((m) => m.tipo === "POST");
+  const feitoHojeStories = marketingHoje.some((m) => m.tipo === "STORIES");
+  const itensMarketingComExplicacao = ITENS_ABERTURA_MARKETING_DONO.map((item) => {
+    if (item.chave === "md_ab_mkt_post") {
+      return {
+        ...item,
+        explicacao: feitoHojePost
+          ? "Post de hoje já está registrado no histórico de marketing."
+          : "Ainda não tem post registrado hoje no histórico de marketing.",
+      };
+    }
+    if (item.chave === "md_ab_mkt_stories") {
+      return {
+        ...item,
+        explicacao: feitoHojeStories
+          ? "Stories de hoje já registrados no histórico de marketing."
+          : "Ainda não tem stories registrados hoje no histórico de marketing.",
+      };
+    }
+    return item;
+  });
+
+  const itensFechamentoComExplicacao = ITENS_FECHAMENTO_DONO.map((item) => {
+    if (item.chave === "md_fech_decisoes") {
+      return {
+        ...item,
+        explicacao: decisaoHojeRegistrada
+          ? "Decisão de hoje já registrada no Diário de decisões."
+          : "Anote no Diário de decisões qualquer decisão importante ou ideia que surgiu hoje.",
+      };
+    }
+    return item;
+  });
+
+  const itemRodizioHoje =
+    areaHoje && rodizioHojeTexto
+      ? [
+          {
+            chave: "md_tema_rodizio",
+            texto: `Rodízio (semana ${semanaAtual}): ${rodizioHojeTexto}`,
+            explicacao: "Tarefa que muda sozinha toda semana, seguindo a tabela de rodízio — veja as variantes abaixo.",
+            hora: "20:40",
+          },
+        ]
+      : [];
+  const itensTemaHoje = areaHoje ? [...ITENS_TEMA_FIXOS_DONO, ...itemRodizioHoje] : [];
+  const itensImplantacaoPendentesHoje = areaHoje ? areaHoje.itens.filter((it) => !concluidosPermanentes.includes(it.chave)) : [];
+
+  // ---- fração concluído/total de cada bloco ----
+  const contarFeitos = (itens) => itens.filter((i) => concluidosHoje.includes(i.chave)).length;
+  const concluidosAbertura = contarFeitos(itensCaixaComExplicacao) + contarFeitos(ITENS_ABERTURA_PAINEL_DONO) + contarFeitos(itensMarketingComExplicacao);
+  const totalAbertura = itensCaixaComExplicacao.length + ITENS_ABERTURA_PAINEL_DONO.length + itensMarketingComExplicacao.length;
+  const concluidosTema = contarFeitos(itensTemaHoje) + (areaHoje ? areaHoje.itens.length - itensImplantacaoPendentesHoje.length : 0);
+  const totalTema = itensTemaHoje.length + (areaHoje ? areaHoje.itens.length : 0);
+  const concluidosFechamento = contarFeitos(itensFechamentoComExplicacao);
+  const totalFechamento = itensFechamentoComExplicacao.length;
+  const concluidosTotal = concluidosAbertura + concluidosTema + concluidosFechamento;
+  const totalGeral = totalAbertura + totalTema + totalFechamento;
+  const percHoje = totalGeral ? Math.round((concluidosTotal / totalGeral) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="nv-card space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-sora font-semibold text-nv-ink">Trilha de hoje</h3>
+            <p className="text-xs text-nv-muted capitalize">
+              {agora.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+              {areaHoje ? ` · tema do dia: ${areaHoje.nome}` : " · fim de semana, sem tema do dia"}
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="nv-num text-2xl text-nv-blue">{percHoje}%</p>
+            <p className="text-[11px] text-nv-muted3">
+              {concluidosTotal} de {totalGeral} feito(s)
+            </p>
+          </div>
+        </div>
+        {erro && <p className="text-xs text-red-600">{erro}</p>}
+      </div>
+
+      <div className="space-y-3">
+        <BlocoDoDia
+          titulo="Abertura"
+          horario="18:00 – 18:50"
+          concluidos={concluidosAbertura}
+          total={totalAbertura}
+          aberto={blocoAberto === "abertura"}
+          onClick={() => setBlocoAberto(blocoAberto === "abertura" ? null : "abertura")}
+        >
+          <p className="text-xs text-nv-muted2 font-semibold uppercase tracking-wide pt-2">Fechamento de caixa</p>
+          {itensCaixaComExplicacao.map((item) => (
+            <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
+          ))}
+          <p className="text-xs text-nv-muted2 font-semibold uppercase tracking-wide pt-2">Painel do dia</p>
+          {ITENS_ABERTURA_PAINEL_DONO.map((item) => (
+            <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
+          ))}
+          <p className="text-xs text-nv-muted2 font-semibold uppercase tracking-wide pt-2">Marketing</p>
+          {itensMarketingComExplicacao.map((item) => (
+            <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
+          ))}
+        </BlocoDoDia>
+
+        <BlocoDoDia
+          titulo={areaHoje ? `Tema do dia — ${areaHoje.nome}` : "Tema do dia"}
+          horario="18:50 – 21:20"
+          concluidos={concluidosTema}
+          total={totalTema}
+          aberto={blocoAberto === "tema"}
+          onClick={() => setBlocoAberto(blocoAberto === "tema" ? null : "tema")}
+        >
+          {!areaHoje && <p className="text-sm text-nv-muted3">Fim de semana — a rotina por tema do dia é de segunda a sexta.</p>}
+          {areaHoje && (
+            <>
+              {itensTemaHoje.map((item) => (
+                <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
+              ))}
+              {diaSemanaNum >= 1 && diaSemanaNum <= 4 && (
+                <div className="bg-nv-bg rounded-xl p-3 mt-2 space-y-1">
+                  <p className="text-xs text-nv-muted2 font-semibold">Rodízio desta semana (semana {semanaAtual} do mês)</p>
+                  {[2, 3, 4].map((sem) => (
+                    <p key={sem} className={`text-xs ${sem === semanaAtual ? "text-nv-ink font-semibold" : "text-nv-muted3"}`}>
+                      {sem === semanaAtual ? "→ " : ""}
+                      Semana {sem}: {RODIZIO_POR_DIA[diaSemanaNum][sem]}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-nv-muted2 font-semibold uppercase tracking-wide pt-3">Implantação pendente — {areaHoje.nome}</p>
+              {itensImplantacaoPendentesHoje.length === 0 ? (
+                <p className="text-sm text-nv-green">Todos os itens de implantação dessa área já foram concluídos. 🎉</p>
+              ) : (
+                itensImplantacaoPendentesHoje.map((item) => (
+                  <ItemChecklistDia key={item.chave} item={item} feito={false} onToggle={() => alternarPermanente(item.chave)} />
+                ))
+              )}
+            </>
+          )}
+        </BlocoDoDia>
+
+        <BlocoDoDia
+          titulo="Fechamento"
+          horario="21:20 – 22:00"
+          concluidos={concluidosFechamento}
+          total={totalFechamento}
+          aberto={blocoAberto === "fechamento"}
+          onClick={() => setBlocoAberto(blocoAberto === "fechamento" ? null : "fechamento")}
+        >
+          {itensFechamentoComExplicacao.map((item) => (
+            <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
+          ))}
+        </BlocoDoDia>
+      </div>
+    </div>
+  );
+}
+
+// Implantação (Fase 41) — as mesmas 5 áreas que viram "tema do dia" na Trilha de hoje, agora
+// vistas de uma vez, com barra de progresso por área. Itens permanentes (sem `data`): marca uma
+// vez só e não volta a aparecer, mesmo mecanismo da Fase 30.
+function MeuDiaImplantacao() {
+  const [concluidos, setConcluidos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [areaAberta, setAreaAberta] = useState(null);
+
+  async function carregar() {
+    setCarregando(true);
+    setErro("");
+    try {
+      const { data } = await api.get("/comum/meu-dia/checklist");
+      setConcluidos(data.itensConcluidos);
+    } catch (e) {
+      setErro("Não consegui carregar o checklist de implantação agora.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function alternar(chave) {
+    const estavaFeito = concluidos.includes(chave);
+    setConcluidos((prev) => (estavaFeito ? prev.filter((c) => c !== chave) : [...prev, chave]));
+    try {
+      await api.post("/comum/meu-dia/checklist/alternar", { itemChave: chave });
+    } catch (e) {
+      setConcluidos((prev) => (estavaFeito ? [...prev, chave] : prev.filter((c) => c !== chave)));
+      setErro("Não consegui salvar — tente de novo.");
+    }
+  }
+
+  if (carregando) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  const totalGeral = AREAS_IMPLANTACAO_DONO.reduce((s, a) => s + a.itens.length, 0);
+  const feitosGeral = AREAS_IMPLANTACAO_DONO.reduce((s, a) => s + a.itens.filter((i) => concluidos.includes(i.chave)).length, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="nv-card space-y-1">
+        <div className="flex items-center justify-between">
+          <h3 className="font-sora font-semibold text-nv-ink">Implantação da clínica</h3>
+          <p className="nv-num text-nv-blue">
+            {feitosGeral}/{totalGeral}
+          </p>
+        </div>
+        <p className="text-xs text-nv-muted">
+          Cada área aqui é também o "tema do dia" de um dia da semana (segunda a sexta) na aba Hoje. Marque uma vez só — não
+          volta a aparecer.
+        </p>
+        {erro && <p className="text-xs text-red-600">{erro}</p>}
+      </div>
+
+      {AREAS_IMPLANTACAO_DONO.map((area) => {
+        const feitosArea = area.itens.filter((i) => concluidos.includes(i.chave)).length;
+        const totalArea = area.itens.length;
+        const pct = totalArea ? Math.round((feitosArea / totalArea) * 100) : 0;
+        const aberta = areaAberta === area.id;
+        return (
+          <div key={area.id} className="nv-card !p-0 overflow-hidden">
+            <button type="button" onClick={() => setAreaAberta(aberta ? null : area.id)} className="w-full flex items-center gap-3 p-4 text-left">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: area.cor }} />
+              <div className="flex-1">
+                <p className="font-sora font-semibold text-nv-ink">{area.nome}</p>
+                <p className="text-xs text-nv-muted">{DIAS_SEMANA_LABEL_COMPLETO[area.diaSemana]} · tema do dia</p>
+                <div className="h-1.5 bg-nv-bg rounded-full mt-2 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: area.cor }} />
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-nv-muted2 shrink-0">
+                {feitosArea}/{totalArea}
+              </span>
+            </button>
+            {aberta && (
+              <div className="p-4 pt-0 space-y-2 border-t border-nv-borderLight">
+                {area.itens.map((item) => {
+                  const feito = concluidos.includes(item.chave);
+                  return (
+                    <button
+                      key={item.chave}
+                      type="button"
+                      onClick={() => alternar(item.chave)}
+                      className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-colors ${
+                        feito ? "border-nv-green/30 bg-nv-green/5" : "border-nv-borderLight hover:bg-nv-bg"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 text-xs ${
+                          feito ? "bg-nv-green border-nv-green text-white" : "border-nv-border"
+                        }`}
+                      >
+                        {feito && "✓"}
+                      </span>
+                      <span className={`text-sm ${feito ? "text-nv-muted2 line-through" : "text-nv-ink"}`}>{item.texto}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function CardIndicador({ titulo, valor, destaque, aviso }) {
   return (
-    <div className="border border-renascer/10 rounded-xl p-3">
-      <p className="text-xs text-renascer-ink/50">{titulo}</p>
-      <p className={`text-lg font-bold ${destaque || "text-renascer-ink"}`}>{valor}</p>
-      {aviso && <p className="text-[11px] text-renascer-ink/40 mt-0.5">{aviso}</p>}
+    <div className="border border-nv-border rounded-xl p-3">
+      <p className="text-xs text-nv-muted">{titulo}</p>
+      <p className={`text-lg font-bold ${destaque || "text-nv-ink"}`}>{valor}</p>
+      {aviso && <p className="text-[11px] text-nv-muted3 mt-0.5">{aviso}</p>}
     </div>
   );
 }
@@ -3566,7 +4173,7 @@ function MeuDiaIndicadores() {
 
   if (erro) {
     return (
-      <div className="card space-y-2">
+      <div className="nv-card space-y-2">
         <p className="text-sm text-red-600">{erro}</p>
         <button className="btn-secondary" onClick={carregar}>
           Tentar de novo
@@ -3574,16 +4181,16 @@ function MeuDiaIndicadores() {
       </div>
     );
   }
-  if (!dados) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+  if (!dados) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
   const semDadoSuficiente = "ainda sem dado suficiente este mês";
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Financeiro</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Financeiro</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <CardIndicador titulo="Saldo de caixa hoje" valor={`R$ ${dados.financeiro.saldoCaixaHoje.toFixed(2)}`} destaque="text-renascer" />
+          <CardIndicador titulo="Saldo de caixa hoje" valor={`R$ ${dados.financeiro.saldoCaixaHoje.toFixed(2)}`} destaque="text-nv-blue" />
           <CardIndicador titulo="Faturamento do mês" valor={`R$ ${dados.financeiro.faturamentoMes.toFixed(2)}`} />
           <CardIndicador titulo="Repasse às profissionais (mês)" valor={`R$ ${dados.financeiro.repasseProfissionaisMes.toFixed(2)}`} />
           <CardIndicador titulo="Receita Renascer (mês)" valor={`R$ ${dados.financeiro.receitaRenascerMes.toFixed(2)}`} destaque="text-emerald-600" />
@@ -3595,8 +4202,8 @@ function MeuDiaIndicadores() {
         )}
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Crescimento</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Crescimento</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <CardIndicador titulo="Clientes novos (mês)" valor={dados.crescimento.novosClientesMes} />
           <CardIndicador titulo="Clientes que saíram (mês)" valor={dados.crescimento.churnMes} />
@@ -3604,8 +4211,8 @@ function MeuDiaIndicadores() {
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Marketing</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Marketing</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <CardIndicador
             titulo="Registros de marketing (mês)"
@@ -3616,18 +4223,18 @@ function MeuDiaIndicadores() {
           <CardIndicador titulo="Clientes novos no mês" valor={dados.marketing.totalClientesNovosMes} />
         </div>
         <div>
-          <p className="text-xs text-renascer-ink/50 mb-1">Custo por cliente novo (CAC), por canal</p>
+          <p className="text-xs text-nv-muted mb-1">Custo por cliente novo (CAC), por canal</p>
           {Object.keys(dados.marketing.cacPorCanal).length === 0 ? (
-            <p className="text-sm text-renascer-ink/40">
+            <p className="text-sm text-nv-muted3">
               {semDadoSuficiente} — lance gastos de anúncio no Fechamento de caixa e informe o canal dos clientes novos no
               cadastro, pra esse número aparecer.
             </p>
           ) : (
             <div className="space-y-1">
               {Object.entries(dados.marketing.cacPorCanal).map(([canal, info]) => (
-                <div key={canal} className="flex items-center justify-between text-sm border-b border-renascer-ink/5 py-1">
+                <div key={canal} className="flex items-center justify-between text-sm border-b border-nv-borderLight py-1">
                   <span>{CANAL_LABEL[canal] || canal}</span>
-                  <span className="text-renascer-ink/70">
+                  <span className="text-nv-muted2">
                     R$ {info.gasto.toFixed(2)} gasto · {info.clientesNovos} cliente(s) novo(s)
                     {info.cac !== null ? ` · CAC R$ ${info.cac.toFixed(2)}` : " · CAC ainda sem dado"}
                   </span>
@@ -3638,8 +4245,8 @@ function MeuDiaIndicadores() {
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Processos</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Processos</h3>
         <div className="grid grid-cols-2 gap-3">
           <CardIndicador
             titulo="Taxa de faltas (mês)"
@@ -3654,23 +4261,23 @@ function MeuDiaIndicadores() {
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Pessoas (sessões realizadas no mês)</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Pessoas (sessões realizadas no mês)</h3>
         <div className="space-y-1">
           {dados.pessoas.sessoesRealizadasPorProfissional.map((p) => (
-            <div key={p.profissionalId} className="flex items-center justify-between text-sm border-b border-renascer-ink/5 py-1">
+            <div key={p.profissionalId} className="flex items-center justify-between text-sm border-b border-nv-borderLight py-1">
               <span>{p.nome}</span>
               <span className="font-semibold">{p.sessoesRealizadas}</span>
             </div>
           ))}
           {dados.pessoas.sessoesRealizadasPorProfissional.length === 0 && (
-            <p className="text-sm text-renascer-ink/40">Nenhuma sessão realizada este mês ainda.</p>
+            <p className="text-sm text-nv-muted3">Nenhuma sessão realizada este mês ainda.</p>
           )}
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Estratégia</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Estratégia</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <CardIndicador titulo="Ponto de equilíbrio (custo fixo/mês)" valor={`R$ ${dados.estrategia.pontoDeEquilibrioReais.toFixed(2)}`} />
           <CardIndicador
@@ -3684,12 +4291,12 @@ function MeuDiaIndicadores() {
             aviso={dados.estrategia.custoFixoMensalReais === 0 ? "configure o custo fixo mensal" : null}
           />
         </div>
-        <p className="text-xs text-renascer-ink/50">
+        <p className="text-xs text-nv-muted">
           Custo fixo e reserva de caixa são configurados na aba Fechamento de caixa.
         </p>
         {dados.estrategia.metasTrimestreAtual.length > 0 && (
           <div className="pt-2 space-y-2">
-            <p className="text-xs text-renascer-ink/50">Metas deste trimestre</p>
+            <p className="text-xs text-nv-muted">Metas deste trimestre</p>
             {dados.estrategia.metasTrimestreAtual.map((m) => (
               <BarraMetaTrimestre key={m.id} meta={m} />
             ))}
@@ -3735,8 +4342,8 @@ function MeuDiaMarketing() {
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Registrar ação de marketing</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Registrar ação de marketing</h3>
         <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
           {Object.entries(TIPO_MARKETING_LABEL).map(([v, l]) => (
             <option key={v} value={v}>
@@ -3751,26 +4358,26 @@ function MeuDiaMarketing() {
         </button>
       </div>
 
-      <div className="card space-y-2">
-        <h3 className="font-semibold">Histórico</h3>
+      <div className="nv-card space-y-2">
+        <h3 className="font-sora font-semibold text-nv-ink">Histórico</h3>
         {lista.map((r) => (
-          <div key={r.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+          <div key={r.id} className="border-b border-nv-borderLight py-2 flex items-start justify-between gap-2">
             <div>
               <span className="badge-gold">{TIPO_MARKETING_LABEL[r.tipo] || r.tipo}</span>
               <p className="text-sm mt-1">{r.descricao}</p>
               {r.link && (
-                <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-renascer underline">
+                <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-nv-blue underline">
                   {r.link}
                 </a>
               )}
-              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+              <p className="text-[11px] text-nv-muted3 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
             </div>
             <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(r.id)}>
               Excluir
             </button>
           </div>
         ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum registro ainda.</p>}
+        {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhum registro ainda.</p>}
       </div>
     </div>
   );
@@ -3816,8 +4423,8 @@ function MeuDiaPessoas() {
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Nova anotação</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Nova anotação</h3>
         <select className="input" value={profissionalId} onChange={(e) => setProfissionalId(e.target.value)}>
           {profissionais.map((p) => (
             <option key={p.id} value={p.id}>
@@ -3838,23 +4445,23 @@ function MeuDiaPessoas() {
         </button>
       </div>
 
-      <div className="card space-y-2">
-        <h3 className="font-semibold">Histórico</h3>
+      <div className="nv-card space-y-2">
+        <h3 className="font-sora font-semibold text-nv-ink">Histórico</h3>
         {lista.map((r) => (
-          <div key={r.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+          <div key={r.id} className="border-b border-nv-borderLight py-2 flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-medium">
                 {nomePorId[r.profissionalId] || "—"} <span className="badge-gold ml-1">{TIPO_PESSOAS_LABEL[r.tipo] || r.tipo}</span>
               </p>
               <p className="text-sm mt-1">{r.anotacao}</p>
-              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
+              <p className="text-[11px] text-nv-muted3 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
             </div>
             <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(r.id)}>
               Excluir
             </button>
           </div>
         ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhuma anotação ainda.</p>}
+        {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhuma anotação ainda.</p>}
       </div>
     </div>
   );
@@ -3936,22 +4543,22 @@ function MeuDiaCaixa() {
     setConfig(data);
   }
 
-  if (!dados || !config) return <p className="text-sm text-renascer-ink/50">Carregando...</p>;
+  if (!dados || !config) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
+      <div className="nv-card space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Fechamento de caixa</h3>
+          <h3 className="font-sora font-semibold text-nv-ink">Fechamento de caixa</h3>
           <input className="input !w-auto" type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <CardIndicador titulo="Entradas de clientes" valor={`R$ ${dados.totalEntradasClientes.toFixed(2)}`} />
           <CardIndicador titulo="Entradas/saídas extra" valor={`+R$ ${dados.totalEntradasExtra.toFixed(2)} / -R$ ${dados.totalSaidas.toFixed(2)}`} />
-          <CardIndicador titulo="Saldo do sistema" valor={`R$ ${dados.saldoSistema.toFixed(2)}`} destaque="text-renascer" />
+          <CardIndicador titulo="Saldo do sistema" valor={`R$ ${dados.saldoSistema.toFixed(2)}`} destaque="text-nv-blue" />
         </div>
 
-        <div className="pt-2 border-t border-renascer-ink/5 space-y-1">
+        <div className="pt-2 border-t border-nv-borderLight space-y-1">
           {dados.movimentos.map((m) => (
             <div key={m.id} className="flex items-center justify-between text-sm py-1">
               <span>
@@ -3967,12 +4574,12 @@ function MeuDiaCaixa() {
               </span>
             </div>
           ))}
-          {dados.movimentos.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhum lançamento extra nesse dia.</p>}
+          {dados.movimentos.length === 0 && <p className="text-sm text-nv-muted3">Nenhum lançamento extra nesse dia.</p>}
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Novo lançamento</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Novo lançamento</h3>
         <div className="grid grid-cols-2 gap-2">
           <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
             <option value="SAIDA">Saída</option>
@@ -4003,8 +4610,8 @@ function MeuDiaCaixa() {
         </button>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Conferir com o banco/Pix</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Conferir com o banco/Pix</h3>
         <input
           className="input"
           type="number"
@@ -4024,16 +4631,16 @@ function MeuDiaCaixa() {
         </button>
         {mensagem && <p className="text-sm font-medium">{mensagem}</p>}
         {dados.conferencia && (
-          <p className="text-xs text-renascer-ink/50">
+          <p className="text-xs text-nv-muted">
             Última conferência desse dia: sistema R$ {dados.conferencia.saldoSistema.toFixed(2)} vs. banco R${" "}
             {dados.conferencia.saldoBancoInformado.toFixed(2)} (diferença R$ {Math.abs(dados.conferencia.diferenca).toFixed(2)}).
           </p>
         )}
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Configuração financeira da clínica</h3>
-        <p className="text-xs text-renascer-ink/50">Usada só pros indicadores de ponto de equilíbrio, lucro e meses de reserva.</p>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Configuração financeira da clínica</h3>
+        <p className="text-xs text-nv-muted">Usada só pros indicadores de ponto de equilíbrio, lucro e meses de reserva.</p>
         <label className="block text-sm">
           Custo fixo mensal (R$)
           <input
@@ -4091,27 +4698,27 @@ function MeuDiaDecisoes() {
 
   return (
     <div className="space-y-4">
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Nova decisão ou ideia</h3>
+      <div className="nv-card space-y-3">
+        <h3 className="font-sora font-semibold text-nv-ink">Nova decisão ou ideia</h3>
         <textarea className="input" rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} />
         <button className="btn-primary" onClick={registrar} disabled={salvando || !texto.trim()}>
           {salvando ? "Salvando..." : "Registrar"}
         </button>
       </div>
-      <div className="card space-y-2">
-        <h3 className="font-semibold">Diário</h3>
+      <div className="nv-card space-y-2">
+        <h3 className="font-sora font-semibold text-nv-ink">Diário</h3>
         {lista.map((d) => (
-          <div key={d.id} className="border-b border-renascer-ink/5 py-2 flex items-start justify-between gap-2">
+          <div key={d.id} className="border-b border-nv-borderLight py-2 flex items-start justify-between gap-2">
             <div>
               <p className="text-sm">{d.texto}</p>
-              <p className="text-[11px] text-renascer-ink/40 mt-0.5">{new Date(d.data).toLocaleString("pt-BR")}</p>
+              <p className="text-[11px] text-nv-muted3 mt-0.5">{new Date(d.data).toLocaleString("pt-BR")}</p>
             </div>
             <button className="text-xs text-red-600 underline shrink-0" onClick={() => excluir(d.id)}>
               Excluir
             </button>
           </div>
         ))}
-        {lista.length === 0 && <p className="text-sm text-renascer-ink/40">Nenhuma decisão registrada ainda.</p>}
+        {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhuma decisão registrada ainda.</p>}
       </div>
     </div>
   );
@@ -4121,7 +4728,7 @@ function BarraMetaTrimestre({ meta, onAtualizar, onExcluir }) {
   const pct = meta.valorMeta > 0 ? Math.min(100, (meta.valorAtual / meta.valorMeta) * 100) : 0;
   const formatar = (v) => (meta.unidade === "reais" ? `R$ ${v.toFixed(2)}` : meta.unidade === "percentual" ? `${v}%` : v);
   return (
-    <div className="border border-renascer/10 rounded-xl p-3">
+    <div className="border border-nv-border rounded-xl p-3">
       <div className="flex items-center justify-between mb-1">
         <p className="font-medium">{meta.titulo}</p>
         {onExcluir && (
@@ -4130,10 +4737,10 @@ function BarraMetaTrimestre({ meta, onAtualizar, onExcluir }) {
           </button>
         )}
       </div>
-      <div className="h-2 rounded-full bg-renascer-light overflow-hidden">
-        <div className="h-full bg-renascer" style={{ width: `${pct}%` }} />
+      <div className="h-2 rounded-full bg-nv-bg overflow-hidden">
+        <div className="h-full bg-nv-blue" style={{ width: `${pct}%` }} />
       </div>
-      <div className="flex items-center justify-between mt-1 text-xs text-renascer-ink/60">
+      <div className="flex items-center justify-between mt-1 text-xs text-nv-muted">
         <span>
           {formatar(meta.valorAtual)} de {formatar(meta.valorMeta)} ({pct.toFixed(0)}%)
         </span>
@@ -4186,15 +4793,15 @@ function MeuDiaMetas() {
   }
 
   return (
-    <div className="card space-y-3">
+    <div className="nv-card space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Metas do trimestre</h3>
+        <h3 className="font-sora font-semibold text-nv-ink">Metas do trimestre</h3>
         <button className="btn-primary" onClick={() => setMostrarForm(!mostrarForm)}>
           + Nova meta
         </button>
       </div>
       {mostrarForm && (
-        <div className="space-y-2 p-3 rounded-xl bg-renascer-light/40">
+        <div className="space-y-2 p-3 rounded-xl bg-nv-bg">
           <input className="input" placeholder="Título (ex: Faturamento do trimestre)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
           <select className="input" value={unidade} onChange={(e) => setUnidade(e.target.value)}>
             <option value="reais">Reais (R$)</option>
@@ -4212,7 +4819,7 @@ function MeuDiaMetas() {
         {metas.map((m) => (
           <BarraMetaTrimestre key={m.id} meta={m} onAtualizar={() => atualizar(m)} onExcluir={() => excluir(m.id)} />
         ))}
-        {metas.length === 0 && <p className="text-sm text-renascer-ink/50">Nenhuma meta cadastrada neste trimestre.</p>}
+        {metas.length === 0 && <p className="text-sm text-nv-muted">Nenhuma meta cadastrada neste trimestre.</p>}
       </div>
     </div>
   );
@@ -4366,40 +4973,43 @@ function MapasMentais() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 font-publicSans">
       <div>
-        <h2 className="text-lg font-semibold">Mapas mentais</h2>
-        <p className="text-sm text-renascer-ink/60">
-          Arraste os nós para organizar, crie quantos mapas quiser — estratégias, tarefas, ideias pra o futuro.
+        <p className="nv-eyebrow mb-1">Painel do Dono</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Mapas mentais</h1>
+        <p className="text-nv-muted text-sm mt-0.5">
+          Arraste os nós para organizar, crie quantos mapas quiser — estratégias, tarefas, ideias para o futuro
         </p>
       </div>
       {erro && <p className="text-sm text-red-600">{erro}</p>}
 
       <div className="flex gap-4 flex-wrap items-start">
-        <div className="card w-full md:w-56 flex flex-col gap-2 shrink-0">
-          <p className="font-semibold text-sm">Meus mapas</p>
+        <div className="nv-card w-full md:w-56 flex flex-col gap-2 shrink-0">
+          <p className="font-sora font-semibold text-sm text-nv-ink">Meus mapas</p>
           <div className="flex flex-col gap-1">
             {mapas.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => selecionarMapa(m.id)}
-                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors ${
-                  m.id === mapaAtivoId ? "bg-renascer-light/60 text-renascer" : "text-renascer-ink/70 hover:bg-renascer-light/30"
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-left transition-colors ${
+                  m.id === mapaAtivoId ? "bg-nv-blue/10 text-nv-blue" : "text-nv-ink/70 hover:bg-nv-bg"
                 }`}
               >
                 <span className="flex items-center gap-2 overflow-hidden">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.cor }} />
                   <span className="truncate">{m.nome}</span>
                 </span>
-                <span className="text-xs font-bold shrink-0">{m.totalNos}</span>
+                <span className={`text-[10.5px] font-bold shrink-0 ${m.id === mapaAtivoId ? "text-nv-blue" : "text-nv-muted3"}`}>
+                  {m.totalNos}
+                </span>
               </button>
             ))}
-            {mapas.length === 0 && <p className="text-xs text-renascer-ink/50">Nenhum mapa ainda.</p>}
+            {mapas.length === 0 && <p className="text-xs text-nv-muted">Nenhum mapa ainda.</p>}
           </div>
 
           {mostrarNovoMapa ? (
-            <div className="flex flex-col gap-2 pt-2 border-t border-renascer-ink/10">
+            <div className="flex flex-col gap-2 pt-2 border-t border-nv-borderLight">
               <input
                 className="input"
                 placeholder="Nome do novo mapa"
@@ -4432,23 +5042,23 @@ function MapasMentais() {
 
         <div className="flex-1 min-w-0 flex flex-col gap-3">
           {!mapaAtual ? (
-            <div className="card text-sm text-renascer-ink/60">
+            <div className="nv-card text-sm text-nv-muted">
               Crie seu primeiro mapa mental pra começar a organizar estratégias, tarefas ou ideias.
             </div>
           ) : (
             <>
-              <div className="card flex flex-col gap-3">
+              <div className="nv-card flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <p className="font-semibold">{mapaAtual.nome}</p>
+                  <p className="font-sora font-semibold text-nv-ink">{mapaAtual.nome}</p>
                   <div className="flex items-center gap-3">
-                    <p className="text-xs text-renascer-ink/50">Clique em um nó pra selecionar · arraste pra reorganizar</p>
-                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-medium text-red-600 hover:text-red-700">
+                    <p className="text-xs text-nv-muted2">Clique em um nó pra selecionar · arraste pra reorganizar</p>
+                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-semibold text-red-600 hover:text-red-700">
                       Excluir mapa
                     </button>
                   </div>
                 </div>
                 <div
-                  className="relative rounded-xl border border-renascer-ink/10 overflow-auto"
+                  className="relative rounded-xl border border-nv-border overflow-auto"
                   style={{
                     height: 500,
                     backgroundColor: "#FAFBFD",
@@ -4504,10 +5114,10 @@ function MapasMentais() {
                 </div>
               </div>
 
-              <div className="card flex flex-col gap-3">
+              <div className="nv-card flex flex-col gap-3">
                 {noSelecionado ? (
                   <div className="flex flex-col gap-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-renascer-ink/50">Nó selecionado</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-nv-muted2">Nó selecionado</p>
                     <input
                       className="input"
                       value={noSelecionado.texto}
@@ -4521,7 +5131,7 @@ function MapasMentais() {
                         <button
                           type="button"
                           onClick={excluirNoSelecionado}
-                          className="text-sm font-medium text-red-600 hover:text-red-700 px-3"
+                          className="text-sm font-semibold text-red-600 hover:text-red-700 px-3"
                         >
                           Excluir nó
                         </button>
@@ -4529,7 +5139,7 @@ function MapasMentais() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-renascer-ink/60">
+                  <p className="text-sm text-nv-muted">
                     Clique em um nó no mapa acima pra editar o texto, adicionar um nó filho ou excluir.
                   </p>
                 )}
