@@ -314,7 +314,7 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
 
       {/* Conteúdo */}
       <div className={abas.length > 0 ? "md:pl-[264px]" : ""}>
-        <main className="max-w-[1120px] mx-auto px-5 md:px-[42px] py-6 md:py-[38px] flex flex-col gap-[22px]">{children}</main>
+        <main className="max-w-[1600px] mx-auto px-5 md:px-[42px] py-6 md:py-[38px] flex flex-col gap-[22px]">{children}</main>
       </div>
     </div>
   );

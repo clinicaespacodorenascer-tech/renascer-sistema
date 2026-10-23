@@ -8,7 +8,6 @@ import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
 import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
-import ChecklistMeuDia from "../../components/ChecklistMeuDia";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -23,7 +22,6 @@ export default function AreaAtendente() {
   if (carregando) return null;
 
   const ABAS = [
-    { id: "meudia", label: "Meu dia" },
     { id: "clientes", label: "Clientes" },
     { id: "profissionais", label: "Profissionais e agendar" },
     { id: "reativar", label: "Reativar clientes" },
@@ -33,7 +31,6 @@ export default function AreaAtendente() {
 
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
-      {aba === "meudia" && <AbaMeuDiaAtendente />}
       {aba === "clientes" && <Clientes />}
       {aba === "profissionais" && <ProfissionaisEAgendar />}
       {aba === "reativar" && <ClientesParaReativar rotaBase="/atendente" />}
@@ -219,12 +216,17 @@ function ProfissionaisEAgendar() {
                 </div>
               )}
 
-              <div className="text-xs text-nv-muted3 mt-2.5 border-t border-nv-borderLight pt-2.5">
-                {p.disponibilidades.length === 0 && "Nenhum horário liberado ainda."}
+              <div className="flex flex-wrap gap-1.5 mt-2.5 border-t border-nv-borderLight pt-2.5">
+                {p.disponibilidades.length === 0 && <span className="text-xs text-nv-muted3">Nenhum horário liberado ainda.</span>}
                 {p.disponibilidades.map((d) => (
-                  <span key={d.id} className={`inline-block mr-2.5 ${d.ocupadoPorCliente ? "text-[#B0580F] font-medium" : ""}`}>
+                  <span
+                    key={d.id}
+                    className={`text-[11px] font-medium rounded-full px-2.5 py-1 ${
+                      d.ocupadoPorCliente ? "bg-amber-50 text-amber-700" : "bg-nv-bg text-nv-muted2 border border-nv-borderLight"
+                    }`}
+                  >
                     {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
-                    {d.ocupadoPorCliente ? ` (fixo: ${d.ocupadoPorCliente.user.nome})` : ""}
+                    {d.ocupadoPorCliente ? ` · fixo: ${d.ocupadoPorCliente.user.nome}` : ""}
                   </span>
                 ))}
               </div>
@@ -886,191 +888,6 @@ function SuporteEscalado() {
           </div>
         ))}
         {tickets.length === 0 && <p className="text-sm text-nv-muted">Nenhum chamado escalado.</p>}
-      </div>
-    </div>
-  );
-}
-
-// ================================================================================================
-// ---------------- MEU DIA (Fase 30) — Atendente: checklist diário + indicadores operacionais
-// (agenda do dia, fila de reativação, clientes novos) + registro de marketing. Não mostra nenhum
-// número financeiro consolidado da clínica — isso continua só na visão do Dono. ----------------
-// ================================================================================================
-
-const ITENS_CHECKLIST_HOJE_ATENDENTE = [
-  { chave: "revisar_agenda_atendente", texto: "Revisar a agenda geral do dia (quem confirmou, quem ainda não)" },
-  { chave: "fila_reativacao_atendente", texto: "Checar a fila de reativação de clientes" },
-  { chave: "clientes_novos_atendente", texto: "Conferir se todo cliente novo de hoje já tem profissional vinculada" },
-  { chave: "registrar_marketing_atendente", texto: "Registrar o que foi postado/respondido hoje no marketing (se houver)" },
-];
-
-const ITENS_CHECKLIST_IMPLANTACAO_ATENDENTE = [
-  { chave: "conhecer_profissionais_atendente", texto: "Revisar a lista de profissionais e o que cada uma atende" },
-  { chave: "ativar_push_atendente", texto: "Ativar as notificações push no seu aparelho" },
-];
-
-const TIPO_MARKETING_LABEL_ATENDENTE = { POST: "Post", STORIES: "Stories", RESPOSTA: "Resposta", AVALIACAO: "Avaliação", OUTRO: "Outro" };
-
-function hojeISOAtendente() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function AbaMeuDiaAtendente() {
-  const [sub, setSub] = useState("hoje");
-  const SUBABAS = [
-    { id: "hoje", label: "Hoje" },
-    { id: "indicadores", label: "Indicadores" },
-    { id: "marketing", label: "Marketing" },
-    { id: "implantacao", label: "Implantação" },
-  ];
-  return (
-    <div className="space-y-4 font-publicSans">
-      <div>
-        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meu dia</h1>
-        <p className="text-nv-muted text-sm mt-0.5">Checklist e registros do dia a dia da recepção</p>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {SUBABAS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setSub(s.id)}
-            className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-              sub === s.id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      {sub === "hoje" && (
-        <div className="nv-card space-y-3">
-          <div>
-            <h3 className="font-sora font-semibold text-nv-ink">Checklist de hoje</h3>
-            <p className="text-xs text-nv-muted capitalize">
-              {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
-            </p>
-          </div>
-          <ChecklistMeuDia itens={ITENS_CHECKLIST_HOJE_ATENDENTE} data={hojeISOAtendente()} />
-        </div>
-      )}
-      {sub === "indicadores" && <IndicadoresMeuDiaAtendente />}
-      {sub === "marketing" && <MarketingMeuDiaAtendente />}
-      {sub === "implantacao" && (
-        <div className="nv-card space-y-3">
-          <div>
-            <h3 className="font-sora font-semibold text-nv-ink">Checklist de implantação</h3>
-            <p className="text-xs text-nv-muted">Itens de configuração inicial — marque uma vez só, não voltam a aparecer.</p>
-          </div>
-          <ChecklistMeuDia itens={ITENS_CHECKLIST_IMPLANTACAO_ATENDENTE} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CardIndicadorAtendente({ titulo, valor }) {
-  return (
-    <div className="border border-nv-border rounded-xl p-3">
-      <p className="text-xs text-nv-muted">{titulo}</p>
-      <p className="text-lg font-bold text-nv-ink">{valor}</p>
-    </div>
-  );
-}
-
-function IndicadoresMeuDiaAtendente() {
-  const [dados, setDados] = useState(null);
-  async function carregar() {
-    const { data } = await api.get("/atendente/meu-dia/indicadores");
-    setDados(data);
-  }
-  useEffect(() => {
-    carregar();
-  }, []);
-  if (!dados) return <p className="text-sm text-nv-muted">Carregando...</p>;
-
-  return (
-    <div className="nv-card space-y-4">
-      <div>
-        <h3 className="font-sora font-semibold text-nv-ink mb-2">Agenda de hoje</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <CardIndicadorAtendente titulo="Total" valor={dados.agendaHoje.total} />
-          {Object.entries(dados.agendaHoje.porStatus).map(([status, total]) => (
-            <CardIndicadorAtendente key={status} titulo={status} valor={total} />
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <CardIndicadorAtendente titulo="Fila de reativação" valor={dados.clientesEsperandoReativacao} />
-        <CardIndicadorAtendente titulo="Clientes novos hoje" valor={dados.clientesNovosHoje} />
-        <CardIndicadorAtendente titulo="Clientes novos no mês" valor={dados.clientesNovosMes} />
-        <CardIndicadorAtendente titulo="Seus registros de marketing (mês)" valor={dados.registrosMarketingMeusMes} />
-      </div>
-    </div>
-  );
-}
-
-function MarketingMeuDiaAtendente() {
-  const [lista, setLista] = useState([]);
-  const [tipo, setTipo] = useState("POST");
-  const [descricao, setDescricao] = useState("");
-  const [link, setLink] = useState("");
-  const [salvando, setSalvando] = useState(false);
-
-  async function carregar() {
-    const { data } = await api.get("/atendente/meu-dia/marketing");
-    setLista(data);
-  }
-  useEffect(() => {
-    carregar();
-  }, []);
-
-  async function registrar() {
-    if (!descricao.trim()) return;
-    setSalvando(true);
-    try {
-      await api.post("/atendente/meu-dia/marketing", { tipo, descricao, link: link || undefined });
-      setDescricao("");
-      setLink("");
-      carregar();
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="nv-card space-y-3">
-        <h3 className="font-sora font-semibold text-nv-ink">Registrar ação de marketing</h3>
-        <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-          {Object.entries(TIPO_MARKETING_LABEL_ATENDENTE).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-        <textarea className="input" rows={2} placeholder="O que foi feito?" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
-        <input className="input" placeholder="Link (opcional)" value={link} onChange={(e) => setLink(e.target.value)} />
-        <button className="btn-primary" onClick={registrar} disabled={salvando || !descricao.trim()}>
-          {salvando ? "Salvando..." : "Registrar"}
-        </button>
-      </div>
-      <div className="nv-card space-y-2">
-        <h3 className="font-sora font-semibold text-nv-ink">Histórico (de toda a equipe)</h3>
-        {lista.map((r) => (
-          <div key={r.id} className="border-b border-nv-borderLight py-2">
-            <span className="badge-gold">{TIPO_MARKETING_LABEL_ATENDENTE[r.tipo] || r.tipo}</span>
-            <p className="text-sm mt-1 text-nv-ink">{r.descricao}</p>
-            {r.link && (
-              <a href={r.link} target="_blank" rel="noreferrer" className="text-xs text-nv-blue underline">
-                {r.link}
-              </a>
-            )}
-            <p className="text-[11px] text-nv-muted3 mt-0.5">{new Date(r.data).toLocaleString("pt-BR")}</p>
-          </div>
-        ))}
-        {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhum registro ainda.</p>}
       </div>
     </div>
   );
