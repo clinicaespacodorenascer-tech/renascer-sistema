@@ -1072,6 +1072,18 @@ function AgendaGeralDono() {
   const profissionaisDoMes = [...new Set(lista.map((a) => a.profissional.user.nome))].sort();
   const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
 
+  // Fase 56 — resumo do mês por profissional: quantas sessões ela já realizou, quantas o cliente
+  // faltou e quantas ainda estão em aberto — pra ver de cara se o time tá usando o sistema certinho
+  // e se as sessões estão mesmo sendo feitas (sem precisar entrar dia a dia no calendário).
+  const resumoPorProfissional = {};
+  for (const a of lista) {
+    const nome = a.profissional.user.nome;
+    if (!resumoPorProfissional[nome]) resumoPorProfissional[nome] = { realizadas: 0, faltou: 0, pendentes: 0 };
+    if (a.status === "REALIZADO") resumoPorProfissional[nome].realizadas++;
+    else if (a.status === "FALTOU") resumoPorProfissional[nome].faltou++;
+    else if (a.status === "AGENDADO" || a.status === "CONFIRMADO") resumoPorProfissional[nome].pendentes++;
+  }
+
   return (
     <div className="font-publicSans">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
@@ -1080,6 +1092,20 @@ function AgendaGeralDono() {
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda geral</h1>
           <p className="text-nv-muted text-sm mt-0.5">{NOMES_MES[mesIndex]} de {ano} · clique num dia pra ver os agendamentos</p>
         </div>
+        {Object.keys(resumoPorProfissional).length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {Object.entries(resumoPorProfissional).map(([nome, r]) => (
+              <div key={nome} className="bg-white border border-nv-borderLight rounded-xl px-3 py-2">
+                <p className="text-[11px] font-bold text-nv-ink2 truncate max-w-[140px]">{nome.split(" ").slice(0, 2).join(" ")}</p>
+                <div className="flex gap-1.5 mt-0.5 text-[10.5px]">
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">{r.realizadas} feitas</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">{r.faltou} faltou</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-nv-ink/10 text-nv-ink/60 font-semibold">{r.pendentes} em aberto</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
           <button className="nv-seg rounded-lg" onClick={() => mudarMes(-1)}>
             ← Mês anterior
@@ -1233,6 +1259,7 @@ function formatarHaQuantoDono(iso) {
 function NovoClienteDono({ profissionais, onCadastrado }) {
   const [form, setForm] = useState(FORM_CLIENTE_VAZIO_DONO);
   const [sessoesExtras, setSessoesExtras] = useState(0);
+  const [pacotePersonalizado, setPacotePersonalizado] = useState(false); // Fase 56 — "Personalizado" no nº de sessões do pacote
   const [arquivo, setArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [nomeCadastrado, setNomeCadastrado] = useState("");
@@ -1319,18 +1346,40 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
-            <div className="flex gap-1.5">
-              {[4, 8].map((n) => (
+            <div className="flex gap-1.5 flex-wrap">
+              {[1, 2, 4, 8].map((n) => (
                 <button
                   key={n}
                   type="button"
-                  className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
-                  onClick={() => setForm({ ...form, totalSessoes: n })}
+                  className={`nv-seg ${!pacotePersonalizado && Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                  onClick={() => {
+                    setPacotePersonalizado(false);
+                    setForm({ ...form, totalSessoes: n });
+                  }}
                 >
-                  {n} sessões
+                  {n} {n === 1 ? "sessão" : "sessões"}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`nv-seg ${pacotePersonalizado ? "nv-seg-ativo" : ""}`}
+                onClick={() => setPacotePersonalizado(true)}
+              >
+                Personalizado
+              </button>
             </div>
+            {pacotePersonalizado && (
+              <div className="flex items-center gap-2 mt-1.5">
+                <input
+                  type="number"
+                  min="1"
+                  className="input !w-24"
+                  value={form.totalSessoes}
+                  onChange={(e) => setForm({ ...form, totalSessoes: Math.max(1, Number(e.target.value) || 1) })}
+                />
+                <span className="text-xs text-nv-muted3">sessões — o sistema gera a data certa de cada uma</span>
+              </div>
+            )}
           </div>
           <div>
             <p className="text-xs text-nv-muted mb-1.5">Duração</p>
@@ -5710,6 +5759,15 @@ function MeuDiaMetas() {
 const LARGURA_NO_MAPA = 170;
 const LARGURA_RAIZ_MAPA = 190;
 const ALTURA_NO_MAPA = 54;
+// Fase 56 — mapa mental virou "radial" (cresce em qualquer direção a partir de qualquer nó, não só
+// pra baixo/direita). PAD_X/PAD_Y deslocam só o DESENHO na tela — a posição real salva no banco
+// (n.x, n.y) continua podendo ficar negativa (um ramo "esquerda"/"cima" bem perto da raiz), e o PAD
+// garante que isso sempre caia dentro da área visível/roláve da tela, sem precisar migrar os mapas
+// que já existem (que continuam com a raiz em x:40,y:230, só por dentro do PAD).
+const PAD_X_MAPA = 700;
+const PAD_Y_MAPA = 700;
+const CANVAS_LARGURA_MAPA = 2600;
+const CANVAS_ALTURA_MAPA = 1800;
 
 function MapasMentais() {
   const [mapas, setMapas] = useState([]);
@@ -5720,14 +5778,32 @@ function MapasMentais() {
   const [mostrarNovoMapa, setMostrarNovoMapa] = useState(false);
   const [novoMapaNome, setNovoMapaNome] = useState("");
   const [noSelecionadoId, setNoSelecionadoId] = useState(null);
+  // Fase 56 — ferramenta de "mão" pra arrastar a tela inteira (igual Miro/XMind), separada do
+  // arrastar-nó de sempre: enquanto ativa, clicar e arrastar move a VISÃO, não o nó.
+  const [modoMao, setModoMao] = useState(false);
+  const [arrastandoTela, setArrastandoTela] = useState(false);
 
   const arrasteRef = useRef(null); // { nodeId, startX, startY, origX, origY, moveu }
+  const panRef = useRef(null); // { startX, startY, scrollLeft, scrollTop }
+  const containerRef = useRef(null);
   const textoTimeoutRef = useRef(null);
 
   useEffect(() => {
     carregarLista();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fase 56 — sempre que troca de mapa, centraliza a tela na raiz (ela pode estar em qualquer
+  // posição lógica, inclusive negativa, por causa do PAD) em vez de abrir no canto vazio.
+  useEffect(() => {
+    if (!mapaAtual || !containerRef.current) return;
+    const raiz = mapaAtual.nodes.find((n) => !n.parentId);
+    if (!raiz) return;
+    const el = containerRef.current;
+    el.scrollLeft = Math.max(0, raiz.x + PAD_X_MAPA - el.clientWidth / 2 + LARGURA_RAIZ_MAPA / 2);
+    el.scrollTop = Math.max(0, raiz.y + PAD_Y_MAPA - el.clientHeight / 2 + ALTURA_NO_MAPA / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapaAtivoId]);
 
   async function carregarLista() {
     setCarregando(true);
@@ -5776,6 +5852,13 @@ function MapasMentais() {
   }
 
   function iniciarArraste(nodeId, origX, origY, e) {
+    // No modo "mão", clicar num nó não arrasta ele — arrasta a TELA inteira (como no botão abaixo).
+    // Só seleciona o nó; quem move a visão é iniciarPanTela, disparado pelo mesmo mousedown.
+    if (modoMao) {
+      e.preventDefault();
+      setNoSelecionadoId(nodeId);
+      return; // deixa o mousedown "vazar" pro container, que inicia o pan da tela (iniciarPanTela)
+    }
     e.preventDefault();
     arrasteRef.current = { nodeId, startX: e.clientX, startY: e.clientY, origX, origY, moveu: false };
     setNoSelecionadoId(nodeId);
@@ -5787,8 +5870,10 @@ function MapasMentais() {
     const dx = e.clientX - a.startX;
     const dy = e.clientY - a.startY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) a.moveu = true;
-    const novoX = Math.max(0, a.origX + dx);
-    const novoY = Math.max(0, a.origY + dy);
+    // Sem travar em 0: um ramo pra esquerda/cima perto da raiz é posição lógica negativa (o PAD na
+    // hora de desenhar é quem garante que isso sempre apareça dentro da tela).
+    const novoX = a.origX + dx;
+    const novoY = a.origY + dy;
     setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== a.nodeId ? n : { ...n, x: novoX, y: novoY })) } : m));
   }
 
@@ -5805,6 +5890,33 @@ function MapasMentais() {
     });
   }
 
+  // Fase 56 — ferramenta de "mão": arrasta a TELA (scroll do container), não os nós. Funciona com
+  // o mousedown tanto no fundo do mapa quanto em cima de um nó (nesse caso o iniciarArraste acima
+  // já tratou de não começar um arraste de nó, só selecionar).
+  function iniciarPanTela(e) {
+    if (!modoMao || !containerRef.current) return;
+    e.preventDefault();
+    setArrastandoTela(true);
+    panRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: containerRef.current.scrollLeft,
+      scrollTop: containerRef.current.scrollTop,
+    };
+  }
+
+  function moverPanTela(e) {
+    const p = panRef.current;
+    if (!p || !containerRef.current) return;
+    containerRef.current.scrollLeft = p.scrollLeft - (e.clientX - p.startX);
+    containerRef.current.scrollTop = p.scrollTop - (e.clientY - p.startY);
+  }
+
+  function soltarPanTela() {
+    panRef.current = null;
+    setArrastandoTela(false);
+  }
+
   function atualizarTextoNo(nodeId, texto) {
     setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== nodeId ? n : { ...n, texto })) } : m));
     clearTimeout(textoTimeoutRef.current);
@@ -5816,6 +5928,17 @@ function MapasMentais() {
   async function adicionarNoFilho() {
     if (!noSelecionadoId || !mapaAtual) return;
     const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: noSelecionadoId });
+    setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
+    setNoSelecionadoId(data.novoId);
+    setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
+  }
+
+  // Fase 56 — os "+" que aparecem em volta de cada bolinha do mapa: cria o nó filho já na direção
+  // clicada (direita/esquerda/cima/baixo), pra poder ir abrindo ramo pra qualquer lado sem precisar
+  // descer até o painel debaixo do mapa toda vez.
+  async function adicionarNoDirecao(nodeId, direcao) {
+    if (!mapaAtual) return;
+    const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: nodeId, direcao });
     setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
     setNoSelecionadoId(data.novoId);
     setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
@@ -5842,10 +5965,10 @@ function MapasMentais() {
       const larguraPai = pai.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA;
       linhas.push({
         key: n.id,
-        x1: pai.x + larguraPai / 2,
-        y1: pai.y + ALTURA_NO_MAPA / 2,
-        x2: n.x + LARGURA_NO_MAPA / 2,
-        y2: n.y + ALTURA_NO_MAPA / 2,
+        x1: pai.x + PAD_X_MAPA + larguraPai / 2,
+        y1: pai.y + PAD_Y_MAPA + ALTURA_NO_MAPA / 2,
+        x2: n.x + PAD_X_MAPA + LARGURA_NO_MAPA / 2,
+        y2: n.y + PAD_Y_MAPA + ALTURA_NO_MAPA / 2,
       });
     });
   }
@@ -5856,7 +5979,8 @@ function MapasMentais() {
         <p className="nv-eyebrow mb-1">Painel do Dono</p>
         <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Mapas mentais</h1>
         <p className="text-nv-muted text-sm mt-0.5">
-          Arraste os nós para organizar, crie quantos mapas quiser — estratégias, tarefas, ideias para o futuro
+          Use os + ao redor de cada nó pra abrir ramos em qualquer direção, a "mão" pra mover a tela e arraste os nós pra
+          organizar — crie quantos mapas quiser
         </p>
       </div>
       {erro && <p className="text-sm text-red-600">{erro}</p>}
@@ -5928,27 +6052,63 @@ function MapasMentais() {
               <div className="nv-card flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="font-sora font-semibold text-nv-ink">{mapaAtual.nome}</p>
-                  <div className="flex items-center gap-3">
-                    <p className="text-xs text-nv-muted2">Clique em um nó pra selecionar · arraste pra reorganizar</p>
-                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setModoMao((v) => !v)}
+                      title='Ative pra arrastar a tela inteira com o mouse, igual a ferramenta de "mão" de outros mapas mentais'
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-md border transition-colors ${
+                        modoMao ? "bg-nv-blue text-white border-nv-blue" : "text-nv-ink2 border-nv-border hover:bg-nv-bg"
+                      }`}
+                    >
+                      ✋ Mover tela
+                    </button>
+                    <p className="text-xs text-nv-muted2">
+                      {modoMao
+                        ? "Clique e arraste em qualquer lugar pra mover a tela"
+                        : "Clique num nó pra selecionar · arraste o nó pra reorganizar · use os + pra abrir ramos"}
+                    </p>
+                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-semibold text-red-600 hover:text-red-700 ml-auto">
                       Excluir mapa
                     </button>
                   </div>
                 </div>
                 <div
-                  className="relative rounded-xl border border-nv-border overflow-auto"
+                  ref={containerRef}
+                  className={`relative rounded-xl border border-nv-border overflow-auto ${
+                    modoMao ? (arrastandoTela ? "cursor-grabbing" : "cursor-grab") : ""
+                  }`}
                   style={{
                     height: 500,
                     backgroundColor: "#FAFBFD",
                     backgroundImage: "radial-gradient(circle, #E1E8F2 1.4px, transparent 1.4px)",
                     backgroundSize: "22px 22px",
                   }}
-                  onMouseMove={moverArraste}
-                  onMouseUp={soltarArraste}
-                  onMouseLeave={soltarArraste}
+                  onMouseDown={iniciarPanTela}
+                  onMouseMove={(e) => {
+                    moverArraste(e);
+                    moverPanTela(e);
+                  }}
+                  onMouseUp={() => {
+                    soltarArraste();
+                    soltarPanTela();
+                  }}
+                  onMouseLeave={() => {
+                    soltarArraste();
+                    soltarPanTela();
+                  }}
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) setNoSelecionadoId(null);
+                  }}
                 >
-                  <div className="relative" style={{ width: 1200, height: 760 }}>
-                    <svg width={1200} height={760} className="absolute top-0 left-0 pointer-events-none">
+                  <div
+                    className="relative"
+                    style={{ width: CANVAS_LARGURA_MAPA, height: CANVAS_ALTURA_MAPA }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) setNoSelecionadoId(null);
+                    }}
+                  >
+                    <svg width={CANVAS_LARGURA_MAPA} height={CANVAS_ALTURA_MAPA} className="absolute top-0 left-0 pointer-events-none">
                       {linhas.map((l) => (
                         <line
                           key={l.key}
@@ -5965,26 +6125,85 @@ function MapasMentais() {
                     {mapaAtual.nodes.map((n) => {
                       const ehRaiz = !n.parentId;
                       const selecionado = n.id === noSelecionadoId;
+                      const largura = ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA;
                       return (
                         <div
                           key={n.id}
-                          onMouseDown={(e) => iniciarArraste(n.id, n.x, n.y, e)}
-                          onClick={() => setNoSelecionadoId(n.id)}
-                          className="absolute rounded-lg px-3 py-2 text-xs leading-tight select-none cursor-grab active:cursor-grabbing"
-                          style={{
-                            left: n.x,
-                            top: n.y,
-                            width: ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA,
-                            background: ehRaiz ? mapaAtual.cor : "#fff",
-                            color: ehRaiz ? "#fff" : "#1A2740",
-                            borderLeft: ehRaiz ? "4px solid transparent" : `4px solid ${mapaAtual.cor}`,
-                            fontWeight: ehRaiz ? 700 : 600,
-                            boxShadow: selecionado
-                              ? "0 0 0 2px #0D1B30, 0 3px 8px rgba(14,30,54,0.18)"
-                              : "0 2px 6px rgba(14,30,54,0.12)",
-                          }}
+                          className="absolute group"
+                          style={{ left: n.x + PAD_X_MAPA, top: n.y + PAD_Y_MAPA, width: largura, zIndex: selecionado ? 10 : 1 }}
                         >
-                          {n.texto}
+                          <div
+                            onMouseDown={(e) => iniciarArraste(n.id, n.x, n.y, e)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!modoMao) setNoSelecionadoId(n.id);
+                            }}
+                            className={`rounded-lg px-3 py-2 text-xs leading-tight select-none ${
+                              modoMao ? "" : "cursor-grab active:cursor-grabbing"
+                            }`}
+                            style={{
+                              background: ehRaiz ? mapaAtual.cor : "#fff",
+                              color: ehRaiz ? "#fff" : "#1A2740",
+                              borderLeft: ehRaiz ? "4px solid transparent" : `4px solid ${mapaAtual.cor}`,
+                              fontWeight: ehRaiz ? 700 : 600,
+                              boxShadow: selecionado
+                                ? "0 0 0 2px #0D1B30, 0 3px 8px rgba(14,30,54,0.18)"
+                                : "0 2px 6px rgba(14,30,54,0.12)",
+                            }}
+                          >
+                            {n.texto}
+                          </div>
+                          {/* Fase 56 — "+" em volta do nó pra abrir ramo em qualquer direção, sem precisar
+                              descer até o painel debaixo do mapa. Somem no modo "mão" pra não criar nó
+                              sem querer enquanto arrasta a tela. */}
+                          {!modoMao && (
+                            <>
+                              <button
+                                type="button"
+                                title="Abrir ramo pra direita"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adicionarNoDirecao(n.id, "direita");
+                                }}
+                                className="absolute opacity-0 group-hover:opacity-100 transition-opacity -right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-blue text-[12px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                title="Abrir ramo pra esquerda"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adicionarNoDirecao(n.id, "esquerda");
+                                }}
+                                className="absolute opacity-0 group-hover:opacity-100 transition-opacity -left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-blue text-[12px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                title="Abrir ramo pra baixo"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adicionarNoDirecao(n.id, "baixo");
+                                }}
+                                className="absolute opacity-0 group-hover:opacity-100 transition-opacity -bottom-3 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-blue text-[12px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                title="Abrir ramo pra cima"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adicionarNoDirecao(n.id, "cima");
+                                }}
+                                className="absolute opacity-0 group-hover:opacity-100 transition-opacity -top-3 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-blue text-[12px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                              >
+                                +
+                              </button>
+                            </>
+                          )}
                         </div>
                       );
                     })}

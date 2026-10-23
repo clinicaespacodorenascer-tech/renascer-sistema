@@ -646,6 +646,7 @@ function Clientes() {
   const [profissionais, setProfissionais] = useState([]);
   const [form, setForm] = useState(FORM_CLIENTE_VAZIO);
   const [sessoesExtras, setSessoesExtras] = useState(0); // local-only, decorativo (igual o mock do canvas)
+  const [pacotePersonalizado, setPacotePersonalizado] = useState(false); // Fase 56 — "Personalizado" no nº de sessões do pacote
   const [arquivo, setArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [nomeCadastrado, setNomeCadastrado] = useState("");
@@ -789,18 +790,40 @@ function Clientes() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
-                <div className="flex gap-1.5">
-                  {[4, 8].map((n) => (
+                <div className="flex gap-1.5 flex-wrap">
+                  {[1, 2, 4, 8].map((n) => (
                     <button
                       key={n}
                       type="button"
-                      className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
-                      onClick={() => setForm({ ...form, totalSessoes: n })}
+                      className={`nv-seg ${!pacotePersonalizado && Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                      onClick={() => {
+                        setPacotePersonalizado(false);
+                        setForm({ ...form, totalSessoes: n });
+                      }}
                     >
-                      {n} sessões
+                      {n} {n === 1 ? "sessão" : "sessões"}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    className={`nv-seg ${pacotePersonalizado ? "nv-seg-ativo" : ""}`}
+                    onClick={() => setPacotePersonalizado(true)}
+                  >
+                    Personalizado
+                  </button>
                 </div>
+                {pacotePersonalizado && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <input
+                      type="number"
+                      min="1"
+                      className="input !w-24"
+                      value={form.totalSessoes}
+                      onChange={(e) => setForm({ ...form, totalSessoes: Math.max(1, Number(e.target.value) || 1) })}
+                    />
+                    <span className="text-xs text-nv-muted3">sessões — o sistema gera a data certa de cada uma</span>
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-xs text-nv-muted mb-1.5">Duração</p>
@@ -1185,13 +1208,42 @@ function AgendaGeral() {
     (porDia[chave] = porDia[chave] || []).push(a);
   }
 
+  // Fase 56 — resumo rápido por profissional (dentro da janela trazida: ontem em diante), pra ver
+  // de cara se as sessões estão sendo realizadas ou se tem muita coisa pendente/faltando.
+  const resumoPorProfissional = {};
+  for (const a of lista) {
+    const nome = a.profissional.user.nome;
+    if (!resumoPorProfissional[nome]) resumoPorProfissional[nome] = { realizadas: 0, faltou: 0, pendentes: 0 };
+    if (a.status === "REALIZADO") resumoPorProfissional[nome].realizadas++;
+    else if (a.status === "FALTOU") resumoPorProfissional[nome].faltou++;
+    else if (a.status === "AGENDADO" || a.status === "CONFIRMADO") resumoPorProfissional[nome].pendentes++;
+  }
+
   return (
     <div className="font-publicSans">
       <div className="mb-4">
         <p className="nv-eyebrow mb-1">Painel da Atendente</p>
         <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda geral</h1>
-        <p className="text-nv-muted text-sm mt-0.5">Próximos agendamentos de todas as profissionais, em ordem cronológica</p>
+        <p className="text-nv-muted text-sm mt-0.5">Agendamentos de todas as profissionais desde ontem, em ordem cronológica</p>
       </div>
+
+      {Object.keys(resumoPorProfissional).length > 0 && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+          {Object.entries(resumoPorProfissional).map(([nome, r]) => (
+            <div key={nome} className="nv-card !p-3.5">
+              <p className="font-sora font-semibold text-[13px] text-nv-ink mb-1.5 truncate">{nome}</p>
+              <div className="flex gap-2 flex-wrap text-[11.5px]">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                  {r.realizadas} realizada{r.realizadas === 1 ? "" : "s"}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">{r.faltou} faltou</span>
+                <span className="px-2 py-0.5 rounded-full bg-nv-ink/10 text-nv-ink/60 font-semibold">{r.pendentes} pendente(s)</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="nv-card !p-0 px-5">
         {Object.entries(porDia).map(([dia, agendamentos]) => (
           <div key={dia}>
@@ -1217,7 +1269,7 @@ function AgendaGeral() {
             })}
           </div>
         ))}
-        {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum agendamento futuro.</p>}
+        {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum agendamento nessa janela.</p>}
       </div>
     </div>
   );

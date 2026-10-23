@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
+import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
 
 // ---------- SETOR FINANCEIRO (Fase 31) ----------
 // Painel completo do novo papel "Setor Financeiro" (ex: Patrícia): CAC/ROI/receita/lucro de
@@ -718,18 +719,53 @@ function Repasses() {
 // ---------------- Agenda geral ----------------
 // ================================================================================================
 
+// Fase 56 — passou a trazer "ontem" também (não só daqui pra frente) e a mostrar o status de
+// verdade de cada sessão (Realizada/Cliente faltou/Não iniciada etc., igual Dono e Atendente já
+// viam) em vez do texto cru do banco — é esse status que diz pro financeiro se dá pra confiar que
+// a sessão aconteceu antes de ligar pro cliente cobrando renovação. Só agenda/status: nenhum dado
+// de evolução/prontuário aparece aqui.
 function AgendaGeral() {
   const [lista, setLista] = useState([]);
   useEffect(() => {
     api.get("/financeiro/agenda-geral").then((r) => setLista(r.data));
   }, []);
 
+  // Resumo por profissional: quantas sessões (dentro da janela trazida acima — ontem em diante)
+  // já foram realizadas, quantas o cliente faltou e quantas ainda estão pendentes/em aberto.
+  const resumoPorProfissional = {};
+  for (const a of lista) {
+    const nome = a.profissional.user.nome;
+    if (!resumoPorProfissional[nome]) resumoPorProfissional[nome] = { realizadas: 0, faltou: 0, pendentes: 0 };
+    if (a.status === "REALIZADO") resumoPorProfissional[nome].realizadas++;
+    else if (a.status === "FALTOU") resumoPorProfissional[nome].faltou++;
+    else if (a.status === "AGENDADO" || a.status === "CONFIRMADO") resumoPorProfissional[nome].pendentes++;
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         <p className="font-sora text-[11px] font-bold uppercase tracking-[0.09em] text-nv-gold mb-1.5">Setor Financeiro</p>
         <h1 className="font-sora font-bold text-[26px] text-nv-navy mb-1">Agenda geral</h1>
+        <p className="text-[13px] text-nv-muted2">Desde ontem — só agenda e status de sessão, sem dados de evolução/prontuário.</p>
       </div>
+
+      {Object.keys(resumoPorProfissional).length > 0 && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Object.entries(resumoPorProfissional).map(([nome, r]) => (
+            <div key={nome} className="bg-white rounded-2xl p-3.5 shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+              <p className="font-sora font-semibold text-[13px] text-nv-navy mb-1.5 truncate">{nome}</p>
+              <div className="flex gap-2 flex-wrap text-[11.5px]">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                  {r.realizadas} realizada{r.realizadas === 1 ? "" : "s"}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">{r.faltou} faltou</span>
+                <span className="px-2 py-0.5 rounded-full bg-nv-ink/10 text-nv-ink/60 font-semibold">{r.pendentes} pendente(s)</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl p-[18px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
@@ -741,17 +777,24 @@ function AgendaGeral() {
             </tr>
           </thead>
           <tbody>
-            {lista.map((a) => (
-              <tr key={a.id} className="border-t border-nv-borderLight">
-                <td className="py-1.5">{new Date(a.data).toLocaleString("pt-BR")}</td>
-                <td>{a.profissional.user.nome}</td>
-                <td>{a.cliente.user.nome}</td>
-                <td>{a.status}</td>
-              </tr>
-            ))}
+            {lista.map((a) => {
+              const sessao = statusSessao(a);
+              return (
+                <tr key={a.id} className="border-t border-nv-borderLight">
+                  <td className="py-1.5">{new Date(a.data).toLocaleString("pt-BR")}</td>
+                  <td>{a.profissional.user.nome}</td>
+                  <td>{a.cliente.user.nome}</td>
+                  <td>
+                    <span className={`inline-block text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>
+                      {sessao.texto}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-        {lista.length === 0 && <p className="text-[13px] text-nv-muted2 py-2">Nenhum agendamento futuro.</p>}
+        {lista.length === 0 && <p className="text-[13px] text-nv-muted2 py-2">Nenhum agendamento nessa janela.</p>}
       </div>
     </div>
   );

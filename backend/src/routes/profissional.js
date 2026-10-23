@@ -6,7 +6,7 @@ const { calcularRepasse, valorDoPlano, transacaoDuplicada, parseValorMonetario }
 const { reconhecerComprovante } = require("../utils/ia");
 const { notificar, notificarDonos, notificarAtendentes, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
-const { haConflito, diaSemanaDeData, horariosLivres } = require("../utils/horarios");
+const { haConflito, diaSemanaDeData, horariosLivres, horarioAgendamentoParaData } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { inicioDoDia, fimDoDia, periodoDoMes, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
 const { gerarEmailAutomatico } = require("../utils/gerarLogin");
@@ -142,6 +142,29 @@ router.get("/agenda", async (req, res) => {
   const colunas = { SEGUNDA: [], TERCA: [], QUARTA: [], QUINTA: [], SEXTA: [], SABADO: [], DOMINGO: [] };
   for (const ag of comStatus) colunas[ag.diaSemana].push(ag);
   res.json(colunas);
+});
+
+// Fase 56 — sessões "atrasadas" que ela ainda não marcou (nem Realizada, nem Cliente faltou, nem
+// Cancelada): usado pro pop-up que pergunta "essa sessão foi feita?" assim que ela entra em
+// qualquer tela do sistema. Mesma margem (1h) do aviso automático por notificação em lembretes.js.
+router.get("/agenda/pendentes-confirmacao", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const agora = new Date();
+  const desde = new Date(agora.getTime() - 48 * 60 * 60 * 1000);
+
+  const candidatos = await prisma.agendamento.findMany({
+    where: { profissionalId, status: { in: ["AGENDADO", "CONFIRMADO"] }, data: { gte: desde, lte: agora } },
+    include: { cliente: { include: { user: { select: { nome: true } } } } },
+    orderBy: { data: "asc" },
+  });
+
+  const pendentes = candidatos.filter((ag) => {
+    const horarioMarcado = horarioAgendamentoParaData(ag.data, ag.horaInicio);
+    const minutosDeAtraso = (agora.getTime() - horarioMarcado.getTime()) / 1000 / 60;
+    return minutosDeAtraso >= 60;
+  });
+
+  res.json(pendentes);
 });
 
 router.put("/agenda/:id/status", async (req, res) => {

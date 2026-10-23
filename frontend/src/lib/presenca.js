@@ -28,6 +28,15 @@ export function statusSessao(agendamento) {
   if (status === "CANCELADO") return { cor: "cinza", texto: "Cancelada" };
   if (status === "REAGENDADO") return { cor: "cinza", texto: "Reagendada" };
   if (status === "FALTOU") return { cor: "vermelho", texto: "Cliente faltou" };
+  // Fase 56 — faltava checar REALIZADO antes de cair no cálculo de atraso: a profissional marca
+  // "Realizada" direto (botão na Agenda), sem precisar passar pela videochamada — sem esse check,
+  // uma sessão já feita (sem registro de ChamadaVideo) aparecia como "⚠️ Não iniciada" pro
+  // dono/atendente/financeiro, o que é exatamente o contrário do que eles precisam ver.
+  if (status === "REALIZADO") {
+    return chamadaVideo?.encerradaEm
+      ? { cor: "verde", texto: `Realizada (${chamadaVideo.duracaoMinutos ?? "?"} min)` }
+      : { cor: "verde", texto: "Realizada" };
+  }
   if (chamadaVideo?.encerradaEm) {
     return { cor: "azul", texto: `Concluída (${chamadaVideo.duracaoMinutos ?? "?"} min)` };
   }

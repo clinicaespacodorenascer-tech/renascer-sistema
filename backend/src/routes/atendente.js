@@ -540,16 +540,22 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
 // "chamadaVideo" vai junto pra dar pra ver, sessão por sessão, se a profissional já entrou na
 // videochamada (aí sim a sessão está de fato acontecendo) ou ainda não — mesmo registro que já
 // existia desde a Fase 1/videochamada, só que agora também aparece pra atendente e pro dono.
+// Fase 56 — passou a trazer também "ontem" (não só daqui pra frente): a atendente precisa ver se
+// as sessões recentes das profissionais foram realizadas, pra acompanhar o uso do sistema.
 router.get("/agenda-geral", async (req, res) => {
+  const inicioOntem = new Date();
+  inicioOntem.setDate(inicioOntem.getDate() - 1);
+  inicioOntem.setHours(0, 0, 0, 0);
+
   const agendamentos = await prisma.agendamento.findMany({
-    where: { data: { gte: new Date() } },
+    where: { data: { gte: inicioOntem } },
     include: {
       profissional: { include: { user: { select: { nome: true } } } },
       cliente: { include: { user: { select: { nome: true } } } },
       chamadaVideo: true,
     },
     orderBy: { data: "asc" },
-    take: 100,
+    take: 150,
   });
   res.json(agendamentos);
 });

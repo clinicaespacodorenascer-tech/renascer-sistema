@@ -543,6 +543,10 @@ model Agendamento {
   // Controle do aviso "profissional não iniciou a sessão" (dono/atendente) — evita mandar mais
   // de uma vez pro mesmo agendamento. O "iniciou ou não" em si é lido de chamadaVideo.iniciadaEm.
   avisoNaoIniciadoEnviado Boolean @default(false)
+  // Fase 56 — controle do aviso "marque a sessão como feita" (pra PROFISSIONAL, não pro
+  // dono/atendente): dispara 1h depois do horário marcado se ela ainda não marcou Realizada/
+  // Faltou/Cancelada. Evita mandar mais de uma vez pro mesmo agendamento.
+  avisoConcluirSessaoEnviado Boolean @default(false)
 
   chamadaVideo   ChamadaVideo?
 

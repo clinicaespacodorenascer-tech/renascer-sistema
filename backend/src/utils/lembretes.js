@@ -192,6 +192,44 @@ async function verificarSessoesNaoIniciadas() {
   }
 }
 
+// Fase 56 — lembrete pra PROFISSIONAL marcar a sessão como feita (ou cliente faltou), depois que
+// passa 1h do horário marcado e ela ainda não deu nenhum status final (continua AGENDADO ou
+// CONFIRMADO). Isso é diferente do aviso de "sessão não iniciada" acima: aquele avisa o
+// dono/atendente (fiscalização), esse avisa a PRÓPRIA profissional (lembrete pra ela acertar o
+// sistema), porque é dele que depende contar certo as sessões usadas do pacote e saber quando
+// chamar o cliente pra renovar. Só manda uma vez por agendamento (avisoConcluirSessaoEnviado).
+const GRACE_MINUTOS_CONFIRMAR_SESSAO = 60;
+
+async function verificarSessoesParaConfirmar() {
+  const agora = new Date();
+  const desde = new Date(agora.getTime() - 48 * 60 * 60 * 1000); // janela de 2 dias, só pra não escanear o banco todo
+
+  const candidatos = await prisma.agendamento.findMany({
+    where: {
+      status: { in: ["AGENDADO", "CONFIRMADO"] },
+      avisoConcluirSessaoEnviado: false,
+      data: { gte: desde, lte: agora },
+    },
+    include: {
+      profissional: { include: { user: true } },
+      cliente: { include: { user: true } },
+    },
+  });
+
+  for (const ag of candidatos) {
+    const horarioMarcado = horarioAgendamentoParaData(ag.data, ag.horaInicio);
+    const minutosDeAtraso = (agora.getTime() - horarioMarcado.getTime()) / 1000 / 60;
+    if (minutosDeAtraso < GRACE_MINUTOS_CONFIRMAR_SESSAO) continue;
+
+    await notificar(ag.profissional.user.id, {
+      titulo: "Marque essa sessão",
+      mensagem: `A sessão de ${ag.cliente.user.nome} às ${ag.horaInicio} já passou — foi feita? Marque como "Realizada" ou "Cliente faltou" pra manter sua agenda certinha.`,
+      tipo: "sistema",
+    });
+    await prisma.agendamento.update({ where: { id: ag.id }, data: { avisoConcluirSessaoEnviado: true } });
+  }
+}
+
 async function verificarLembretes() {
   try {
     await verificarLembretesDeSessao();
@@ -212,6 +250,11 @@ async function verificarLembretes() {
     await verificarSessoesNaoIniciadas();
   } catch (e) {
     console.error("Erro ao verificar sessões não iniciadas:", e);
+  }
+  try {
+    await verificarSessoesParaConfirmar();
+  } catch (e) {
+    console.error("Erro ao verificar sessões pra confirmar:", e);
   }
 }
 

@@ -11,6 +11,25 @@ router.use(autenticar, permitir("DONO"));
 
 const CORES_MAPA = ["#0B5FA8", "#1C7C54", "#D6883B", "#9C6B2E", "#2563EB"];
 
+// Fase 56 — mapa mental virou "radial": o nó novo pode nascer em qualquer uma das 4 direções a
+// partir do pai (antes só nascia "pra direita"). Esses valores espelham as constantes do desenho
+// no frontend (LARGURA_NO_MAPA/LARGURA_RAIZ_MAPA/ALTURA_NO_MAPA em dono/index.js) — se mudar lá,
+// mudar aqui também, senão os nós novos nascem meio encostados/afastados demais do pai.
+const LARGURA_NO = 170;
+const LARGURA_RAIZ = 190;
+const ALTURA_NO = 54;
+const GAP_RAMO = 60;
+
+// Descobre em que "lado" do pai um filho já existente está, só olhando x/y — usado pra empilhar
+// corretamente os novos nós do mesmo lado (sem isso, um novo nó "pra baixo" podia nascer em cima
+// de um nó "pra direita" já existente). Eixo que tiver a maior diferença decide o lado.
+function direcaoDoFilho(filho, pai) {
+  const dx = filho.x - pai.x;
+  const dy = filho.y - pai.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "direita" : "esquerda";
+  return dy >= 0 ? "baixo" : "cima";
+}
+
 function donoIdDoLogin(req) {
   return req.user?.dono?.id || null;
 }
@@ -82,20 +101,37 @@ router.post("/:id/nos", async (req, res) => {
   const mapa = await carregarMapaDoDono(req.params.id, donoId);
   if (!mapa) return res.status(404).json({ erro: "Mapa não encontrado." });
 
-  const { parentId } = req.body || {};
+  const { parentId, direcao: direcaoPedida } = req.body || {};
   const nodes = Array.isArray(mapa.nodes) ? mapa.nodes : [];
   const pai = nodes.find((n) => n.id === parentId);
   if (!pai) return res.status(404).json({ erro: "Nó pai não encontrado." });
 
-  const filhos = nodes.filter((n) => n.parentId === parentId);
+  const direcao = ["direita", "esquerda", "cima", "baixo"].includes(direcaoPedida) ? direcaoPedida : "direita";
+  const larguraPai = pai.parentId ? LARGURA_NO : LARGURA_RAIZ;
+
+  // Só conta os irmãos que já estão do MESMO lado pedido, pra empilhar certinho sem bater em cima
+  // de um ramo que já existe de outra direção.
+  const filhosMesmoLado = nodes.filter((n) => n.parentId === parentId && direcaoDoFilho(n, pai) === direcao);
+  const qtd = filhosMesmoLado.length;
+
+  let x, y;
+  if (direcao === "direita") {
+    x = pai.x + larguraPai + GAP_RAMO;
+    y = pai.y + qtd * 80 - (qtd ? 20 : 0);
+  } else if (direcao === "esquerda") {
+    x = pai.x - LARGURA_NO - GAP_RAMO;
+    y = pai.y + qtd * 80 - (qtd ? 20 : 0);
+  } else if (direcao === "baixo") {
+    x = pai.x + qtd * (LARGURA_NO + 40) - (qtd ? (LARGURA_NO + 40) / 2 : 0);
+    y = pai.y + ALTURA_NO + GAP_RAMO;
+  } else {
+    // cima
+    x = pai.x + qtd * (LARGURA_NO + 40) - (qtd ? (LARGURA_NO + 40) / 2 : 0);
+    y = pai.y - ALTURA_NO - GAP_RAMO;
+  }
+
   const novoId = "no-" + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
-  const novoNode = {
-    id: novoId,
-    texto: "Novo tópico",
-    x: pai.x + 230,
-    y: pai.y + filhos.length * 80 - (filhos.length ? 20 : 0),
-    parentId,
-  };
+  const novoNode = { id: novoId, texto: "Novo tópico", x, y, parentId };
 
   const novosNodes = [...nodes, novoNode];
   const atualizado = await prisma.mapaMental.update({
@@ -119,8 +155,11 @@ router.patch("/:id/nos/:nodeId", async (req, res) => {
   const { texto, x, y } = req.body || {};
   const novoNode = { ...nodes[idx] };
   if (typeof texto === "string") novoNode.texto = texto;
-  if (typeof x === "number" && Number.isFinite(x)) novoNode.x = Math.max(0, x);
-  if (typeof y === "number" && Number.isFinite(y)) novoNode.y = Math.max(0, y);
+  // Fase 56 — não trava mais em 0: um ramo "esquerda"/"cima" perto da raiz é posição lógica
+  // negativa de propósito (o desenho no frontend desloca tudo pelo PAD_X_MAPA/PAD_Y_MAPA antes de
+  // mostrar na tela, então isso nunca aparece "fora" da área visível).
+  if (typeof x === "number" && Number.isFinite(x)) novoNode.x = x;
+  if (typeof y === "number" && Number.isFinite(y)) novoNode.y = y;
 
   const novosNodes = [...nodes];
   novosNodes[idx] = novoNode;

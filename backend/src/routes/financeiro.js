@@ -363,16 +363,23 @@ router.put("/repasses/:transacaoId/marcar", async (req, res) => {
 // ---------- Agenda geral ----------
 // ======================================================================================
 
+// Fase 56 — passou a trazer também "ontem" (não só daqui pra frente): o setor financeiro
+// precisa ver se as sessões recentes foram realizadas ou não, pra saber se é hora de chamar o
+// cliente pra renovar. Continua sendo só agenda/status — nenhum dado de evolução/prontuário.
 router.get("/agenda-geral", async (req, res) => {
+  const inicioOntem = new Date();
+  inicioOntem.setDate(inicioOntem.getDate() - 1);
+  inicioOntem.setHours(0, 0, 0, 0);
+
   const agendamentos = await prisma.agendamento.findMany({
-    where: { data: { gte: new Date() } },
+    where: { data: { gte: inicioOntem } },
     include: {
       profissional: { include: { user: { select: { nome: true } } } },
       cliente: { include: { user: { select: { nome: true } } } },
       chamadaVideo: true,
     },
     orderBy: { data: "asc" },
-    take: 100,
+    take: 150,
   });
   res.json(agendamentos);
 });

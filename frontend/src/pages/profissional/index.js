@@ -65,11 +65,36 @@ export default function AreaProfissional() {
   const { user, carregando } = useAuth("PROFISSIONAL");
   const [aba, setAba] = useState("agenda");
   const [qtdNovosPacientes, setQtdNovosPacientes] = useState(0);
+  // Fase 56 — sessões que já passaram do horário (1h+) e ainda não foram marcadas como Realizada/
+  // Cliente faltou: aparece um pop-up perguntando, em cima de qualquer aba, pra garantir que o
+  // sistema contabilize certo quantas sessões foram feitas de verdade.
+  const [pendentesConfirmar, setPendentesConfirmar] = useState([]);
+  const [popupDispensados, setPopupDispensados] = useState([]); // "lembrar depois" — só nesta visita
+
+  async function carregarPendentesConfirmar() {
+    try {
+      const { data } = await api.get("/profissional/agenda/pendentes-confirmacao");
+      setPendentesConfirmar(data);
+    } catch (e) {
+      // não é crítico — o aviso por notificação (sininho/push) já cobre o mesmo caso
+    }
+  }
 
   useEffect(() => {
     if (carregando) return;
     api.get("/profissional/novos-pacientes").then((r) => setQtdNovosPacientes(r.data.length)).catch(() => {});
+    carregarPendentesConfirmar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregando, aba]);
+
+  async function marcarSessaoPendente(id, status) {
+    try {
+      await api.put(`/profissional/agenda/${id}/status`, { status });
+    } catch (e) {
+      // segue mesmo se der erro — ela ainda vê o item na própria Agenda pra tentar de novo
+    }
+    carregarPendentesConfirmar();
+  }
 
   if (carregando) return null;
 
@@ -86,8 +111,17 @@ export default function AreaProfissional() {
     { id: "config", label: "Disponibilidade" },
   ];
 
+  const pendenteParaPopup = pendentesConfirmar.find((p) => !popupDispensados.includes(p.id)) || null;
+
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {pendenteParaPopup && (
+        <PopupConfirmarSessao
+          agendamento={pendenteParaPopup}
+          onMarcar={(status) => marcarSessaoPendente(pendenteParaPopup.id, status)}
+          onDispensar={() => setPopupDispensados((d) => [...d, pendenteParaPopup.id])}
+        />
+      )}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "novos" && <AbaNovosPacientes />}
       {aba === "clientes" && <AbaClientes />}
@@ -96,6 +130,47 @@ export default function AreaProfissional() {
       {aba === "notificacoes" && <AbaNotificacoes />}
       {aba === "config" && <AbaConfig />}
     </LayoutNovo>
+  );
+}
+
+// Fase 56 — pop-up "essa sessão foi feita?": aparece sozinho quando uma sessão já passou do
+// horário (1h+) e ainda está AGENDADO/CONFIRMADO. É o que garante que o sistema (e por tabela o
+// dono, a atendente e o financeiro) saiba de verdade se as sessões estão sendo realizadas.
+function PopupConfirmarSessao({ agendamento, onMarcar, onDispensar }) {
+  const dataFormatada = new Date(agendamento.data).toLocaleDateString("pt-BR");
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Confirme sua agenda</p>
+          <h3 className="font-sora font-semibold text-nv-ink text-lg">Essa sessão foi feita?</h3>
+        </div>
+        <p className="text-sm text-nv-ink2">
+          A sessão de <span className="font-semibold">{agendamento.cliente.user.nome}</span> em {dataFormatada} às{" "}
+          {agendamento.horaInicio} já passou do horário e ainda não foi marcada. Marque como feita (ou cliente faltou) pra
+          manter sua agenda certinha.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            type="button"
+            className="btn-primary flex-1 !py-2.5 text-sm"
+            onClick={() => onMarcar("REALIZADO")}
+          >
+            ✓ Sim, foi feita
+          </button>
+          <button
+            type="button"
+            className="btn-secondary flex-1 !py-2.5 text-sm text-gray-600"
+            onClick={() => onMarcar("FALTOU")}
+          >
+            Cliente faltou
+          </button>
+        </div>
+        <button type="button" className="text-xs text-nv-muted3 underline block mx-auto" onClick={onDispensar}>
+          Ainda não — lembrar depois
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -262,6 +337,7 @@ export function AbaCadastrarCliente() {
   const [total, setTotal] = useState(null);
   const [form, setForm] = useState(FORM_CADASTRO_VAZIO);
   const [sessoesExtras, setSessoesExtras] = useState(0); // local-only, decorativo (igual o mock do canvas)
+  const [pacotePersonalizado, setPacotePersonalizado] = useState(false); // Fase 56 — "Personalizado" no nº de sessões do pacote
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
   const [recentes, setRecentes] = useState([]);
@@ -350,18 +426,40 @@ export function AbaCadastrarCliente() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
-              <div className="flex gap-1.5">
-                {[4, 8].map((n) => (
+              <div className="flex gap-1.5 flex-wrap">
+                {[1, 2, 4, 8].map((n) => (
                   <button
                     key={n}
                     type="button"
-                    className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
-                    onClick={() => setForm({ ...form, totalSessoes: n })}
+                    className={`nv-seg ${!pacotePersonalizado && Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                    onClick={() => {
+                      setPacotePersonalizado(false);
+                      setForm({ ...form, totalSessoes: n });
+                    }}
                   >
-                    {n} sessões
+                    {n} {n === 1 ? "sessão" : "sessões"}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className={`nv-seg ${pacotePersonalizado ? "nv-seg-ativo" : ""}`}
+                  onClick={() => setPacotePersonalizado(true)}
+                >
+                  Personalizado
+                </button>
               </div>
+              {pacotePersonalizado && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    className="input !w-24"
+                    value={form.totalSessoes}
+                    onChange={(e) => setForm({ ...form, totalSessoes: Math.max(1, Number(e.target.value) || 1) })}
+                  />
+                  <span className="text-xs text-nv-muted3">sessões — o sistema gera a data certa de cada uma</span>
+                </div>
+              )}
             </div>
             <div>
               <p className="text-xs text-nv-muted mb-1.5">Duração</p>
@@ -657,6 +755,9 @@ export function AbaAgenda() {
                     <div className="flex gap-2 mt-1.5 flex-wrap">
                       <button className="text-xs text-nv-green underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
                         Realizada
+                      </button>
+                      <button className="text-xs text-gray-500 underline" onClick={() => mudarStatus(ag.id, "FALTOU")}>
+                        Cliente faltou
                       </button>
                       <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
                         Cancelar
