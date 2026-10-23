@@ -2331,135 +2331,141 @@ function RepassesProfissionais() {
         </div>
       </div>
 
-      {mostrarPendentes && (
-        <div className="space-y-3 mb-4">
-          <p className="text-xs text-nv-muted">
-            Quando uma profissional recebe o pagamento direto do cliente (fora da clínica), ela fica devendo pra
-            Renascer a parte que é sua. Aqui você lança quanto recebeu de cada uma — ou marca um pagamento
-            específico como recebido — e a pendência baixa sozinha.
-          </p>
+      <p className="text-xs text-nv-muted mb-3">
+        Quando uma profissional recebe o pagamento direto do cliente (fora da clínica), ela fica devendo pra
+        Renascer a parte que é sua. Clique em "Lançar recebimento" pra dar baixa — ou marque um pagamento
+        específico como recebido dentro da lista.
+      </p>
 
-          {profissionais.length === 0 && (
-            <div className="nv-card">
-              <p className="text-sm text-nv-muted">Nenhuma pendência de repasse no momento — tudo em dia.</p>
-            </div>
-          )}
+      <div className="nv-card !p-0 px-6 py-1">
+        {mostrarPendentes && profissionais.length === 0 && (
+          <p className="text-sm text-nv-muted py-4">Nenhuma pendência de repasse no momento — tudo em dia.</p>
+        )}
 
-          {profissionais.map(([nome, info]) => {
+        {mostrarPendentes &&
+          profissionais.map(([nome, info]) => {
             const aguardandoConfirmacao = info.transacoes.filter((t) => t.repasseSolicitadoEm).length;
+            const expandido = aberto === nome;
             return (
-              <div key={nome} className="nv-card">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="font-sora font-semibold text-nv-ink">{nome}</p>
-                    <p className="text-xs text-nv-muted mt-0.5">
-                      {info.transacoes.length} pagamento(s) pendente(s)
+              <div key={nome} className="py-3 border-t border-nv-borderLight first:border-t-0">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-semibold text-nv-ink">{nome}</p>
+                    <p className="text-xs text-nv-muted2 mt-0.5">
+                      repasse de {info.transacoes.length} atendimento{info.transacoes.length === 1 ? "" : "s"}
                       {aguardandoConfirmacao > 0 && (
-                        <span className="text-amber-700">
-                          {" "}
-                          · {aguardandoConfirmacao} com comprovante aguardando sua confirmação
-                        </span>
+                        <span className="text-amber-700"> · {aguardandoConfirmacao} com comprovante aguardando você</span>
                       )}
                     </p>
                   </div>
-                  <span className="nv-num font-sora font-bold text-sm px-3 py-1 rounded-full bg-amber-50 text-amber-700">
-                    R$ {info.totalPendente.toFixed(2)}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="nv-num text-sm font-bold text-nv-ink">R$ {info.totalPendente.toFixed(2)}</span>
+                    <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 whitespace-nowrap">
+                      Pendente
+                    </span>
+                    <button
+                      type="button"
+                      className="text-nv-blue text-xs font-semibold underline whitespace-nowrap"
+                      onClick={() => setAberto(expandido ? null : nome)}
+                    >
+                      {expandido ? "Fechar" : "Lançar recebimento"}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-nv-borderLight">
-                  <input
-                    className="input !w-auto flex-1 min-w-[150px]"
-                    placeholder="Valor que você recebeu dela"
-                    value={valorLancar[nome] || ""}
-                    onChange={(e) => setValorLancar({ ...valorLancar, [nome]: e.target.value })}
-                  />
-                  <button className="btn-primary text-sm" onClick={() => lancar(nome, info.profissionalId)}>
-                    Lançar recebimento
-                  </button>
-                  <button className="btn-secondary text-sm" onClick={() => setAberto(aberto === nome ? null : nome)}>
-                    {aberto === nome ? "Fechar lista" : "Ver pagamentos"}
-                  </button>
-                </div>
-                {msg[nome] && <p className="text-sm mt-2 text-nv-ink">{msg[nome]}</p>}
+                {expandido && (
+                  <div className="mt-3 pt-3 border-t border-nv-borderLight/70 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        className="input !w-auto flex-1 min-w-[150px]"
+                        placeholder="Valor que você recebeu dela"
+                        value={valorLancar[nome] || ""}
+                        onChange={(e) => setValorLancar({ ...valorLancar, [nome]: e.target.value })}
+                      />
+                      <button className="btn-primary text-sm" onClick={() => lancar(nome, info.profissionalId)}>
+                        Confirmar valor recebido
+                      </button>
+                    </div>
+                    {msg[nome] && <p className="text-sm text-nv-ink">{msg[nome]}</p>}
 
-                {aberto === nome && (
-                  <div className="mt-3 space-y-2">
-                    {info.transacoes.map((t) => (
-                      <div
-                        key={t.id}
-                        className="flex items-center justify-between flex-wrap gap-2 text-sm pt-2 border-t border-nv-borderLight"
-                      >
-                        <div>
-                          <p className="text-nv-ink">
-                            {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} ·{" "}
-                            {TIPO_LABEL[t.tipo] || t.tipo} · você recebe R$ {t.valorRenascer.toFixed(2)}
-                          </p>
-                          {t.repasseSolicitadoEm ? (
-                            <p className="text-xs mt-0.5">
-                              <span className="badge bg-amber-100 text-amber-700">Comprovante enviado — aguardando você</span>
-                              {t.repasseValorInformado != null && (
-                                <span className={t.bateComEsperado ? "text-emerald-700 ml-1" : "text-red-600 ml-1"}>
-                                  {t.bateComEsperado
-                                    ? `Valor bate certinho: R$ ${t.repasseValorInformado.toFixed(2)}`
-                                    : `Atenção: valor no comprovante é R$ ${t.repasseValorInformado.toFixed(2)} (esperado R$ ${t.valorRenascer.toFixed(2)})`}
-                                </span>
-                              )}
+                    <div className="space-y-2">
+                      {info.transacoes.map((t) => (
+                        <div
+                          key={t.id}
+                          className="flex items-center justify-between flex-wrap gap-2 text-sm pt-2 border-t border-nv-borderLight"
+                        >
+                          <div>
+                            <p className="text-nv-ink">
+                              {new Date(t.data).toLocaleDateString("pt-BR")} · {t.cliente?.user?.nome || "cliente"} ·{" "}
+                              {TIPO_LABEL[t.tipo] || t.tipo} · você recebe R$ {t.valorRenascer.toFixed(2)}
                             </p>
-                          ) : (
-                            <p className="text-xs text-nv-muted2 mt-0.5">Ainda não enviou comprovante desse repasse.</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {t.temComprovanteRepasse && (
-                            <button className="text-nv-blue text-xs underline" onClick={() => verComprovanteRepasse(t.id)}>
-                              Ver comprovante
+                            {t.repasseSolicitadoEm ? (
+                              <p className="text-xs mt-0.5">
+                                <span className="badge bg-amber-100 text-amber-700">Comprovante enviado — aguardando você</span>
+                                {t.repasseValorInformado != null && (
+                                  <span className={t.bateComEsperado ? "text-emerald-700 ml-1" : "text-red-600 ml-1"}>
+                                    {t.bateComEsperado
+                                      ? `Valor bate certinho: R$ ${t.repasseValorInformado.toFixed(2)}`
+                                      : `Atenção: valor no comprovante é R$ ${t.repasseValorInformado.toFixed(2)} (esperado R$ ${t.valorRenascer.toFixed(2)})`}
+                                  </span>
+                                )}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-nv-muted2 mt-0.5">Ainda não enviou comprovante desse repasse.</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {t.temComprovanteRepasse && (
+                              <button className="text-nv-blue text-xs underline" onClick={() => verComprovanteRepasse(t.id)}>
+                                Ver comprovante
+                              </button>
+                            )}
+                            <button
+                              className={`text-xs underline ${t.repasseSolicitadoEm ? "text-emerald-700" : "text-nv-blue"}`}
+                              onClick={() => marcar(t.id)}
+                            >
+                              {t.repasseSolicitadoEm ? "Confirmar repasse" : "Marcar como recebido (sem comprovante)"}
                             </button>
-                          )}
-                          <button
-                            className={`text-xs underline ${t.repasseSolicitadoEm ? "text-emerald-700" : "text-nv-blue"}`}
-                            onClick={() => marcar(t.id)}
-                          >
-                            {t.repasseSolicitadoEm ? "Confirmar repasse" : "Marcar como recebido (sem comprovante)"}
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
-        </div>
-      )}
 
-      {mostrarConfirmados && (
-        <div>
-          {filtro === "todos" && <p className="nv-eyebrow mb-2">Confirmados recentemente</p>}
-          <div className="nv-card !p-0 px-6 py-1">
-            {confirmados.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum repasse confirmado ainda.</p>}
-            {confirmados.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight first:border-t-0"
-              >
-                <div>
-                  <p className="text-[13.5px] font-semibold text-nv-ink">{c.profissional}</p>
-                  <p className="text-xs text-nv-muted2 mt-0.5">
-                    {TIPO_LABEL[c.tipo] || c.tipo} · {c.repassadoEm ? new Date(c.repassadoEm).toLocaleDateString("pt-BR") : "-"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="nv-num text-sm font-bold text-nv-ink">R$ {c.valorRenascer.toFixed(2)}</span>
-                  <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">
-                    Confirmado
-                  </span>
-                </div>
+        {filtro === "todos" && profissionais.length > 0 && confirmados.length > 0 && (
+          <p className="nv-eyebrow pt-4 pb-1">Confirmados recentemente</p>
+        )}
+
+        {mostrarConfirmados && confirmados.length === 0 && (
+          <p className="text-sm text-nv-muted py-4">Nenhum repasse confirmado ainda.</p>
+        )}
+
+        {mostrarConfirmados &&
+          confirmados.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight first:border-t-0"
+            >
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-nv-ink">{c.profissional}</p>
+                <p className="text-xs text-nv-muted2 mt-0.5">
+                  repasse · {TIPO_LABEL[c.tipo] || c.tipo} ·{" "}
+                  {c.repassadoEm ? new Date(c.repassadoEm).toLocaleDateString("pt-BR") : "-"}
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="nv-num text-sm font-bold text-nv-ink">R$ {c.valorRenascer.toFixed(2)}</span>
+                <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700 whitespace-nowrap">
+                  Confirmado
+                </span>
+              </div>
+            </div>
+          ))}
+      </div>
     </div>
   );
 }
