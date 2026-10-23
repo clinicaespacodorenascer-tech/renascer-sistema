@@ -14,7 +14,7 @@ import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/p
 import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig } from "../profissional/index";
 // Fase 51 — mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa,
 // reaproveitado aqui na aba "Financeiro" do Dono (as rotas /financeiro/* já liberavam DONO também).
-import { formatarMoeda, PainelFinanceiro } from "../financeiro/index";
+import { formatarMoeda, PainelFinanceiro, ClientesRenovarPorData, AnaliseRenovacoes } from "../financeiro/index";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -1622,6 +1622,20 @@ function FinanceiroDono() {
         Painel compartilhado com o Setor Financeiro — os lançamentos daqui contam exatamente igual aos dela, e ela também
         pode mexer nos números do seu financeiro por aqui. Se um dia ela estiver de folga, você lança no lugar dela sem
         precisar do login dela.
+      </div>
+
+      {/* Fase 53 — categoria "Clientes" (fila de renovação por data, de todos os profissionais) +
+          subcategoria "Análise" (números agregados) — mesmas telas que o Setor Financeiro ganhou,
+          só que aqui dentro do Financeiro do Dono, pra ele conseguir acompanhar e analisar sem
+          precisar trocar de login. */}
+      <div>
+        <h2 className="font-sora font-semibold text-[17px] text-nv-navy mb-3">Clientes pra renovar</h2>
+        <ClientesRenovarPorData compacto />
+      </div>
+
+      <div>
+        <h2 className="font-sora font-semibold text-[17px] text-nv-navy mb-3">Análise de renovações</h2>
+        <AnaliseRenovacoes />
       </div>
 
       <PainelFinanceiro />

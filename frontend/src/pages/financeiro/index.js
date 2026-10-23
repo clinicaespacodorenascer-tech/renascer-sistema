@@ -16,6 +16,10 @@ export default function AreaFinanceiro() {
 
   const ABAS = [
     { id: "painel", label: "Painel financeiro" },
+    // Fase 53 — "Clientes": fila de renovação de TODOS os profissionais organizada por data
+    // (pedido do Elismael). Nome diferente de "Clientes pra renovar" de propósito — essa aba aqui
+    // embaixo já existia e é outra coisa (reativar quem já saiu/foi excluído), não misturar.
+    { id: "clientes", label: "Clientes" },
     { id: "renovar", label: "Clientes pra renovar" },
     { id: "repasses", label: "Repasses" },
     { id: "agenda", label: "Agenda geral" },
@@ -24,6 +28,7 @@ export default function AreaFinanceiro() {
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "painel" && <PainelFinanceiro />}
+      {aba === "clientes" && <ClientesRenovarPorData />}
       {aba === "renovar" && <ClientesParaRenovar />}
       {aba === "repasses" && <Repasses />}
       {aba === "agenda" && <AgendaGeral />}
@@ -347,6 +352,175 @@ function BotaoNv({ children, onClick, className }) {
     >
       {children}
     </button>
+  );
+}
+
+// ================================================================================================
+// ---------------- Clientes (fila de renovação por data, clínica inteira) ----------------
+// ================================================================================================
+
+const DURACAO_LABEL_FIN = { MIN30: "30min", MIN50: "50min" };
+
+// renovarEm é salvo como meia-noite UTC (veio de um <input type="date">) — pra agrupar certo por
+// dia, lê a data em UTC (não a hora local, que pode cair no dia anterior pro fuso do Brasil).
+function chaveDataUTC(iso) {
+  const d = new Date(iso);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+// "Hoje"/"amanhã" já é o dia local de quem está vendo a tela (isso sim é local mesmo).
+function chaveHojeLocal(offsetDias = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function labelGrupoData(chave) {
+  const [, mes, dia] = chave.split("-");
+  const ddmm = `${dia}/${mes}`;
+  if (chave < chaveHojeLocal()) return `Atrasado · ${ddmm}`;
+  if (chave === chaveHojeLocal()) return `Hoje · ${ddmm}`;
+  if (chave === chaveHojeLocal(1)) return `Amanhã · ${ddmm}`;
+  return ddmm;
+}
+
+// Fase 53 — fila de renovação da CLÍNICA INTEIRA (todos os profissionais), organizada por data:
+// hoje só mostra quem renova hoje, amanhã só quem renova amanhã, e assim por diante — com nome em
+// ordem alfabética dentro do mesmo dia, profissional responsável, valor do pacote, duração e
+// botão de WhatsApp com mensagem pronta. Usada pelo Setor Financeiro (aba própria) e pelo Dono
+// (embutida dentro do Financeiro dele — por isso o `compacto`, que tira o cabeçalho repetido).
+export function ClientesRenovarPorData({ compacto }) {
+  const [lista, setLista] = useState(null);
+
+  useEffect(() => {
+    api.get("/financeiro/clientes-renovar-por-data").then((r) => setLista(r.data));
+  }, []);
+
+  if (!lista) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  const grupos = {};
+  for (const c of lista) {
+    const chave = chaveDataUTC(c.renovarEm);
+    (grupos[chave] = grupos[chave] || []).push(c);
+  }
+  const gruposOrdenados = Object.entries(grupos).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+
+  return (
+    <div className="space-y-5">
+      {!compacto && (
+        <div>
+          <p className="font-sora text-[11px] font-bold uppercase tracking-[0.09em] text-nv-gold mb-1.5">Setor Financeiro</p>
+          <h1 className="font-sora font-bold text-[26px] md:text-[29px] text-nv-navy mb-1">Clientes</h1>
+          <p className="text-[14px] text-nv-muted">Fila de renovação de todos os profissionais, organizada por data</p>
+        </div>
+      )}
+
+      {gruposOrdenados.length === 0 && (
+        <p className="text-[13px] text-nv-muted bg-white rounded-2xl p-5">Nenhum cliente com data de renovação cadastrada agora.</p>
+      )}
+
+      {gruposOrdenados.map(([chave, itens]) => (
+        <div key={chave} className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+          <p
+            className={`text-[12.5px] font-bold uppercase tracking-[0.04em] mb-3 ${
+              chave < chaveHojeLocal() ? "text-nv-red" : chave === chaveHojeLocal() ? "text-nv-blue" : "text-nv-muted"
+            }`}
+          >
+            {labelGrupoData(chave)} · {itens.length} cliente{itens.length === 1 ? "" : "s"}
+          </p>
+          <div className="divide-y divide-nv-borderLight">
+            {itens
+              .slice()
+              .sort((a, b) => a.nome.localeCompare(b.nome))
+              .map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3 flex-wrap py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-semibold text-nv-ink2">{c.nome}</p>
+                    <p className="text-[11.5px] text-nv-muted3">
+                      {c.profissionalNome}
+                      {c.valorPacote != null ? ` · R$ ${c.valorPacote.toFixed(2)}` : ""}
+                      {c.duracao ? ` · ${DURACAO_LABEL_FIN[c.duracao] || c.duracao}` : ""}
+                    </p>
+                  </div>
+                  {c.whatsapp && (
+                    <a
+                      className="text-nv-green text-xs font-semibold underline whitespace-nowrap"
+                      target="_blank"
+                      rel="noreferrer"
+                      href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                        `Oi ${c.nome}! Aqui é do Espaço do Renascer — vi que seu pacote está terminando, bora marcar a renovação? 💙`
+                      )}`}
+                    >
+                      Chamar no WhatsApp
+                    </a>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MiniStatRenovacao({ titulo, valor, cor }) {
+  return (
+    <div className="bg-white rounded-2xl p-[18px] shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+      <p className="text-[11.5px] font-bold text-nv-muted mb-1.5">{titulo}</p>
+      <p className={`font-sora font-bold text-[21px] ${cor} tabular-nums`}>{valor}</p>
+    </div>
+  );
+}
+
+// Fase 53 — "Análise": números agregados da mesma fila (quantos atrasados, quantos renovam hoje,
+// quantos nos próximos 7 dias, valor total em risco, e quantos clientes cada profissional tem na
+// fila) — a subcategoria que o Elismael pediu pra conseguir enxergar o panorama sem rolar a lista
+// inteira cliente por cliente.
+export function AnaliseRenovacoes() {
+  const [lista, setLista] = useState(null);
+
+  useEffect(() => {
+    api.get("/financeiro/clientes-renovar-por-data").then((r) => setLista(r.data));
+  }, []);
+
+  if (!lista) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  const hoje = chaveHojeLocal();
+  const atrasados = lista.filter((c) => chaveDataUTC(c.renovarEm) < hoje);
+  const hojeLista = lista.filter((c) => chaveDataUTC(c.renovarEm) === hoje);
+  const proximos7 = lista.filter((c) => {
+    const chave = chaveDataUTC(c.renovarEm);
+    return chave >= hoje && chave <= chaveHojeLocal(7);
+  });
+  const totalEmRisco = lista.reduce((s, c) => s + (c.valorPacote || 0), 0);
+
+  const porProfissional = {};
+  for (const c of lista) {
+    const nome = c.profissionalNome || "Sem profissional";
+    porProfissional[nome] = (porProfissional[nome] || 0) + 1;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MiniStatRenovacao titulo="Atrasados" valor={atrasados.length} cor="text-nv-red" />
+        <MiniStatRenovacao titulo="Renovam hoje" valor={hojeLista.length} cor="text-nv-blue" />
+        <MiniStatRenovacao titulo="Próximos 7 dias" valor={proximos7.length} cor="text-nv-navy" />
+        <MiniStatRenovacao titulo="Valor total em risco" valor={`R$ ${totalEmRisco.toFixed(2)}`} cor="text-[#D6883B]" />
+      </div>
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+        <p className="font-sora font-semibold text-[15px] text-nv-navy mb-3">Fila de renovação por profissional</p>
+        <div className="divide-y divide-nv-borderLight">
+          {Object.entries(porProfissional)
+            .sort(([, a], [, b]) => b - a)
+            .map(([nome, qtd]) => (
+              <div key={nome} className="flex items-center justify-between py-2">
+                <span className="text-[13px] font-semibold text-nv-ink2">{nome}</span>
+                <span className="text-[13px] font-bold text-nv-navy tabular-nums">{qtd}</span>
+              </div>
+            ))}
+          {Object.keys(porProfissional).length === 0 && <p className="text-[13px] text-nv-muted py-2">Nenhum cliente na fila.</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 

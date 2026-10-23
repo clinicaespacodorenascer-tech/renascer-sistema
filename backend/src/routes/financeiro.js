@@ -222,6 +222,35 @@ router.get("/clientes-reativar", async (req, res) => {
   );
 });
 
+// Fase 53 — fila de renovação da CLÍNICA INTEIRA (todos os profissionais), organizada por data de
+// renovação combinada (Cliente.renovarEm) — diferente da fila acima, que é sobre quem já saiu
+// (situacao EXCLUIDO). Esta é sobre quem ainda está ativo mas com a renovação prevista chegando,
+// pra Financeiro/Dono conseguirem ligar no dia certo — ordenada por data (mais próxima primeiro)
+// e, dentro do mesmo dia, em ordem alfabética.
+router.get("/clientes-renovar-por-data", async (req, res) => {
+  const clientes = await prisma.cliente.findMany({
+    where: { situacao: "ATIVO", renovarEm: { not: null } },
+    include: {
+      user: { select: { nome: true, telefone: true } },
+      profissionalAtual: { include: { user: { select: { nome: true } } } },
+      pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
+    },
+    orderBy: [{ renovarEm: "asc" }, { user: { nome: "asc" } }],
+  });
+
+  res.json(
+    clientes.map((c) => ({
+      id: c.id,
+      nome: c.user.nome,
+      whatsapp: c.user.telefone || c.whatsappCadastro || null,
+      profissionalNome: c.profissionalAtual?.user?.nome || "Sem profissional",
+      valorPacote: c.pacotes[0]?.valorTotal ?? null,
+      duracao: c.pacotes[0]?.duracao ?? null,
+      renovarEm: c.renovarEm,
+    }))
+  );
+});
+
 router.get("/profissionais", async (req, res) => {
   const profissionais = await prisma.profissional.findMany({
     include: { user: { select: { nome: true, ativo: true, fotoUrl: true, role: true, ultimoAcessoEm: true } } },
