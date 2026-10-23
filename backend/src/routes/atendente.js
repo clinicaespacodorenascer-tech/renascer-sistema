@@ -10,149 +10,80 @@ const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
 const { inicioDoDia, fimDoDia, periodoDoMes } = require("../utils/meuDia");
 const { gerarEmailAutomatico } = require("../utils/gerarLogin");
+const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
 
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
 // ---------- Cadastro de novos clientes ----------
-// A atendente pode, no mesmo cadastro, já lançar o valor do pacote/sessões (ou de uma
-// renovação) — isso já cria o pacote e a transação financeira, contando na hora no painel do
-// Dono. Tudo isso é opcional: se ela não informar duração+sessões nem valor, só cria o login.
+// Fase 54 — agora no mesmo formato "canvas" da Profissional (pacote + dia/hora fixo com
+// agendamento automático), com a diferença de que aqui a profissional é escolhida (obrigatório).
+// Continua podendo, no mesmo cadastro, já lançar o pagamento recebido — isso cria/ajusta o
+// pacote e a transação financeira, contando na hora no painel do Dono. Toda essa lógica
+// compartilhada (login automático, pacote, dia fixo, pagamento) vive em
+// utils/cadastrarCliente.js, junto com a rota equivalente do Dono.
 router.post("/clientes", async (req, res) => {
-  const {
-    nome,
-    email,
-    telefone,
-    senhaProvisoria,
-    profissionalAtualId,
-    duracao,
-    totalSessoes,
-    valorTotal,
-    tipo,
-    imagemBase64,
-    mimeType,
-    observacao,
-    canalOrigem,
-  } = req.body;
-  // Na prática é sempre a profissional quem recebe o pagamento do cliente (Pix/cartão dela) e
-  // depois repassa a parte da Renascer — por isso todo lançamento feito aqui já nasce como
-  // pendência de repasse pra ela.
-  const recebidoPorFinal = "PROFISSIONAL";
-
-  if (!nome || !nome.trim()) return res.status(400).json({ erro: "Informe o nome do cliente." });
-
-  // Fase 51 — e-mail agora é opcional no cadastro rápido: se não vier um, gera sozinho.
-  let emailFinal = email ? email.toLowerCase().trim() : null;
-  if (emailFinal) {
-    const existente = await prisma.user.findUnique({ where: { email: emailFinal } });
-    if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
-  } else {
-    emailFinal = await gerarEmailAutomatico(nome);
-  }
-
-  const senha = senhaProvisoria || Math.random().toString(36).slice(-8);
-  const hash = await bcrypt.hash(senha, 10);
-
   const atendenteId = req.user.atendente.id;
-
-  const user = await prisma.user.create({
-    data: {
-      nome,
-      email: emailFinal,
-      telefone,
-      senha: hash,
-      role: "CLIENTE",
-      cliente: {
-        create: {
-          profissionalAtualId: profissionalAtualId || null,
-          cadastradoPorId: atendenteId,
-          whatsappCadastro: telefone || null,
-          // Origem do lead (Fase 30) — opcional, só pra alimentar os indicadores reais de
-          // marketing (leads/novos clientes por canal, CAC). Nunca trava o cadastro se não vier.
-          canalOrigem: canalOrigem || null,
-        },
-      },
-    },
-    include: { cliente: true },
-  });
-
-  await prisma.historicoCliente.create({
-    data: { clienteId: user.cliente.id, tipo: "ENTROU", nomeCliente: nome, whatsapp: telefone || null, realizadoPorId: req.user.id },
-  });
-
-  // Avisa a gestão (donos + outras atendentes) que entrou cliente novo, e a profissional
-  // vinculada (se já veio vinculada nesse cadastro) que chegou cliente novo pra ela.
-  await notificarDonos({ titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a) pela recepção.`, tipo: "cliente" });
-  await notificarAtendentes(
-    { titulo: "Novo cliente cadastrado", mensagem: `${nome} foi cadastrado(a).`, tipo: "cliente" },
-    req.user.id
-  );
-  if (profissionalAtualId) {
-    const profissionalVinculada = await prisma.profissional.findUnique({ where: { id: profissionalAtualId }, select: { userId: true } });
-    if (profissionalVinculada) {
-      await notificar(profissionalVinculada.userId, {
-        titulo: "Novo cliente pra você!",
-        mensagem: `${nome} foi vinculado(a) a você pela recepção.`,
-        tipo: "cliente",
-      });
-    }
+  try {
+    const resultado = await cadastrarClienteComProfissional({
+      ...req.body,
+      cadastradoPorId: atendenteId,
+      registradoPor: { id: req.user.id, nome: req.user.nome },
+      origemTransacao: "ATENDENTE",
+    });
+    res.json({
+      id: resultado.user.id,
+      email: resultado.user.email,
+      senhaProvisoria: resultado.senha,
+      cliente: resultado.cliente,
+      pacote: resultado.pacote,
+      transacao: resultado.transacao,
+      avisoFinanceiro: resultado.avisoFinanceiro,
+      agendamento: resultado.agendamento,
+      avisoAgenda: resultado.avisoAgenda,
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message || "Erro ao cadastrar cliente." });
   }
+});
 
-  let pacote = null;
-  let transacao = null;
-  let avisoFinanceiro = null;
+// Fase 54 — "Cadastrados recentemente": lista curta pra ela conferir (e desfazer, se foi
+// engano) os cadastros que ela mesma fez nas últimas 48h. Igual ao que a Profissional já tem.
+// Precisa vir ANTES de qualquer rota "/clientes/:id" pra "recentes" não ser interpretado como id.
+router.get("/clientes/recentes", async (req, res) => {
+  const atendenteId = req.user.atendente.id;
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const clientes = await prisma.cliente.findMany({
+    where: { cadastradoPorId: atendenteId, criadoEm: { gte: desde } },
+    include: { user: { select: { nome: true } } },
+    orderBy: { criadoEm: "desc" },
+    take: 10,
+  });
+  res.json(clientes.map((c) => ({ id: c.id, nome: c.user.nome, criadoEm: c.criadoEm })));
+});
 
-  const valorOficial = duracao && totalSessoes ? valorDoPlano(duracao, Number(totalSessoes)) : null;
-  const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorOficial;
-
-  if (profissionalAtualId && valorFinal) {
-    const duplicada = await transacaoDuplicada(prisma, user.cliente.id, valorFinal);
-    if (duplicada) {
-      avisoFinanceiro = "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.";
-    } else {
-      const profissional = await prisma.profissional.findUnique({ where: { id: profissionalAtualId } });
-      pacote = await prisma.pacote.create({
-        data: {
-          clienteId: user.cliente.id,
-          profissionalId: profissionalAtualId,
-          duracao: duracao || "MIN50",
-          totalSessoes: totalSessoes ? Number(totalSessoes) : 1,
-          valorTotal: valorFinal,
-          status: "ATIVO",
-        },
-      });
-
-      const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, profissional.percentualRepasse);
-      transacao = await prisma.transacaoFinanceira.create({
-        data: {
-          profissionalId: profissionalAtualId,
-          clienteId: user.cliente.id,
-          tipo: tipo || "PACOTE_NOVO",
-          valorTotal: valorFinal,
-          valorProfissional,
-          valorRenascer,
-          recebidoPor: recebidoPorFinal,
-          origem: "ATENDENTE",
-          comprovanteBase64: imagemBase64 || null,
-          comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
-          observacao: observacao || null,
-        },
-      });
-
-      await notificar(profissional.userId, {
-        titulo: "Lembrete de repasse",
-        mensagem: `Pagamento de ${nome} registrado — você recebe direto e precisa repassar R$ ${valorRenascer.toFixed(2)} pra Renascer (anexe o comprovante na aba Financeiro assim que repassar).`,
-        tipo: "financeiro",
-      });
-      await notificarDonos({
-        titulo: "Tem dinheiro na área!",
-        mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)} de ${nome} registrado pela recepção — repasse esperado da profissional: R$ ${valorRenascer.toFixed(2)}.`,
-        tipo: "financeiro",
-      });
-    }
+// Desfazer um cadastro recente feito por ela mesma (ex: digitou errado, duplicou). Só funciona
+// pro próprio cadastro dela e só dentro das 48h — depois disso ela fala com o Dono.
+router.delete("/clientes/:id/recente", async (req, res) => {
+  const atendenteId = req.user.atendente.id;
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: req.params.id, cadastradoPorId: atendenteId, criadoEm: { gte: desde } },
+    include: { user: { select: { nome: true } } },
+  });
+  if (!cliente) {
+    return res
+      .status(404)
+      .json({ erro: "Esse cadastro não é seu ou não é recente o suficiente pra excluir por aqui — fale com o Dono." });
   }
-
-  res.json({ id: user.id, email: user.email, senhaProvisoria: senha, cliente: user.cliente, pacote, transacao, avisoFinanceiro });
+  const nomeCliente = cliente.user.nome;
+  await excluirCliente(cliente.id);
+  await notificarDonos({
+    titulo: "Cadastro desfeito",
+    mensagem: `${req.user.nome} excluiu o cadastro de ${nomeCliente} (cadastro recente, desfeito por ela mesma).`,
+    tipo: "sistema",
+  });
+  res.json({ ok: true });
 });
 
 router.get("/clientes", async (req, res) => {

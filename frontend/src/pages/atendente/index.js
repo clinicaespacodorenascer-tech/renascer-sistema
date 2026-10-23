@@ -6,8 +6,7 @@ import { verComprovante, lerArquivoBase64 } from "../../lib/comprovante";
 import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
-import IndicadorPresenca from "../../components/IndicadorPresenca";
-import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
+import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/presenca";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -146,106 +145,229 @@ const DIAS_LABEL = {
 const NV_CORES_AVATAR_ATENDENTE = ["#0B5FA8", "#1C7C54", "#8A4FA3", "#B4622E"];
 
 // ---------------- PROFISSIONAIS: perfil completo + agendar exatamente o que o cliente quer ----------------
+// Fase 51 — mesmo padrão visual da tela "Profissionais" do Dono (grade de cartões compactos à
+// esquerda, clica numa profissional e abre o painel de detalhe à direita), só que aqui o painel
+// de detalhe mostra os horários dela (agrupados por dia, não mais uma parede de pílulas) e os
+// botões de agendar/editar disponibilidade, que são a razão da atendente estar nessa tela.
 function ProfissionaisEAgendar() {
   const [profissionais, setProfissionais] = useState([]);
   const [clientes, setClientes] = useState([]);
-  const [selecionada, setSelecionada] = useState(null);
-  const [editando, setEditando] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [selecionadaId, setSelecionadaId] = useState(null);
+  const [verHorarios, setVerHorarios] = useState(false);
+  const [editando, setEditando] = useState(false);
 
   async function carregar() {
     const [p, c] = await Promise.all([api.get("/atendente/profissionais"), api.get("/atendente/clientes")]);
     setProfissionais(p.data);
     setClientes(c.data);
+    if (p.data.length > 0) setSelecionadaId((atual) => atual || p.data[0].id);
   }
   useEffect(() => {
     carregar();
   }, []);
 
+  const buscaLower = busca.trim().toLowerCase();
+  const filtrada = profissionais.filter((p) => {
+    if (!buscaLower) return true;
+    const alvo = (p.user.nome + " " + (p.especialidades || []).join(" ")).toLowerCase();
+    return alvo.includes(buscaLower);
+  });
+  const selecionada = filtrada.find((p) => p.id === selecionadaId) || filtrada[0];
+  const presencaSel = selecionada ? formatarPresenca(selecionada.user.ultimoAcessoEm) : null;
+
+  const porDiaSel = {};
+  (selecionada?.disponibilidades || []).forEach((d) => {
+    (porDiaSel[d.diaSemana] = porDiaSel[d.diaSemana] || []).push(d);
+  });
+
+  function selecionar(id) {
+    setSelecionadaId(id);
+    setVerHorarios(false);
+    setEditando(false);
+  }
+
   return (
     <div className="font-publicSans">
-      <div className="mb-4">
-        <p className="nv-eyebrow mb-1">Painel da Atendente</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Profissionais e agendar</h1>
-        <p className="text-nv-muted text-sm mt-0.5">Veja os horários de cada profissional, agende uma sessão ou ajuste a disponibilidade dela</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel da Atendente</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Profissionais e agendar</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Clique numa profissional pra ver os horários dela, agendar ou editar a disponibilidade</p>
+        </div>
+        <label className="flex items-center gap-2 bg-white border border-nv-border rounded-lg px-3.5 py-2 min-w-[230px]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8392A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Buscar por nome ou especialidade"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="border-none outline-none text-sm text-nv-ink2 w-full"
+          />
+        </label>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {profissionais.map((p, i) => {
-          const cor = NV_CORES_AVATAR_ATENDENTE[i % NV_CORES_AVATAR_ATENDENTE.length];
-          const iniciais = p.user.nome
-            .split(" ")
-            .slice(0, 2)
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase();
-          return (
-            <div key={p.id} className="nv-card">
-              <div className="flex gap-3">
-                {p.user.fotoUrl ? (
-                  <img src={p.user.fotoUrl} alt={p.user.nome} className="w-14 h-14 rounded-full object-cover border border-nv-border shrink-0" />
-                ) : (
-                  <div
-                    className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-base text-white shrink-0"
-                    style={{ background: cor }}
-                  >
-                    {iniciais}
+
+      <div className="flex gap-5 flex-wrap items-start">
+        <div className="flex-[2_1_420px] grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
+          {filtrada.map((p, i) => {
+            const presenca = formatarPresenca(p.user.ultimoAcessoEm);
+            const cor = NV_CORES_AVATAR_ATENDENTE[i % NV_CORES_AVATAR_ATENDENTE.length];
+            const iniciais = p.user.nome
+              .split(" ")
+              .slice(0, 2)
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase();
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selecionar(p.id)}
+                className={`nv-card text-left flex flex-col gap-3 ${selecionada?.id === p.id ? "!border-nv-blue" : ""}`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="relative w-11 h-11 shrink-0">
+                    {p.user.fotoUrl ? (
+                      <img src={p.user.fotoUrl} alt={p.user.nome} className="w-11 h-11 rounded-full object-cover border border-nv-border" />
+                    ) : (
+                      <div
+                        className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white"
+                        style={{ background: cor }}
+                      >
+                        {iniciais}
+                      </div>
+                    )}
+                    <span
+                      className={`nv-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-white ${presenca.online ? "nv-dot-ok" : ""}`}
+                      style={!presenca.online ? { background: "#B7C1D1" } : undefined}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-nv-ink2 truncate flex items-center gap-1.5">
+                      {p.user.nome}
+                      {p.user.role === "DONO" && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-nv-gold/15 text-nv-gold">Dono</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-nv-muted3 truncate">{p.titulo}</p>
+                  </div>
+                </div>
+                {p.especialidades?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.especialidades.slice(0, 2).map((esp) => (
+                      <span key={esp} className="text-[11px] font-semibold text-[#3E6FA3] bg-[#EAF1FA] rounded-full px-2.5 py-1">
+                        {esp}
+                      </span>
+                    ))}
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-sora font-semibold text-nv-ink flex items-center gap-1.5 flex-wrap">
-                    {p.user.nome} {p.idade ? <span className="font-publicSans font-normal text-nv-muted3">· {p.idade} anos</span> : ""}
-                    {p.user.role === "DONO" && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-nv-gold/15 text-nv-gold">Dono</span>
-                    )}
-                  </p>
-                  <p className="text-sm text-nv-muted2">
-                    {p.titulo}
-                    {p.registro ? ` · ${p.registro}` : ""}
-                  </p>
-                  {p.abordagens && <p className="text-xs text-nv-muted3">Abordagem: {p.abordagens}</p>}
-                  <IndicadorPresenca ultimoAcessoEm={p.user.ultimoAcessoEm} className="mt-0.5" />
+                <div className="flex items-center justify-between text-[11px] text-nv-muted3 border-t border-nv-borderLight pt-2.5">
+                  <span>{p.disponibilidades.length} horários liberados</span>
+                  <span>{presenca.online ? "visto agora" : presenca.texto.replace("Visto ", "")}</span>
                 </div>
-              </div>
+              </button>
+            );
+          })}
+          {filtrada.length === 0 && <p className="text-sm text-nv-muted">Nenhuma profissional encontrada.</p>}
+        </div>
 
-              {p.especialidades?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  {p.especialidades.map((e) => (
+        {selecionada && (
+          <div className="flex-[1_1_340px] nv-card flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              {selecionada.user.fotoUrl ? (
+                <img src={selecionada.user.fotoUrl} alt={selecionada.user.nome} className="w-14 h-14 rounded-full object-cover border border-nv-border shrink-0" />
+              ) : (
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-lg text-white shrink-0"
+                  style={{ background: NV_CORES_AVATAR_ATENDENTE[filtrada.indexOf(selecionada) % NV_CORES_AVATAR_ATENDENTE.length] }}
+                >
+                  {selecionada.user.nome
+                    .split(" ")
+                    .slice(0, 2)
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()}
+                </div>
+              )}
+              <div>
+                <p className="font-sora font-bold text-base text-nv-ink flex items-center gap-1.5">
+                  {selecionada.user.nome}
+                  {selecionada.user.role === "DONO" && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-nv-gold/15 text-nv-gold">Dono</span>
+                  )}
+                </p>
+                <p className="text-xs text-nv-muted3 mt-0.5">
+                  {selecionada.titulo}
+                  {selecionada.registro ? ` · ${selecionada.registro}` : ""}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 bg-nv-green/10 rounded-lg px-3 py-2.5">
+              <span className={`nv-dot ${presencaSel.online ? "nv-dot-ok" : ""}`} style={!presencaSel.online ? { background: "#B7C1D1" } : undefined} />
+              <span className="text-xs font-semibold text-[#22543D]">
+                {presencaSel.online ? "Ativa agora" : `Offline · ${presencaSel.texto}`}
+              </span>
+            </div>
+
+            {selecionada.abordagens && <p className="text-xs text-nv-muted3">Abordagem: {selecionada.abordagens}</p>}
+
+            {selecionada.especialidades?.length > 0 && (
+              <div>
+                <p className="text-[11px] font-bold text-nv-muted3 uppercase tracking-[0.04em] mb-1.5">Especialidades</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selecionada.especialidades.map((e) => (
                     <span key={e} className="text-[11px] font-semibold text-[#3E6FA3] bg-[#EAF1FA] rounded-full px-2.5 py-1">
                       {e}
                     </span>
                   ))}
                 </div>
-              )}
-
-              <div className="flex flex-wrap gap-1.5 mt-2.5 border-t border-nv-borderLight pt-2.5">
-                {p.disponibilidades.length === 0 && <span className="text-xs text-nv-muted3">Nenhum horário liberado ainda.</span>}
-                {p.disponibilidades.map((d) => (
-                  <span
-                    key={d.id}
-                    className={`text-[11px] font-medium rounded-full px-2.5 py-1 ${
-                      d.ocupadoPorCliente ? "bg-amber-50 text-amber-700" : "bg-nv-bg text-nv-muted2 border border-nv-borderLight"
-                    }`}
-                  >
-                    {DIAS_LABEL[d.diaSemana]} {d.horaInicio}
-                    {d.ocupadoPorCliente ? ` · fixo: ${d.ocupadoPorCliente.user.nome}` : ""}
-                  </span>
-                ))}
               </div>
+            )}
 
-              <div className="flex flex-wrap gap-2 mt-3">
-                <button className="btn-secondary text-sm" onClick={() => setSelecionada(selecionada?.id === p.id ? null : p)}>
-                  {selecionada?.id === p.id ? "Fechar" : "Ver horários e agendar"}
-                </button>
-                <button className="btn-secondary text-sm" onClick={() => setEditando(editando === p.id ? null : p.id)}>
-                  {editando === p.id ? "Fechar edição de horários" : "Editar horários dela"}
-                </button>
+            <div>
+              <p className="text-[11px] font-bold text-nv-muted3 uppercase tracking-[0.04em] mb-1.5">Horários liberados</p>
+              {selecionada.disponibilidades.length === 0 && <p className="text-xs text-nv-muted3">Nenhum horário liberado ainda.</p>}
+              <div className="flex flex-col gap-2">
+                {Object.entries(DIAS_LABEL)
+                  .filter(([chave]) => porDiaSel[chave]?.length > 0)
+                  .map(([chave, label]) => (
+                    <div key={chave}>
+                      <p className="text-[11px] font-semibold text-nv-muted2 mb-1">{label}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {porDiaSel[chave].map((d) => (
+                          <span
+                            key={d.id}
+                            className={`text-[11px] font-medium rounded-full px-2.5 py-1 ${
+                              d.ocupadoPorCliente ? "bg-amber-50 text-amber-700" : "bg-nv-bg text-nv-muted2 border border-nv-borderLight"
+                            }`}
+                          >
+                            {d.horaInicio}
+                            {d.ocupadoPorCliente ? ` · fixo: ${d.ocupadoPorCliente.user.nome}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
               </div>
-
-              {selecionada?.id === p.id && <AgendarComProfissional profissional={p} clientes={clientes} onAgendado={carregar} />}
-              {editando === p.id && <EditarDisponibilidadeProfissional profissional={p} onSalvo={carregar} />}
             </div>
-          );
-        })}
-        {profissionais.length === 0 && <p className="text-sm text-nv-muted">Nenhuma profissional cadastrada ainda.</p>}
+
+            <div className="flex flex-wrap gap-2 border-t border-nv-borderLight pt-3.5">
+              <button className="btn-secondary text-sm" onClick={() => setVerHorarios((v) => !v)}>
+                {verHorarios ? "Fechar" : "Ver horários e agendar"}
+              </button>
+              <button className="btn-secondary text-sm" onClick={() => setEditando((v) => !v)}>
+                {editando ? "Fechar edição de horários" : "Editar horários dela"}
+              </button>
+            </div>
+
+            {verHorarios && <AgendarComProfissional profissional={selecionada} clientes={clientes} onAgendado={carregar} />}
+            {editando && <EditarDisponibilidadeProfissional profissional={selecionada} onSalvo={carregar} />}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -436,7 +558,7 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
         <label className="text-xs text-nv-muted block mb-1">
           Anexar comprovante do pagamento (fica guardado no cadastro do cliente pra poder ver depois)
         </label>
-        <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
+        <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
       </div>
       <button className="btn-secondary" onClick={registrar} disabled={enviando}>
         {enviando ? "Registrando..." : "Registrar pagamento"}
@@ -446,18 +568,43 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
   );
 }
 
+// Fase 51 — cadastro simplificado (igual canvas): nome + WhatsApp + valor, com login gerado
+// automaticamente (sem campo de e-mail/senha manual aqui).
 const FORM_CLIENTE_VAZIO = {
   nome: "",
-  email: "",
   telefone: "",
-  senhaProvisoria: "",
   profissionalAtualId: "",
   tipo: "PACOTE_NOVO",
   duracao: "MIN50",
   totalSessoes: 4,
+  diaSemanaFixo: "",
+  horaFixa: "",
   valorTotal: "",
   canalOrigem: "",
 };
+
+// Fase 54 — mesmo formulário visual da Profissional (canvas), com a diferença de que aqui a
+// profissional é escolhida (obrigatório), não fixa. "Dia e horário fixo" preenchidos já criam a
+// primeira sessão direto na Agenda, igual o cadastro da Profissional.
+const DIAS_FIXOS = [
+  ["SEGUNDA", "Segunda"],
+  ["TERCA", "Terça"],
+  ["QUARTA", "Quarta"],
+  ["QUINTA", "Quinta"],
+  ["SEXTA", "Sexta"],
+  ["SABADO", "Sábado"],
+  ["DOMINGO", "Domingo"],
+];
+
+// "há quanto tempo" compacto pro card de "Cadastrados recentemente".
+function formatarHaQuantoAtendente(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return "agora há pouco";
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  return diffD === 1 ? "ontem" : `há ${diffD} dias`;
+}
 
 // De onde o cliente veio (Fase 30) — opcional, só pra alimentar os indicadores reais de
 // marketing (leads/novos clientes por canal, CAC) no Meu dia do Dono.
@@ -479,16 +626,26 @@ function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [form, setForm] = useState(FORM_CLIENTE_VAZIO);
+  const [sessoesExtras, setSessoesExtras] = useState(0); // local-only, decorativo (igual o mock do canvas)
   const [arquivo, setArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [nomeCadastrado, setNomeCadastrado] = useState("");
   const [msg, setMsg] = useState("");
   const [expandido, setExpandido] = useState(null);
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [recentes, setRecentes] = useState([]);
+  const [excluindoId, setExcluindoId] = useState(null);
 
   async function carregar() {
-    const [c, p] = await Promise.all([api.get("/atendente/clientes"), api.get("/atendente/profissionais")]);
+    const [c, p, r] = await Promise.all([
+      api.get("/atendente/clientes"),
+      api.get("/atendente/profissionais"),
+      api.get("/atendente/clientes/recentes"),
+    ]);
     setLista(c.data);
     setProfissionais(p.data);
+    setRecentes(r.data);
   }
   useEffect(() => {
     carregar();
@@ -497,28 +654,63 @@ function Clientes() {
   async function cadastrar() {
     setMsg("");
     setResultado(null);
+    setCopiado(false);
+    if (!form.profissionalAtualId) {
+      setMsg("Escolha a profissional que vai atender esse cliente.");
+      return;
+    }
     try {
       const imagemBase64 = arquivo ? await lerArquivoBase64(arquivo) : null;
       const { data } = await api.post("/atendente/clientes", {
         nome: form.nome,
-        email: form.email,
         telefone: form.telefone,
-        senhaProvisoria: form.senhaProvisoria || undefined,
-        profissionalAtualId: form.profissionalAtualId || undefined,
+        profissionalAtualId: form.profissionalAtualId,
         tipo: form.tipo,
         duracao: form.duracao,
         totalSessoes: Number(form.totalSessoes),
+        diaSemanaFixo: form.diaSemanaFixo || undefined,
+        horaFixa: form.horaFixa || undefined,
         valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
         imagemBase64,
         mimeType: arquivo?.type,
         canalOrigem: form.canalOrigem || undefined,
       });
       setResultado(data);
+      setNomeCadastrado(form.nome);
       setForm(FORM_CLIENTE_VAZIO);
+      setSessoesExtras(0);
       setArquivo(null);
       carregar();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
+    }
+  }
+
+  async function excluirRecente(c) {
+    if (!window.confirm(`Excluir o cadastro de ${c.nome}? Isso desfaz o cadastro por completo (e avisa o Dono).`)) return;
+    setExcluindoId(c.id);
+    try {
+      await api.delete(`/atendente/clientes/${c.id}/recente`);
+      carregar();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Não foi possível excluir esse cadastro.");
+    } finally {
+      setExcluindoId(null);
+    }
+  }
+
+  // Fase 51 — mensagem de acesso pronta pra colar no WhatsApp do cliente (igual canvas).
+  const mensagemAcesso = resultado
+    ? `Olá, ${nomeCadastrado}! Seu acesso ao app do Espaço do Renascer:\nE-mail: ${resultado.email}\nSenha: ${resultado.senhaProvisoria}\nAcesse: https://renascer-sistema.vercel.app\nLá você encontra suas atividades, pode acompanhar sua evolução e pedir um relatório pro seu profissional.`
+    : "";
+
+  async function copiarAcesso() {
+    try {
+      await navigator.clipboard.writeText(mensagemAcesso);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch (e) {
+      // clipboard pode falhar em http/sem permissão — sem problema, a mensagem já está visível pra copiar manualmente
     }
   }
 
@@ -532,26 +724,38 @@ function Clientes() {
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Clientes</h1>
           <p className="text-nv-muted text-sm mt-0.5">{lista.length} clientes cadastrados, em ordem alfabética</p>
         </div>
-        <button className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
-          {mostrarForm ? "Fechar" : "+ Novo cliente"}
+        <button
+          className="btn-primary text-sm"
+          onClick={() => {
+            setMostrarForm((v) => !v);
+            setResultado(null);
+          }}
+        >
+          {mostrarForm ? "Fechar" : "+ Cadastrar cliente"}
         </button>
       </div>
 
       {mostrarForm && (
         <div className="nv-card mb-4">
-          <h2 className="font-sora font-semibold text-nv-ink mb-3">Cadastrar novo cliente</h2>
+          <h2 className="font-sora font-semibold text-nv-ink mb-1">Cadastrar cliente</h2>
+          <p className="text-xs text-nv-muted mb-3">
+            Nome, WhatsApp e a profissional já bastam — o login é gerado sozinho. Preenchendo o pacote e o dia/horário fixo, a
+            agenda dela já sai pronta.
+          </p>
+
           <div className="grid sm:grid-cols-2 gap-2">
-            <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-            <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
-            <input
+            <input className="input" placeholder="Nome completo" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+            <input className="input" placeholder="WhatsApp" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+          </div>
+
+          <div className="mt-3">
+            <p className="text-xs text-nv-muted mb-1.5">Profissional que vai atender *</p>
+            <select
               className="input"
-              placeholder="Senha do login (opcional, senão é gerada uma)"
-              value={form.senhaProvisoria}
-              onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })}
-            />
-            <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
-              <option value="">Vincular profissional (opcional)</option>
+              value={form.profissionalAtualId}
+              onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}
+            >
+              <option value="">Escolha a profissional</option>
               {profissionais.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.user.nome}
@@ -559,63 +763,131 @@ function Clientes() {
                 </option>
               ))}
             </select>
-            <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
-              {CANAL_ORIGEM_OPCOES.map((c) => (
-                <option key={c.valor} value={c.valor}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+          </div>
+
+          <div className="border-t border-nv-borderLight mt-4 pt-4">
+            <p className="text-sm font-semibold text-nv-ink mb-2">Pacote</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
+                <div className="flex gap-1.5">
+                  {[4, 8].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                      onClick={() => setForm({ ...form, totalSessoes: n })}
+                    >
+                      {n} sessões
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-nv-muted mb-1.5">Duração</p>
+                <div className="flex gap-1.5">
+                  {[["MIN30", "30 min"], ["MIN50", "50 min"]].map(([v, l]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`nv-seg ${form.duracao === v ? "nv-seg-ativo" : ""}`}
+                      onClick={() => setForm({ ...form, duracao: v })}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <p className="text-xs text-nv-muted mb-1.5">Sessões extras</p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+                  onClick={() => setSessoesExtras((n) => Math.max(0, n - 1))}
+                >
+                  −
+                </button>
+                <span className="font-sora font-bold text-nv-ink text-sm w-5 text-center">{sessoesExtras}</span>
+                <button
+                  type="button"
+                  className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+                  onClick={() => setSessoesExtras((n) => n + 1)}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-nv-borderLight mt-4 pt-4">
+            <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo</p>
+            <div className="grid grid-cols-2 gap-2">
+              <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
+                <option value="">Sem dia fixo</option>
+                {DIAS_FIXOS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input"
+                placeholder="Horário (ex: 14:00)"
+                value={form.horaFixa}
+                onChange={(e) => setForm({ ...form, horaFixa: e.target.value })}
+              />
+            </div>
           </div>
 
           <div className="border-t border-nv-borderLight mt-4 pt-4">
             <p className="text-sm font-semibold text-nv-ink mb-1">Já lançar pagamento agora (opcional)</p>
             <p className="text-xs text-nv-muted mb-2">
-              Se o cliente já pagou, preencha o valor aqui — escolha a profissional acima antes: isso já cria o pacote e
-              conta na hora no financeiro (aparece no "A receber hoje" do Dono).
+              Se o cliente já pagou, preencha o valor aqui — isso já conta na hora no financeiro (aparece no "A receber hoje"
+              do Dono).
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
                 <option value="PACOTE_NOVO">Contratação nova</option>
                 <option value="RENOVACAO">Renovação</option>
                 <option value="SESSAO_EXTRA">Sessão extra</option>
                 <option value="OUTRO">Outro</option>
               </select>
-              <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
-                <option value="MIN30">30 minutos</option>
-                <option value="MIN50">50 minutos</option>
-              </select>
-              <input
-                type="number"
-                min="1"
-                className="input"
-                placeholder="Nº de sessões"
-                value={form.totalSessoes}
-                onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
-              />
               <input
                 className="input"
                 placeholder="Valor (opcional)"
                 value={form.valorTotal}
                 onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
               />
+              <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
+                {CANAL_ORIGEM_OPCOES.map((c) => (
+                  <option key={c.valor} value={c.valor}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="mt-2">
               <label className="text-xs text-nv-muted block mb-1">Anexar comprovante (opcional)</label>
-              <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} />
+              <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
             </div>
           </div>
 
           <button className="btn-primary mt-4" onClick={cadastrar}>
-            Cadastrar
+            Cadastrar e gerar agenda
           </button>
           {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
           {resultado && (
-            <div className="text-sm mt-2 space-y-1">
-              <p className="text-nv-green">
-                Cliente criado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um
-                canal seguro)
-              </p>
+            <div className="text-sm mt-3 space-y-2">
+              <div className="bg-[#F2F7FC] border border-nv-blue/20 rounded-xl p-4 space-y-2">
+                <p className="text-[12.5px] font-bold text-nv-blue">Acesso criado — copie e envie pro cliente</p>
+                <pre className="font-mono text-xs bg-white rounded-lg p-3 whitespace-pre-wrap text-nv-ink2">{mensagemAcesso}</pre>
+                <button type="button" className="btn-secondary !text-xs" onClick={copiarAcesso}>
+                  {copiado ? "Copiado!" : "Copiar login e mensagem"}
+                </button>
+              </div>
               {resultado.transacao && (
                 <p className="text-nv-green">
                   Pagamento contabilizado! A profissional recebe direto e deve repassar R${" "}
@@ -624,13 +896,46 @@ function Clientes() {
                 </p>
               )}
               {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
+              {resultado.agendamento && <p className="text-nv-green">Sessão fixa já criada direto na Agenda ✅</p>}
+              {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
             </div>
           )}
         </div>
       )}
 
+      {recentes.length > 0 && (
+        <div className="nv-card mb-4">
+          <h3 className="font-sora font-semibold text-nv-ink mb-1">Cadastrados recentemente</h3>
+          <p className="text-xs text-nv-muted mb-3">Últimas 48h — dá pra desfazer se foi engano.</p>
+          <div className="flex flex-col gap-2">
+            {recentes.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-3 bg-nv-bg rounded-[10px] px-3 py-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-nv-ink">{c.nome}</p>
+                  <p className="text-[11px] text-nv-muted3">{formatarHaQuantoAtendente(c.criadoEm)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-red-600 text-xs font-semibold underline disabled:opacity-50"
+                  disabled={excluindoId === c.id}
+                  onClick={() => excluirRecente(c)}
+                >
+                  {excluindoId === c.id ? "Excluindo..." : "Excluir"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="nv-card !p-0 px-5">
-        {ordenados.map((c) => (
+        {ordenados.map((c) => {
+          // Fase 51 — igual canvas: progresso de sessões no lugar do e-mail, e a badge de
+          // "aguardando renovação" direto na linha (sem precisar abrir a ficha pra ver).
+          const pacote = c.pacotes?.[0];
+          const aguardandoRenovacao = pacote?.status === "AGUARDANDO_RENOVACAO";
+          const sessoesTxt = pacote ? `${pacote.sessoesUsadas || 0} de ${pacote.totalSessoes} sessões` : null;
+          return (
           <div key={c.id}>
             <div
               className="flex items-center justify-between gap-3 py-3 border-t border-nv-borderLight first:border-t-0 cursor-pointer"
@@ -641,13 +946,21 @@ function Clientes() {
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-nv-ink2 truncate">{c.user.nome}</span>
                   <span className="block text-xs text-nv-muted3 truncate">
-                    {c.user.email} · com {c.profissionalAtual?.user?.nome || "sem profissional"}
+                    com {c.profissionalAtual?.user?.nome || "sem profissional"}
                     {c.profissionalAtual?.user?.role === "DONO" ? " (Dono)" : ""}
+                    {sessoesTxt && ` · ${sessoesTxt}`}
                   </span>
                 </span>
               </span>
-              <span className="text-xs font-semibold text-nv-blue shrink-0 whitespace-nowrap">
-                {expandido === c.id ? "Fechar ficha" : "Ver ficha"}
+              <span className="flex items-center gap-2.5 shrink-0">
+                {aguardandoRenovacao && (
+                  <span className="text-[11px] font-semibold text-[#B0580F] bg-[#FBF0E3] rounded-full px-2.5 py-1 whitespace-nowrap">
+                    aguardando renovação
+                  </span>
+                )}
+                <span className="text-xs font-semibold text-nv-blue whitespace-nowrap">
+                  {expandido === c.id ? "Fechar ficha" : "Ver ficha"}
+                </span>
               </span>
             </div>
             {expandido === c.id && (
@@ -669,7 +982,8 @@ function Clientes() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum cliente cadastrado ainda.</p>}
       </div>
     </div>

@@ -228,8 +228,12 @@ router.get("/clientes-reativar", async (req, res) => {
 // pra Financeiro/Dono conseguirem ligar no dia certo — ordenada por data (mais próxima primeiro)
 // e, dentro do mesmo dia, em ordem alfabética.
 router.get("/clientes-renovar-por-data", async (req, res) => {
+  // ?todos=1 -> "ver todos os clientes": lista a clínica inteira (ativos), não só quem já tem
+  // data de renovação marcada. Sem o parâmetro, continua só a fila de renovação (comportamento
+  // original, usado também pela Análise pra não inflar os números com quem não está na fila).
+  const mostrarTodos = req.query.todos === "1" || req.query.todos === "true";
   const clientes = await prisma.cliente.findMany({
-    where: { situacao: "ATIVO", renovarEm: { not: null } },
+    where: mostrarTodos ? { situacao: "ATIVO" } : { situacao: "ATIVO", renovarEm: { not: null } },
     include: {
       user: { select: { nome: true, telefone: true } },
       profissionalAtual: { include: { user: { select: { nome: true } } } },

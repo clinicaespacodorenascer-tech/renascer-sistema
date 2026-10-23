@@ -6,6 +6,7 @@ const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
+const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
 const { parseValorMonetario } = require("../utils/financeiro");
 const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
 const {
@@ -259,8 +260,13 @@ router.put("/profissionais/:id/percentual-repasse", async (req, res) => {
   }
 });
 
+// Fase 54 — antes essa lista vinha sem filtro de situação, então misturava clientes ativos com
+// clientes já excluídos (soft-delete), o que deixava a contagem do Dono maior que a da
+// Atendente/Profissional (que só contam ATIVO). Clientes excluídos continuam acessíveis pela aba
+// própria "Reativar clientes" — aqui a lista principal fica só com quem está ativo de fato.
 router.get("/clientes", async (req, res) => {
   const clientes = await prisma.cliente.findMany({
+    where: { situacao: "ATIVO" },
     include: {
       user: { select: { nome: true, email: true, telefone: true, ativo: true } },
       profissionalAtual: { include: { user: { select: { nome: true, role: true } } } },
@@ -270,6 +276,62 @@ router.get("/clientes", async (req, res) => {
   res.json(
     clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
   );
+});
+
+// Fase 54 — o Dono não tinha NENHUMA forma geral de cadastrar cliente (só indiretamente, se
+// ativasse o próprio perfil de "Atender pacientes" e usasse a aba "Meus clientes" dele). Usa o
+// mesmo utilitário compartilhado com a Atendente (utils/cadastrarCliente.js) — login automático,
+// pacote + dia/hora fixo com agendamento automático, e pagamento já recebido (opcional).
+router.post("/clientes", async (req, res) => {
+  try {
+    const resultado = await cadastrarClienteComProfissional({
+      ...req.body,
+      cadastradoPorId: null, // esse campo só existe pra Atendente (ver schema) — Dono fica registrado via realizadoPorId no histórico
+      registradoPor: { id: req.user.id, nome: req.user.nome },
+      origemTransacao: "ATENDENTE", // enum do banco não tem um valor próprio de "DONO" (ver comentário no util)
+    });
+    res.json({
+      id: resultado.user.id,
+      email: resultado.user.email,
+      senhaProvisoria: resultado.senha,
+      cliente: resultado.cliente,
+      pacote: resultado.pacote,
+      transacao: resultado.transacao,
+      avisoFinanceiro: resultado.avisoFinanceiro,
+      agendamento: resultado.agendamento,
+      avisoAgenda: resultado.avisoAgenda,
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message || "Erro ao cadastrar cliente." });
+  }
+});
+
+// "Cadastrados recentemente pelo Dono" — mesma ideia do que a Atendente e a Profissional já têm,
+// só que, como o Cliente não tem uma coluna própria de "cadastrado pelo Dono" (só existe pra
+// Atendente no schema), usa o histórico (realizadoPorId) pra achar os cadastros feitos por esse
+// login nas últimas 48h. Precisa vir ANTES de "/clientes/:id/..." pra não colidir com elas.
+router.get("/clientes/recentes", async (req, res) => {
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const eventos = await prisma.historicoCliente.findMany({
+    where: { tipo: "ENTROU", realizadoPorId: req.user.id, criadoEm: { gte: desde } },
+    orderBy: { criadoEm: "desc" },
+    take: 10,
+  });
+  res.json(eventos.map((h) => ({ id: h.clienteId, nome: h.nomeCliente, criadoEm: h.criadoEm })));
+});
+
+router.delete("/clientes/:id/recente", async (req, res) => {
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const evento = await prisma.historicoCliente.findFirst({
+    where: { clienteId: req.params.id, tipo: "ENTROU", realizadoPorId: req.user.id, criadoEm: { gte: desde } },
+  });
+  if (!evento) {
+    return res.status(404).json({ erro: "Esse cadastro não é seu ou não é recente o suficiente pra excluir por aqui." });
+  }
+  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, include: { user: { select: { nome: true } } } });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado." });
+  await excluirCliente(cliente.id);
+  res.json({ ok: true });
 });
 
 // Troca o cliente de profissional a qualquer momento — não depende de pacote encerrado nem do

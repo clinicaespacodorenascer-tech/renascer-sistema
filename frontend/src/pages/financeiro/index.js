@@ -363,7 +363,10 @@ const DURACAO_LABEL_FIN = { MIN30: "30min", MIN50: "50min" };
 
 // renovarEm é salvo como meia-noite UTC (veio de um <input type="date">) — pra agrupar certo por
 // dia, lê a data em UTC (não a hora local, que pode cair no dia anterior pro fuso do Brasil).
+// Cliente sem renovarEm (modo "ver todos") cai no grupo especial "sem-data" — a string "sem-data"
+// é sempre maior que qualquer "AAAA-MM-DD" na comparação de texto, então o grupo some pro final.
 function chaveDataUTC(iso) {
+  if (!iso) return "sem-data";
   const d = new Date(iso);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
@@ -374,12 +377,21 @@ function chaveHojeLocal(offsetDias = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function labelGrupoData(chave) {
+  if (chave === "sem-data") return "Sem data de renovação definida";
   const [, mes, dia] = chave.split("-");
   const ddmm = `${dia}/${mes}`;
   if (chave < chaveHojeLocal()) return `Atrasado · ${ddmm}`;
   if (chave === chaveHojeLocal()) return `Hoje · ${ddmm}`;
   if (chave === chaveHojeLocal(1)) return `Amanhã · ${ddmm}`;
   return ddmm;
+}
+function IconeLupa({ className }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+      <circle cx="8.8" cy="8.8" r="6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M13.3 13.3L18 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 // Fase 53 — fila de renovação da CLÍNICA INTEIRA (todos os profissionais), organizada por data:
@@ -389,15 +401,23 @@ function labelGrupoData(chave) {
 // (embutida dentro do Financeiro dele — por isso o `compacto`, que tira o cabeçalho repetido).
 export function ClientesRenovarPorData({ compacto }) {
   const [lista, setLista] = useState(null);
+  const [mostrarTodos, setMostrarTodos] = useState(false);
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
-    api.get("/financeiro/clientes-renovar-por-data").then((r) => setLista(r.data));
-  }, []);
+    setLista(null);
+    api.get(`/financeiro/clientes-renovar-por-data${mostrarTodos ? "?todos=1" : ""}`).then((r) => setLista(r.data));
+  }, [mostrarTodos]);
 
   if (!lista) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
+  const termo = busca.trim().toLowerCase();
+  const listaFiltrada = termo
+    ? lista.filter((c) => c.nome.toLowerCase().includes(termo) || (c.profissionalNome || "").toLowerCase().includes(termo))
+    : lista;
+
   const grupos = {};
-  for (const c of lista) {
+  for (const c of listaFiltrada) {
     const chave = chaveDataUTC(c.renovarEm);
     (grupos[chave] = grupos[chave] || []).push(c);
   }
@@ -413,8 +433,34 @@ export function ClientesRenovarPorData({ compacto }) {
         </div>
       )}
 
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="relative flex-1 min-w-[210px]">
+          <IconeLupa className="w-[15px] h-[15px] text-nv-muted3 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por cliente ou profissional..."
+            className="w-full rounded-[10px] border border-nv-border bg-white pl-9 pr-3 py-2 text-[13px] text-nv-ink2 placeholder:text-nv-muted3 focus:outline-none focus:ring-2 focus:ring-nv-blue/25"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setMostrarTodos((v) => !v)}
+          className={`rounded-[9px] px-3.5 py-2 text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
+            mostrarTodos ? "bg-nv-navy text-white" : "bg-nv-bg text-nv-navy border border-nv-border hover:bg-white"
+          }`}
+        >
+          {mostrarTodos ? "Só clientes com renovação" : "Ver todos os clientes"}
+        </button>
+      </div>
+
       {gruposOrdenados.length === 0 && (
-        <p className="text-[13px] text-nv-muted bg-white rounded-2xl p-5">Nenhum cliente com data de renovação cadastrada agora.</p>
+        <p className="text-[13px] text-nv-muted bg-white rounded-2xl p-5">
+          {termo
+            ? "Nenhum cliente encontrado para essa busca."
+            : "Nenhum cliente com data de renovação cadastrada agora."}
+        </p>
       )}
 
       {gruposOrdenados.map(([chave, itens]) => (

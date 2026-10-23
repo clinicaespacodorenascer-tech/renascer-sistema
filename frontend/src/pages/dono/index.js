@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import LayoutNovo from "../../components/LayoutNovo";
 import api, { atualizarUsuarioLocal } from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
-import { verComprovante, abrirImagem, verComprovanteRepasse } from "../../lib/comprovante";
+import { verComprovante, abrirImagem, verComprovanteRepasse, lerArquivoBase64 } from "../../lib/comprovante";
 import StatusCliente from "../../components/StatusCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/presenca";
@@ -1167,21 +1167,305 @@ function formatarDataCurta(data) {
   return new Date(data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+// Fase 54 — o Dono não tinha nenhuma forma geral de cadastrar cliente (só indiretamente, se ele
+// ativasse o próprio perfil de "Atender pacientes"). Esse formulário é o mesmo "canvas" que a
+// Atendente e a Profissional usam, com escolha obrigatória de profissional (igual a Atendente).
+const FORM_CLIENTE_VAZIO_DONO = {
+  nome: "",
+  telefone: "",
+  profissionalAtualId: "",
+  tipo: "PACOTE_NOVO",
+  duracao: "MIN50",
+  totalSessoes: 4,
+  diaSemanaFixo: "",
+  horaFixa: "",
+  valorTotal: "",
+  canalOrigem: "",
+};
+const DIAS_FIXOS_DONO = [
+  ["SEGUNDA", "Segunda"],
+  ["TERCA", "Terça"],
+  ["QUARTA", "Quarta"],
+  ["QUINTA", "Quinta"],
+  ["SEXTA", "Sexta"],
+  ["SABADO", "Sábado"],
+  ["DOMINGO", "Domingo"],
+];
+const CANAL_ORIGEM_OPCOES_DONO = [
+  { valor: "", label: "De onde veio? (opcional)" },
+  { valor: "INSTAGRAM", label: "Instagram" },
+  { valor: "FACEBOOK", label: "Facebook" },
+  { valor: "GOOGLE", label: "Google" },
+  { valor: "INDICACAO", label: "Indicação" },
+  { valor: "OUTRO", label: "Outro" },
+];
+function formatarHaQuantoDono(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return "agora há pouco";
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  return diffD === 1 ? "ontem" : `há ${diffD} dias`;
+}
+
+// Formulário de cadastro rápido (igual o da Atendente) — fica dentro da própria aba Clientes,
+// atrás do botão "+ Novo cliente", pra não brigar visualmente com a lista/toggle que já existia.
+function NovoClienteDono({ profissionais, onCadastrado }) {
+  const [form, setForm] = useState(FORM_CLIENTE_VAZIO_DONO);
+  const [sessoesExtras, setSessoesExtras] = useState(0);
+  const [arquivo, setArquivo] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [nomeCadastrado, setNomeCadastrado] = useState("");
+  const [msg, setMsg] = useState("");
+  const [copiado, setCopiado] = useState(false);
+
+  async function cadastrar() {
+    setMsg("");
+    setResultado(null);
+    setCopiado(false);
+    if (!form.profissionalAtualId) {
+      setMsg("Escolha a profissional que vai atender esse cliente.");
+      return;
+    }
+    try {
+      const imagemBase64 = arquivo ? await lerArquivoBase64(arquivo) : null;
+      const { data } = await api.post("/dono/clientes", {
+        nome: form.nome,
+        telefone: form.telefone,
+        profissionalAtualId: form.profissionalAtualId,
+        tipo: form.tipo,
+        duracao: form.duracao,
+        totalSessoes: Number(form.totalSessoes),
+        diaSemanaFixo: form.diaSemanaFixo || undefined,
+        horaFixa: form.horaFixa || undefined,
+        valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
+        imagemBase64,
+        mimeType: arquivo?.type,
+        canalOrigem: form.canalOrigem || undefined,
+      });
+      setResultado(data);
+      setNomeCadastrado(form.nome);
+      setForm(FORM_CLIENTE_VAZIO_DONO);
+      setSessoesExtras(0);
+      setArquivo(null);
+      onCadastrado?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
+    }
+  }
+
+  const mensagemAcesso = resultado
+    ? `Olá, ${nomeCadastrado}! Seu acesso ao app do Espaço do Renascer:\nE-mail: ${resultado.email}\nSenha: ${resultado.senhaProvisoria}\nAcesse: https://renascer-sistema.vercel.app\nLá você encontra suas atividades, pode acompanhar sua evolução e pedir um relatório pro seu profissional.`
+    : "";
+
+  async function copiarAcesso() {
+    try {
+      await navigator.clipboard.writeText(mensagemAcesso);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch (e) {
+      // clipboard pode falhar em http/sem permissão — sem problema, a mensagem já está visível pra copiar manualmente
+    }
+  }
+
+  return (
+    <div className="nv-card mb-4">
+      <h2 className="font-sora font-semibold text-nv-ink mb-1">Cadastrar cliente</h2>
+      <p className="text-xs text-nv-muted mb-3">
+        Nome, WhatsApp e a profissional já bastam — o login é gerado sozinho. Preenchendo o pacote e o dia/horário fixo, a
+        agenda dela já sai pronta.
+      </p>
+
+      <div className="grid sm:grid-cols-2 gap-2">
+        <input className="input" placeholder="Nome completo" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+        <input className="input" placeholder="WhatsApp" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+      </div>
+
+      <div className="mt-3">
+        <p className="text-xs text-nv-muted mb-1.5">Profissional que vai atender *</p>
+        <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
+          <option value="">Escolha a profissional</option>
+          {profissionais.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.user.nome}
+              {p.user.role === "DONO" ? " (Dono)" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="border-t border-nv-borderLight mt-4 pt-4">
+        <p className="text-sm font-semibold text-nv-ink mb-2">Pacote</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
+            <div className="flex gap-1.5">
+              {[4, 8].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                  onClick={() => setForm({ ...form, totalSessoes: n })}
+                >
+                  {n} sessões
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-nv-muted mb-1.5">Duração</p>
+            <div className="flex gap-1.5">
+              {[["MIN30", "30 min"], ["MIN50", "50 min"]].map(([v, l]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`nv-seg ${form.duracao === v ? "nv-seg-ativo" : ""}`}
+                  onClick={() => setForm({ ...form, duracao: v })}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <p className="text-xs text-nv-muted mb-1.5">Sessões extras</p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+              onClick={() => setSessoesExtras((n) => Math.max(0, n - 1))}
+            >
+              −
+            </button>
+            <span className="font-sora font-bold text-nv-ink text-sm w-5 text-center">{sessoesExtras}</span>
+            <button
+              type="button"
+              className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+              onClick={() => setSessoesExtras((n) => n + 1)}
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-nv-borderLight mt-4 pt-4">
+        <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo</p>
+        <div className="grid grid-cols-2 gap-2">
+          <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
+            <option value="">Sem dia fixo</option>
+            {DIAS_FIXOS_DONO.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            placeholder="Horário (ex: 14:00)"
+            value={form.horaFixa}
+            onChange={(e) => setForm({ ...form, horaFixa: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="border-t border-nv-borderLight mt-4 pt-4">
+        <p className="text-sm font-semibold text-nv-ink mb-1">Já lançar pagamento agora (opcional)</p>
+        <p className="text-xs text-nv-muted mb-2">
+          Se o cliente já pagou, preencha o valor aqui — isso já conta na hora no financeiro.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+            <option value="PACOTE_NOVO">Contratação nova</option>
+            <option value="RENOVACAO">Renovação</option>
+            <option value="SESSAO_EXTRA">Sessão extra</option>
+            <option value="OUTRO">Outro</option>
+          </select>
+          <input
+            className="input"
+            placeholder="Valor (opcional)"
+            value={form.valorTotal}
+            onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
+          />
+          <select className="input" value={form.canalOrigem} onChange={(e) => setForm({ ...form, canalOrigem: e.target.value })}>
+            {CANAL_ORIGEM_OPCOES_DONO.map((c) => (
+              <option key={c.valor} value={c.valor}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="mt-2">
+          <label className="text-xs text-nv-muted block mb-1">Anexar comprovante (opcional)</label>
+          <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
+        </div>
+      </div>
+
+      <button className="btn-primary mt-4" onClick={cadastrar}>
+        Cadastrar e gerar agenda
+      </button>
+      {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
+      {resultado && (
+        <div className="text-sm mt-3 space-y-2">
+          <div className="bg-[#F2F7FC] border border-nv-blue/20 rounded-xl p-4 space-y-2">
+            <p className="text-[12.5px] font-bold text-nv-blue">Acesso criado — copie e envie pro cliente</p>
+            <pre className="font-mono text-xs bg-white rounded-lg p-3 whitespace-pre-wrap text-nv-ink2">{mensagemAcesso}</pre>
+            <button type="button" className="btn-secondary !text-xs" onClick={copiarAcesso}>
+              {copiado ? "Copiado!" : "Copiar login e mensagem"}
+            </button>
+          </div>
+          {resultado.transacao && (
+            <p className="text-nv-green">
+              Pagamento contabilizado! Repasse esperado da profissional: R$ {resultado.transacao.valorRenascer.toFixed(2)}.
+            </p>
+          )}
+          {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
+          {resultado.agendamento && <p className="text-nv-green">Sessão fixa já criada direto na Agenda ✅</p>}
+          {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [expandido, setExpandido] = useState(null);
   const [modo, setModo] = useState("todos"); // "todos" | "porProfissional"
   const [excluindoId, setExcluindoId] = useState(null);
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [recentes, setRecentes] = useState([]);
+  const [excluindoRecenteId, setExcluindoRecenteId] = useState(null);
 
   async function carregar() {
-    const [c, p] = await Promise.all([api.get("/dono/clientes"), api.get("/dono/profissionais")]);
+    const [c, p, r] = await Promise.all([
+      api.get("/dono/clientes"),
+      api.get("/dono/profissionais"),
+      api.get("/dono/clientes/recentes"),
+    ]);
     setLista(c.data);
     setProfissionais(p.data);
+    setRecentes(r.data);
   }
   useEffect(() => {
     carregar();
   }, []);
+
+  async function excluirRecente(c) {
+    if (!window.confirm(`Excluir o cadastro de ${c.nome}? Isso desfaz o cadastro por completo.`)) return;
+    setExcluindoRecenteId(c.id);
+    try {
+      await api.delete(`/dono/clientes/${c.id}/recente`);
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Não foi possível excluir esse cadastro.");
+    } finally {
+      setExcluindoRecenteId(null);
+    }
+  }
 
   // Fase 51 — excluir direto da linha (igual canvas), sem precisar abrir a ficha primeiro pra
   // achar o botão lá embaixo.
@@ -1287,7 +1571,7 @@ function Clientes() {
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Clientes</h1>
           <p className="text-nv-muted text-sm mt-0.5">{lista.length} clientes, em ordem alfabética</p>
         </div>
-        <div>
+        <div className="flex items-center gap-2 flex-wrap">
           <button type="button" className={`nv-seg ${modo === "todos" ? "nv-seg-ativo" : ""}`} onClick={() => setModo("todos")}>
             Todos
           </button>
@@ -1298,8 +1582,38 @@ function Clientes() {
           >
             Por profissional
           </button>
+          <button type="button" className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
+            {mostrarForm ? "Fechar" : "+ Novo cliente"}
+          </button>
         </div>
       </div>
+
+      {mostrarForm && <NovoClienteDono profissionais={profissionais} onCadastrado={() => { setMostrarForm(false); carregar(); }} />}
+
+      {recentes.length > 0 && (
+        <div className="nv-card mb-4">
+          <h3 className="font-sora font-semibold text-nv-ink mb-1">Cadastrados recentemente por você</h3>
+          <p className="text-xs text-nv-muted mb-3">Últimas 48h — dá pra desfazer se foi engano.</p>
+          <div className="flex flex-col gap-2">
+            {recentes.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-3 bg-nv-bg rounded-[10px] px-3 py-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-nv-ink">{c.nome}</p>
+                  <p className="text-[11px] text-nv-muted3">{formatarHaQuantoDono(c.criadoEm)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-red-600 text-xs font-semibold underline disabled:opacity-50"
+                  disabled={excluindoRecenteId === c.id}
+                  onClick={() => excluirRecente(c)}
+                >
+                  {excluindoRecenteId === c.id ? "Excluindo..." : "Excluir"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="nv-card !p-0 px-5">
         {modo === "todos" &&
