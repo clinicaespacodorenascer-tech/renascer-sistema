@@ -11,7 +11,7 @@ import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/p
 // sem duplicar esse código todo — o backend libera as rotas de /profissional/* pra quem tem um
 // cadastro de Profissional vinculado, mesmo entrando como Dono (ver PATCH em
 // backend/src/middleware/auth.js).
-import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig } from "../profissional/index";
+import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig, AbaNovosPacientes } from "../profissional/index";
 // Fase 51 — mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa,
 // reaproveitado aqui na aba "Financeiro" do Dono (as rotas /financeiro/* já liberavam DONO também).
 import { formatarMoeda, PainelFinanceiro, ClientesRenovarPorData, AnaliseRenovacoes } from "../financeiro/index";
@@ -224,6 +224,7 @@ function AbaAtenderPacientes({ user }) {
 
   const SUB_ABAS = [
     { id: "agenda", label: "Agenda" },
+    { id: "novos", label: "Novos pacientes" },
     { id: "cadastrar", label: "Cadastrar cliente" },
     { id: "clientes", label: "Meus clientes" },
     { id: "financeiro", label: "Financeiro" },
@@ -264,6 +265,7 @@ function AbaAtenderPacientes({ user }) {
         ) : (
           <AgendaAtenderHoje onVerMesCompleto={() => setVerMesCompleto(true)} />
         ))}
+      {sub === "novos" && <AbaNovosPacientes />}
       {sub === "cadastrar" && <AbaCadastrarCliente />}
       {sub === "clientes" && <AbaClientes />}
       {sub === "financeiro" && <AbaFinanceiro />}
@@ -1199,6 +1201,24 @@ const CANAL_ORIGEM_OPCOES_DONO = [
   { valor: "INDICACAO", label: "Indicação" },
   { valor: "OUTRO", label: "Outro" },
 ];
+// Fase 55 — mesma ideia da Atendente: mostra os horários livres reais da profissional escolhida
+// em vez de um campo de texto livre pro horário.
+const ORDEM_DIAS_FIXOS_DONO = DIAS_FIXOS_DONO.map(([v]) => v);
+function horariosLivresPorDiaDono(profissionais, profissionalId) {
+  const prof = profissionais.find((p) => p.id === profissionalId);
+  if (!prof) return [];
+  const livres = (prof.disponibilidades || []).filter((d) => d.ativo && !d.ocupadoPorClienteId);
+  const porDia = {};
+  for (const d of livres) {
+    (porDia[d.diaSemana] = porDia[d.diaSemana] || []).push(d.horaInicio);
+  }
+  return ORDEM_DIAS_FIXOS_DONO.filter((dia) => porDia[dia]?.length).map((dia) => ({
+    dia,
+    label: DIAS_FIXOS_DONO.find(([v]) => v === dia)?.[1] || dia,
+    horarios: porDia[dia].sort(),
+  }));
+}
+
 function formatarHaQuantoDono(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffH = Math.floor(diffMs / (1000 * 60 * 60));
@@ -1272,8 +1292,8 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
     <div className="nv-card mb-4">
       <h2 className="font-sora font-semibold text-nv-ink mb-1">Cadastrar cliente</h2>
       <p className="text-xs text-nv-muted mb-3">
-        Nome, WhatsApp e a profissional já bastam — o login é gerado sozinho. Preenchendo o pacote e o dia/horário fixo, a
-        agenda dela já sai pronta.
+        Nome, WhatsApp e a profissional já bastam — o login é gerado na hora. Pacote e dia/horário fixo ficam prontos pra
+        entrar na agenda assim que a profissional aceitar em "Novos pacientes".
       </p>
 
       <div className="grid sm:grid-cols-2 gap-2">
@@ -1352,29 +1372,57 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
       </div>
 
       <div className="border-t border-nv-borderLight mt-4 pt-4">
-        <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo</p>
-        <div className="grid grid-cols-2 gap-2">
-          <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
-            <option value="">Sem dia fixo</option>
-            {DIAS_FIXOS_DONO.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-          <input
-            className="input"
-            placeholder="Horário (ex: 14:00)"
-            value={form.horaFixa}
-            onChange={(e) => setForm({ ...form, horaFixa: e.target.value })}
-          />
-        </div>
+        <p className="text-sm font-semibold text-nv-ink mb-1">Dia e horário fixo</p>
+        {!form.profissionalAtualId ? (
+          <p className="text-xs text-nv-muted">Escolha a profissional acima pra ver os horários livres dela.</p>
+        ) : (
+          (() => {
+            const grupos = horariosLivresPorDiaDono(profissionais, form.profissionalAtualId);
+            if (grupos.length === 0) {
+              return <p className="text-xs text-nv-muted">Essa profissional não tem nenhum horário livre configurado agora.</p>;
+            }
+            return (
+              <div className="space-y-2">
+                {form.diaSemanaFixo && (
+                  <button
+                    type="button"
+                    className="text-xs text-nv-blue font-semibold underline"
+                    onClick={() => setForm({ ...form, diaSemanaFixo: "", horaFixa: "" })}
+                  >
+                    Limpar seleção (sem dia fixo)
+                  </button>
+                )}
+                {grupos.map((g) => (
+                  <div key={g.dia}>
+                    <p className="text-[11.5px] text-nv-muted3 mb-1">{g.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.horarios.map((h) => {
+                        const ativo = form.diaSemanaFixo === g.dia && form.horaFixa === h;
+                        return (
+                          <button
+                            key={h}
+                            type="button"
+                            className={`nv-seg ${ativo ? "nv-seg-ativo" : ""}`}
+                            onClick={() => setForm({ ...form, diaSemanaFixo: g.dia, horaFixa: h })}
+                          >
+                            {h}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()
+        )}
       </div>
 
       <div className="border-t border-nv-borderLight mt-4 pt-4">
         <p className="text-sm font-semibold text-nv-ink mb-1">Já lançar pagamento agora (opcional)</p>
         <p className="text-xs text-nv-muted mb-2">
-          Se o cliente já pagou, preencha o valor aqui — isso já conta na hora no financeiro.
+          Se o cliente já pagou, preencha o valor aqui — só conta de verdade no financeiro depois que a profissional aceitar
+          o paciente (aba "Novos pacientes" dela).
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
@@ -1416,14 +1464,12 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
               {copiado ? "Copiado!" : "Copiar login e mensagem"}
             </button>
           </div>
-          {resultado.transacao && (
-            <p className="text-nv-green">
-              Pagamento contabilizado! Repasse esperado da profissional: R$ {resultado.transacao.valorRenascer.toFixed(2)}.
+          {resultado.aguardandoAceite && (
+            <p className="text-[#B0580F] bg-[#FBF0E3] rounded-lg px-3 py-2">
+              Enviado pra profissional aceitar — assim que ela confirmar em "Novos pacientes", a agenda e o pagamento entram
+              valendo de verdade.
             </p>
           )}
-          {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
-          {resultado.agendamento && <p className="text-nv-green">Sessão fixa já criada direto na Agenda ✅</p>}
-          {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
         </div>
       )}
     </div>
@@ -1505,7 +1551,11 @@ function Clientes() {
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-nv-ink2 truncate">{c.user.nome}</span>
               <span className="block text-xs text-nv-muted3 truncate">
-                com {nomeProfissional(c)}
+                {c.aguardandoAceiteDe ? (
+                  <span className="text-[#B0580F] font-semibold">aguardando {c.aguardandoAceiteDe} aceitar</span>
+                ) : (
+                  <>com {nomeProfissional(c)}</>
+                )}
                 {contratadoEm && ` · contratado em ${contratadoEm}`}
                 {encerraEm && ` · encerra em ${encerraEm}`}
               </span>

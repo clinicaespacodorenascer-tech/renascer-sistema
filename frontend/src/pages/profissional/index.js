@@ -64,6 +64,12 @@ const STATUS_COR = {
 export default function AreaProfissional() {
   const { user, carregando } = useAuth("PROFISSIONAL");
   const [aba, setAba] = useState("agenda");
+  const [qtdNovosPacientes, setQtdNovosPacientes] = useState(0);
+
+  useEffect(() => {
+    if (carregando) return;
+    api.get("/profissional/novos-pacientes").then((r) => setQtdNovosPacientes(r.data.length)).catch(() => {});
+  }, [carregando, aba]);
 
   if (carregando) return null;
 
@@ -72,6 +78,7 @@ export default function AreaProfissional() {
   // é mais renderizado) pra não perder o código à toa.
   const ABAS = [
     { id: "agenda", label: "Minha agenda" },
+    { id: "novos", label: qtdNovosPacientes > 0 ? `Novos pacientes (${qtdNovosPacientes})` : "Novos pacientes" },
     { id: "clientes", label: "Meus clientes" },
     { id: "cadastrar", label: "Cadastrar cliente" },
     { id: "financeiro", label: "Financeiro" },
@@ -82,12 +89,152 @@ export default function AreaProfissional() {
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
       {aba === "agenda" && <AbaAgenda />}
+      {aba === "novos" && <AbaNovosPacientes />}
       {aba === "clientes" && <AbaClientes />}
       {aba === "cadastrar" && <AbaCadastrarCliente />}
       {aba === "financeiro" && <AbaFinanceiro />}
       {aba === "notificacoes" && <AbaNotificacoes />}
       {aba === "config" && <AbaConfig />}
     </LayoutNovo>
+  );
+}
+
+const DIAS_LABEL_NOVOS = { SEGUNDA: "Segunda", TERCA: "Terça", QUARTA: "Quarta", QUINTA: "Quinta", SEXTA: "Sexta", SABADO: "Sábado", DOMINGO: "Domingo" };
+const DURACAO_LABEL_NOVOS = { MIN30: "30min", MIN50: "50min" };
+
+// Fase 55 — "Novos pacientes": fila de cadastros feitos pela Atendente/Dono esperando o aceite da
+// profissional. Aceitar é o que cria o pacote, lança as sessões na Agenda (se veio dia/hora fixo)
+// e confirma o pagamento já recebido (se informado) — só então vira receita de verdade.
+export function AbaNovosPacientes() {
+  const [pedidos, setPedidos] = useState(null);
+  const [processandoId, setProcessandoId] = useState(null);
+  const [resultadoPorId, setResultadoPorId] = useState({});
+  const [msg, setMsg] = useState("");
+
+  async function carregar() {
+    const { data } = await api.get("/profissional/novos-pacientes");
+    setPedidos(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function aceitar(p) {
+    setProcessandoId(p.id);
+    setMsg("");
+    try {
+      const { data } = await api.post(`/profissional/novos-pacientes/${p.id}/aceitar`);
+      // Não recarrega agora de propósito: o pedido já não volta mais (virou ACEITA no servidor),
+      // mas queremos continuar mostrando a confirmação na tela até ela sair da aba/recarregar.
+      setResultadoPorId((r) => ({ ...r, [p.id]: data }));
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao aceitar paciente.");
+    } finally {
+      setProcessandoId(null);
+    }
+  }
+
+  async function recusar(p) {
+    if (!window.confirm(`Recusar o cadastro de ${p.nome}? Isso desfaz o cadastro por completo — use só se não era pra você.`)) return;
+    setProcessandoId(p.id);
+    setMsg("");
+    try {
+      await api.delete(`/profissional/novos-pacientes/${p.id}`);
+      carregar();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao recusar.");
+    } finally {
+      setProcessandoId(null);
+    }
+  }
+
+  if (!pedidos) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  return (
+    <div className="font-publicSans space-y-4">
+      <div className="mb-1">
+        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Novos pacientes</h1>
+        <p className="text-nv-muted text-sm mt-0.5">
+          Cadastros feitos pela recepção/dono esperando você aceitar — ao aceitar, já confirma na sua agenda e no financeiro.
+        </p>
+      </div>
+
+      {msg && <p className="text-red-600 text-sm">{msg}</p>}
+
+      {pedidos.length === 0 && <p className="nv-card text-sm text-nv-muted">Nenhum pedido pendente no momento.</p>}
+
+      <div className="space-y-3">
+        {pedidos.map((p) => {
+          const resultado = resultadoPorId[p.id];
+          return (
+            <div key={p.id} className="nv-card">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="font-sora font-semibold text-nv-ink">{p.nome}</p>
+                  <p className="text-xs text-nv-muted3">
+                    {p.whatsapp && `${p.whatsapp} · `}
+                    cadastrado por {p.criadoPorNome}
+                  </p>
+                </div>
+                {!resultado && (
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className="btn-secondary !text-xs !px-3 !py-1.5 text-red-600"
+                      disabled={processandoId === p.id}
+                      onClick={() => recusar(p)}
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary !text-xs !px-3.5 !py-1.5"
+                      disabled={processandoId === p.id}
+                      onClick={() => aceitar(p)}
+                    >
+                      {processandoId === p.id ? "Aceitando..." : "Aceitar"}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-nv-muted2">
+                {p.totalSessoes && (
+                  <span>
+                    Pacote: {p.totalSessoes} sessões · {DURACAO_LABEL_NOVOS[p.duracao] || p.duracao}
+                  </span>
+                )}
+                {p.diaSemanaFixo && p.horaFixa && (
+                  <span>
+                    Dia/horário combinado: {DIAS_LABEL_NOVOS[p.diaSemanaFixo]}, {p.horaFixa}
+                  </span>
+                )}
+                {p.valorTotal != null && <span>Pagamento já recebido: R$ {p.valorTotal.toFixed(2)}</span>}
+                {!p.totalSessoes && !p.diaSemanaFixo && p.valorTotal == null && <span>Sem pacote/dia fixo/pagamento informado ainda.</span>}
+              </div>
+
+              {resultado && (
+                <div className="text-sm mt-3 space-y-1 border-t border-nv-borderLight pt-3">
+                  <p className="text-nv-green">Paciente aceito!</p>
+                  {resultado.agendamentos?.length > 0 && (
+                    <p className="text-nv-green">{resultado.agendamentos.length} sessão(ões) já criadas direto na sua Agenda ✅</p>
+                  )}
+                  {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
+                  {resultado.transacao && (
+                    <p className="text-nv-green">
+                      Pagamento contabilizado! Seu repasse: R$ {resultado.transacao.valorProfissional.toFixed(2)} · Parte da
+                      Renascer (você ainda deve repassar): R$ {resultado.transacao.valorRenascer.toFixed(2)}
+                    </p>
+                  )}
+                  {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -292,7 +439,9 @@ export function AbaCadastrarCliente() {
               </p>
             )}
             {resultado.avisoFinanceiro && <p className="text-amber-700">{resultado.avisoFinanceiro}</p>}
-            {resultado.agendamento && <p className="text-nv-green">Sessão fixa já criada direto na sua Agenda ✅</p>}
+            {resultado.agendamentos?.length > 0 && (
+              <p className="text-nv-green">{resultado.agendamentos.length} sessão(ões) já criadas direto na sua Agenda ✅</p>
+            )}
             {resultado.avisoAgenda && <p className="text-amber-700">{resultado.avisoAgenda}</p>}
           </div>
         )}

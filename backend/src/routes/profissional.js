@@ -11,6 +11,7 @@ const { calcularStatusCliente } = require("../utils/statusCliente");
 const { inicioDoDia, fimDoDia, periodoDoMes, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
 const { gerarEmailAutomatico } = require("../utils/gerarLogin");
 const { excluirCliente } = require("../utils/excluirUsuario");
+const { gerarAgendamentosRecorrentes, aceitarSolicitacaoNovoPaciente } = require("../utils/cadastrarCliente");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -721,6 +722,69 @@ router.post("/agenda", async (req, res) => {
 
 // ---------- 5. Clientes do profissional ----------
 
+// Fase 55 — "Novos pacientes": pedidos de cadastro feitos pela Atendente/Dono escolhendo essa
+// profissional, ainda pendentes do aceite dela. Só depois de aceitar é que o paciente entra de
+// fato na agenda e no financeiro dela (ver utils/cadastrarCliente.js).
+router.get("/novos-pacientes", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const pedidos = await prisma.solicitacaoNovoPaciente.findMany({
+    where: { profissionalId, status: "PENDENTE" },
+    include: { cliente: { include: { user: { select: { nome: true, telefone: true } } } } },
+    orderBy: { criadoEm: "asc" },
+  });
+  res.json(
+    pedidos.map((p) => ({
+      id: p.id,
+      clienteId: p.clienteId,
+      nome: p.cliente.user.nome,
+      whatsapp: p.cliente.user.telefone,
+      duracao: p.duracao,
+      totalSessoes: p.totalSessoes,
+      diaSemanaFixo: p.diaSemanaFixo,
+      horaFixa: p.horaFixa,
+      valorTotal: p.valorTotal,
+      criadoPorNome: p.criadoPorNome,
+      criadoEm: p.criadoEm,
+    }))
+  );
+});
+
+// Aceitar um pedido pendente: cria o pacote, lança TODAS as sessões na Agenda (se veio dia/hora
+// fixo) e confirma o pagamento já recebido (se informado) — só aqui vira receita de verdade.
+router.post("/novos-pacientes/:id/aceitar", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  try {
+    const resultado = await aceitarSolicitacaoNovoPaciente({ solicitacaoId: req.params.id, profissionalId });
+    res.json(resultado);
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message || "Erro ao aceitar paciente." });
+  }
+});
+
+// Recusar um pedido pendente (ex: veio pra profissional errada) — desfaz o cadastro por
+// completo, igual "excluir cadastro recente". O cliente nem chega a aparecer na lista dela.
+router.delete("/novos-pacientes/:id", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const pedido = await prisma.solicitacaoNovoPaciente.findFirst({
+    where: { id: req.params.id, profissionalId, status: "PENDENTE" },
+    include: { cliente: { include: { user: { select: { nome: true } } } } },
+  });
+  if (!pedido) return res.status(404).json({ erro: "Esse pedido não existe mais ou já foi respondido." });
+  const nomeCliente = pedido.cliente.user.nome;
+  await excluirCliente(pedido.clienteId);
+  await notificarDonos({
+    titulo: "Pedido de novo paciente recusado",
+    mensagem: `${req.user.nome} recusou o cadastro de ${nomeCliente} (não era pra ela).`,
+    tipo: "sistema",
+  });
+  await notificarAtendentes({
+    titulo: "Pedido de novo paciente recusado",
+    mensagem: `${req.user.nome} recusou o cadastro de ${nomeCliente} (não era pra ela).`,
+    tipo: "sistema",
+  });
+  res.json({ ok: true });
+});
+
 // Cadastrar direto um cliente que a profissional já atendia antes (sem precisar da
 // recepção cadastrar um por um). Já entra vinculado a ela mesma. Se ela informar o
 // pacote (duração/sessões/quantas já faltam) e o dia+hora fixos já combinados com o
@@ -798,54 +862,23 @@ router.post("/clientes", async (req, res) => {
     });
   }
 
-  // Dia e horário fixo já combinado com o cliente — cria a próxima sessão direto na Agenda
+  // Fase 55 — dia e horário fixo já combinado com o cliente: cria TODAS as sessões do pacote
+  // direto na Agenda (uma por semana), não só a próxima. Antes só a 1ª sessão entrava de fato no
+  // calendário; o resto existia só de forma implícita (o horário fixo ocupado).
+  let agendamentos = [];
   if (diaSemanaFixo && horaFixa) {
-    const indiceAlvo = DIAS_SEMANA_JS.indexOf(diaSemanaFixo);
-    const hoje = new Date();
-    const diffDias = (indiceAlvo - hoje.getDay() + 7) % 7;
-    const dataSessao = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + diffDias);
-
-    const conflito = await prisma.agendamento.findFirst({
-      where: { profissionalId, data: dataSessao, horaInicio: horaFixa, status: { in: ["AGENDADO", "CONFIRMADO"] } },
+    const resultado = await gerarAgendamentosRecorrentes({
+      profissionalId,
+      clienteId,
+      pacoteId: pacote?.id || null,
+      diaSemanaFixo,
+      horaFixa,
+      duracao,
+      totalSessoes: totalSessoes || 1,
     });
-
-    if (conflito) {
-      avisoAgenda = "Já existe outra sessão marcada nesse mesmo dia e horário — não criei a sessão fixa automaticamente. Adicione manualmente na Agenda.";
-    } else {
-      agendamento = await prisma.agendamento.create({
-        data: {
-          profissionalId,
-          clienteId,
-          pacoteId: pacote?.id || null,
-          data: dataSessao,
-          diaSemana: diaSemanaFixo,
-          horaInicio: horaFixa,
-          duracao: duracao || "MIN50",
-        },
-      });
-
-      // Esse dia+horário passa a ser o horário fixo dele com ela (recorrente toda semana) — só
-      // avisa se já constar como fixo de outro cliente, em vez de travar o cadastro por causa disso.
-      const slotFixo = await prisma.disponibilidade.findFirst({
-        where: { profissionalId, diaSemana: diaSemanaFixo, horaInicio: horaFixa, ativo: true },
-      });
-      if (slotFixo) {
-        if (slotFixo.ocupadoPorClienteId && slotFixo.ocupadoPorClienteId !== clienteId) {
-          avisoAgenda =
-            (avisoAgenda ? avisoAgenda + " " : "") +
-            "Atenção: esse horário já consta como fixo de outro cliente — confira se não vai bater com a sessão dele.";
-        } else {
-          await prisma.disponibilidade.updateMany({
-            where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
-            data: { ocupadoPorClienteId: null, ocupadoEm: null },
-          });
-          await prisma.disponibilidade.update({
-            where: { id: slotFixo.id },
-            data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
-          });
-        }
-      }
-    }
+    agendamentos = resultado.agendamentos;
+    avisoAgenda = resultado.avisoAgenda;
+    agendamento = agendamentos[0] || null;
   }
 
   res.json({
@@ -857,6 +890,7 @@ router.post("/clientes", async (req, res) => {
     transacao,
     avisoFinanceiro,
     agendamento,
+    agendamentos,
     avisoAgenda,
   });
 });
@@ -996,7 +1030,14 @@ router.put("/clientes/:id/situacao", async (req, res) => {
     await prisma.cliente.update({ where: { id: cliente.id }, data: { situacao: "EXCLUIDO", profissionalAtualId: null } });
     // Libera qualquer horário fixo que esse cliente tivesse — volta a aparecer livre pra outros.
     await prisma.disponibilidade.updateMany({ where: { ocupadoPorClienteId: cliente.id }, data: { ocupadoPorClienteId: null, ocupadoEm: null } });
+    // Fase 55 — antes só o Dono era avisado; a Atendente também precisa saber (ela que vai puxar
+    // o follow-up/fila de reativação no dia a dia).
     await notificarDonos({
+      titulo: "Cliente saiu",
+      mensagem: `${base.nomeCliente} não renovou e foi removido(a) por ${req.user.nome}.`,
+      tipo: "cliente",
+    });
+    await notificarAtendentes({
       titulo: "Cliente saiu",
       mensagem: `${base.nomeCliente} não renovou e foi removido(a) por ${req.user.nome}.`,
       tipo: "cliente",

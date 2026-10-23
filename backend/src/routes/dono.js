@@ -271,10 +271,21 @@ router.get("/clientes", async (req, res) => {
       user: { select: { nome: true, email: true, telefone: true, ativo: true } },
       profissionalAtual: { include: { user: { select: { nome: true, role: true } } } },
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
+      // Fase 55 — enquanto não é aceito pela profissional, ainda não tem profissionalAtual; isso
+      // é o que deixa a tela dizer "aguardando aceite" em vez de "sem profissional".
+      solicitacoesNovoPaciente: {
+        where: { status: "PENDENTE" },
+        include: { profissional: { include: { user: { select: { nome: true } } } } },
+        take: 1,
+      },
     },
   });
   res.json(
-    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
+    clientes.map((c) => ({
+      ...c,
+      statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }),
+      aguardandoAceiteDe: c.solicitacoesNovoPaciente[0]?.profissional?.user?.nome || null,
+    }))
   );
 });
 
@@ -288,18 +299,13 @@ router.post("/clientes", async (req, res) => {
       ...req.body,
       cadastradoPorId: null, // esse campo só existe pra Atendente (ver schema) — Dono fica registrado via realizadoPorId no histórico
       registradoPor: { id: req.user.id, nome: req.user.nome },
-      origemTransacao: "ATENDENTE", // enum do banco não tem um valor próprio de "DONO" (ver comentário no util)
     });
     res.json({
       id: resultado.user.id,
       email: resultado.user.email,
       senhaProvisoria: resultado.senha,
       cliente: resultado.cliente,
-      pacote: resultado.pacote,
-      transacao: resultado.transacao,
-      avisoFinanceiro: resultado.avisoFinanceiro,
-      agendamento: resultado.agendamento,
-      avisoAgenda: resultado.avisoAgenda,
+      aguardandoAceite: true,
     });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message || "Erro ao cadastrar cliente." });

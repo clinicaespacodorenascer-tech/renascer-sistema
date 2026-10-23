@@ -93,6 +93,14 @@ enum SituacaoCliente {
   EXCLUIDO
 }
 
+// Fase 55 — quando a Atendente ou o Dono cadastra um cliente escolhendo a profissional, ele fica
+// PENDENTE até ela aceitar na aba "Novos pacientes". ACEITA é quando ela confirma (aí sim entra
+// na agenda e vira receita de verdade).
+enum StatusSolicitacaoNovoPaciente {
+  PENDENTE
+  ACEITA
+}
+
 // Cada linha do histórico registra um momento importante da vida do cliente no sistema —
 // só o dono enxerga essa linha do tempo completa.
 enum TipoEventoHistorico {
@@ -311,6 +319,7 @@ model Profissional {
   relatorios       RelatorioCliente[]
   mensagens        MensagemInterna[]    @relation("MensagensDoProfissional")
   tarefasCriadas   Tarefa[]             @relation("TarefasCriadasPeloProfissional")
+  solicitacoesNovoPaciente SolicitacaoNovoPaciente[]
 
   criadoEm     DateTime @default(now())
 
@@ -385,6 +394,7 @@ model Cliente {
   mensagens      MensagemInterna[] @relation("MensagensDoCliente")
   historico      HistoricoCliente[]
   horariosFixos  Disponibilidade[] @relation("ClienteHorarioFixo")
+  solicitacoesNovoPaciente SolicitacaoNovoPaciente[]
 
   criadoEm       DateTime @default(now())
 
@@ -392,6 +402,43 @@ model Cliente {
   @@index([situacao])
   @@index([canalOrigem])
   @@map("clientes")
+}
+
+// Fase 55 — "pedido de novo paciente": criado quando a Atendente ou o Dono cadastra um cliente
+// já escolhendo a profissional (eles nunca cadastram direto pra si mesmos, diferente da
+// Profissional). O cliente já ganha login na hora, mas só vira paciente de fato dela — com
+// pacote, sessões na agenda e lançamento financeiro — quando ela aceita na aba "Novos pacientes".
+// Guarda aqui, pendente, tudo que foi combinado no cadastro (pacote, dia/hora fixo, pagamento já
+// recebido) pra aplicar tudo de uma vez só no momento do aceite.
+model SolicitacaoNovoPaciente {
+  id             String       @id @default(cuid())
+  clienteId      String
+  cliente        Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  profissionalId String
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+
+  duracao        DuracaoSessao?
+  totalSessoes   Int?
+  diaSemanaFixo  DiaSemana?
+  horaFixa       String?
+
+  valorTotal          Float?
+  tipo                TipoTransacao?
+  comprovanteBase64   String?        @db.Text
+  comprovanteMimeType String?
+  observacao          String?
+
+  criadoPorNome  String   // "foto" de quem cadastrou (atendente ou dono), pra mostrar na tela dela
+  criadoPorId    String?
+
+  status         StatusSolicitacaoNovoPaciente @default(PENDENTE)
+  criadoEm       DateTime  @default(now())
+  respondidoEm   DateTime?
+
+  @@index([profissionalId])
+  @@index([clienteId])
+  @@index([status])
+  @@map("solicitacoes_novo_paciente")
 }
 
 // Linha do tempo do cliente (entrou, renovou, foi excluído por não renovar, foi reativado) —

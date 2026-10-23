@@ -16,12 +16,11 @@ const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
 
 // ---------- Cadastro de novos clientes ----------
-// Fase 54 — agora no mesmo formato "canvas" da Profissional (pacote + dia/hora fixo com
-// agendamento automático), com a diferença de que aqui a profissional é escolhida (obrigatório).
-// Continua podendo, no mesmo cadastro, já lançar o pagamento recebido — isso cria/ajusta o
-// pacote e a transação financeira, contando na hora no painel do Dono. Toda essa lógica
-// compartilhada (login automático, pacote, dia fixo, pagamento) vive em
-// utils/cadastrarCliente.js, junto com a rota equivalente do Dono.
+// Fase 54/55 — mesmo formato "canvas" da Profissional (pacote + dia/hora fixo), com a profissional
+// escolhida (obrigatório). Fase 55: o cliente já ganha login na hora, mas o pacote, a agenda e o
+// pagamento (se informado) ficam PENDENTES até a profissional aceitar na aba "Novos pacientes"
+// dela — é o aceite que gera a receita de verdade pra clínica/repasse. Toda essa lógica
+// compartilhada vive em utils/cadastrarCliente.js, junto com a rota equivalente do Dono.
 router.post("/clientes", async (req, res) => {
   const atendenteId = req.user.atendente.id;
   try {
@@ -29,18 +28,13 @@ router.post("/clientes", async (req, res) => {
       ...req.body,
       cadastradoPorId: atendenteId,
       registradoPor: { id: req.user.id, nome: req.user.nome },
-      origemTransacao: "ATENDENTE",
     });
     res.json({
       id: resultado.user.id,
       email: resultado.user.email,
       senhaProvisoria: resultado.senha,
       cliente: resultado.cliente,
-      pacote: resultado.pacote,
-      transacao: resultado.transacao,
-      avisoFinanceiro: resultado.avisoFinanceiro,
-      agendamento: resultado.agendamento,
-      avisoAgenda: resultado.avisoAgenda,
+      aguardandoAceite: true,
     });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message || "Erro ao cadastrar cliente." });
@@ -93,11 +87,23 @@ router.get("/clientes", async (req, res) => {
       user: { select: { nome: true, email: true, telefone: true } },
       profissionalAtual: { include: { user: { select: { nome: true, role: true } } } },
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
+      // Fase 55 — enquanto não é aceito pela profissional, o cliente ainda não tem
+      // profissionalAtual; isso é o que deixa a tela dizer "aguardando aceite" em vez de
+      // simplesmente "sem profissional" (que ficaria confuso).
+      solicitacoesNovoPaciente: {
+        where: { status: "PENDENTE" },
+        include: { profissional: { include: { user: { select: { nome: true } } } } },
+        take: 1,
+      },
     },
     orderBy: { criadoEm: "desc" },
   });
   res.json(
-    clientes.map((c) => ({ ...c, statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }) }))
+    clientes.map((c) => ({
+      ...c,
+      statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }),
+      aguardandoAceiteDe: c.solicitacoesNovoPaciente[0]?.profissional?.user?.nome || null,
+    }))
   );
 });
 
