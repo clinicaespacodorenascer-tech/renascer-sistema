@@ -25,7 +25,6 @@ export default function AreaCliente() {
     { id: "painel", label: "Início" },
     { id: "agenda", label: "Agenda" },
     { id: "financeiro", label: "Pacotes" },
-    { id: "chat", label: "Chat" },
     { id: "diario", label: "Meu dia" },
     { id: "tarefas", label: "Tarefas" },
     { id: "relatorios", label: "Relatórios" },
@@ -42,7 +41,6 @@ export default function AreaCliente() {
       {aba === "painel" && <AbaPainel />}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "financeiro" && <AbaFinanceiro />}
-      {aba === "chat" && <AbaChat />}
       {aba === "diario" && <AbaDiario />}
       {aba === "tarefas" && <AbaTarefas />}
       {aba === "relatorios" && <AbaRelatorios />}
@@ -163,11 +161,11 @@ function TelaContrato({ textoContrato, onAceito }) {
           <input className="input" placeholder="CPF" value={cpf} onChange={(e) => setCpf(e.target.value)} />
           <div>
             <label className="text-sm text-nv-muted">Foto do documento (obrigatória)</label>
-            <input type="file" accept="image/*" onChange={(e) => setFotoDocumento(e.target.files[0])} />
+            <input type="file" accept="image/*" className="input-file" onChange={(e) => setFotoDocumento(e.target.files[0])} />
           </div>
           <div>
             <label className="text-sm text-nv-muted">Foto do seu rosto (opcional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setFotoRosto(e.target.files[0])} />
+            <input type="file" accept="image/*" className="input-file" onChange={(e) => setFotoRosto(e.target.files[0])} />
           </div>
           <label className="flex items-center gap-2 text-sm text-nv-ink2">
             <input type="checkbox" checked={concordo} onChange={(e) => setConcordo(e.target.checked)} />
@@ -474,11 +472,6 @@ function AbaAgenda() {
                 </p>
                 <span className={`badge mt-1 ${STATUS_COR_CLIENTE[ag.status] || ""}`}>{ag.status}</span>
               </div>
-              {ag.status !== "REALIZADO" && ag.status !== "CANCELADO" && (
-                <a href={`/cliente/videochamada/${ag.id}`} className="text-sm text-nv-blue underline">
-                  🎥 Entrar na videochamada
-                </a>
-              )}
             </div>
           ))}
         </div>
@@ -740,74 +733,9 @@ function AbaFinanceiro() {
   );
 }
 
-// ---------------- CHAT / RECADOS ----------------
-function AbaChat() {
-  const [mensagens, setMensagens] = useState([]);
-  const [texto, setTexto] = useState("");
-  const [erro, setErro] = useState("");
-  const [enviando, setEnviando] = useState(false);
-
-  async function carregar() {
-    const { data } = await api.get("/cliente/chat");
-    setMensagens(data);
-  }
-  useEffect(() => {
-    carregar();
-  }, []);
-
-  async function enviar() {
-    if (!texto.trim()) return;
-    setErro("");
-    setEnviando(true);
-    try {
-      await api.post("/cliente/chat", { texto });
-      setTexto("");
-      carregar();
-    } catch (e) {
-      setErro(e?.response?.data?.erro || "Não foi possível enviar a mensagem.");
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4 font-publicSans">
-      <div>
-        <p className="nv-eyebrow mb-1">Painel do Cliente</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Chat</h1>
-      </div>
-      <div className="nv-card">
-        <p className="text-xs text-nv-muted mb-3">
-          Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
-        </p>
-        <div className="h-64 overflow-y-auto border border-nv-borderLight rounded-lg p-3 space-y-2 mb-3 bg-nv-bg">
-          {mensagens.map((m) => (
-            <div key={m.id} className={`text-sm ${m.autor === "CLIENTE" ? "text-right" : ""}`}>
-              <span className="inline-block bg-white px-3 py-1.5 rounded-lg border border-nv-border text-nv-ink2">
-                {m.tipo === "recado_diario" && <span className="block text-xs text-nv-blue font-medium mb-0.5">Recado do dia</span>}
-                {m.texto}
-              </span>
-            </div>
-          ))}
-          {mensagens.length === 0 && <p className="text-xs text-nv-muted3">Sem mensagens ainda.</p>}
-        </div>
-        {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="input flex-1 min-w-[150px]"
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && enviar()}
-            placeholder="Escreva sua mensagem..."
-          />
-          <button className="btn-primary" onClick={enviar} disabled={enviando}>
-            Enviar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Fase 52 — chat interno removido (o Elismael pediu pra tirar, não é mais usado nem pelo cliente
+// nem pela profissional). Deixei as rotas de backend como estão (não apaguei tabela nem dado
+// nenhum) — só parei de chamar e de mostrar essa tela.
 
 // ---------------- MEU DIA (checkin com emojis, opcional) ----------------
 const HUMORES = [

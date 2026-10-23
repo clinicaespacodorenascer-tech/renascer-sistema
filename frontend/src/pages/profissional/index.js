@@ -776,11 +776,16 @@ function NovaSessaoModal({ diaSemana, dataInicial, diaLabel, clientes, onAgendad
   );
 }
 
-// ---------------- CLIENTES (lista + chat + relatórios) ----------------
+// ---------------- CLIENTES (lista + ficha completa) ----------------
+// Fase 52 — redesenhada igual ao canvas "Meus clientes": lista com busca e filtro de quem está
+// aguardando renovação, e a ficha abre em tela cheia (não mais numa coluna ao lado) com 3 abas —
+// Dados, Prontuário e evolução, Financeiro — e um botão "Agendar sessão" sempre à mão no topo. O
+// chat interno foi removido (o Elismael pediu pra tirar, não é mais usado).
 export function AbaClientes() {
   const [clientes, setClientes] = useState([]);
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState("todos");
   const [selecionadoId, setSelecionadoId] = useState(null);
-  const [detalhe, setDetalhe] = useState(null);
 
   async function carregar() {
     const { data } = await api.get("/profissional/clientes");
@@ -790,133 +795,386 @@ export function AbaClientes() {
     carregar();
   }, []);
 
-  // Fase 51 — a ficha agora busca o cliente completo (pacotes com valor, prontuário/relatórios,
-  // renovação) assim que seleciona, pra mostrar prontuário, financeiro do paciente e "quando ele
-  // renova" — igual ao canvas (artboard "Meus clientes", ficha da Camila Duarte). Antes a ficha só
-  // usava os dados resumidos da listagem, que não tinham nada disso.
-  useEffect(() => {
-    if (!selecionadoId) {
-      setDetalhe(null);
-      return;
-    }
-    setDetalhe(null);
-    api.get(`/profissional/clientes/${selecionadoId}`).then((r) => setDetalhe(r.data));
-  }, [selecionadoId]);
+  if (selecionadoId) {
+    return (
+      <FichaCliente
+        clienteId={selecionadoId}
+        onVoltar={() => setSelecionadoId(null)}
+        onMudouSituacao={() => {
+          carregar();
+          setSelecionadoId(null);
+        }}
+      />
+    );
+  }
 
-  const selecionado = clientes.find((c) => c.id === selecionadoId) || null;
+  const filtrados = clientes
+    .filter((c) => (filtro === "renovar" ? c.statusCliente !== "VERDE" : true))
+    .filter((c) => c.user.nome.toLowerCase().includes(busca.toLowerCase()))
+    .slice()
+    .sort((a, b) => a.user.nome.localeCompare(b.user.nome));
 
   return (
     <div className="space-y-4 font-publicSans">
-      <div>
-        <p className="nv-eyebrow mb-1">Painel da Profissional</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meus clientes</h1>
-        <p className="text-nv-muted text-sm mt-0.5">Você tem {clientes.length} cliente(s) no Espaço do Renascer.</p>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="nv-card md:col-span-1">
-          <div className="space-y-2">
-            {clientes.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelecionadoId(c.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg border ${
-                  selecionadoId === c.id ? "border-nv-blue bg-nv-blue/5" : "border-nv-borderLight"
-                }`}
-              >
-                <p className="font-medium text-nv-ink2 flex items-center gap-1.5">
-                  <StatusCliente status={c.statusCliente} />
-                  {c.user.nome}
-                </p>
-                <p className="text-xs text-nv-muted">
-                  {c.pacotes[0] ? `${c.pacotes[0].sessoesUsadas}/${c.pacotes[0].totalSessoes} sessões` : "sem pacote ativo"}
-                </p>
-                <IndicadorPresenca ultimoAcessoEm={c.user.ultimoAcessoEm} className="mt-0.5" />
-              </button>
-            ))}
-            {clientes.length === 0 && <p className="text-sm text-nv-muted">Nenhum cliente ainda.</p>}
-          </div>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel da Profissional</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Meus clientes</h1>
+          <p className="text-nv-muted text-sm mt-0.5">{clientes.length} cliente(s) em ordem alfabética</p>
         </div>
-        <div className="md:col-span-2">
-          {selecionado ? (
-            <DetalheCliente cliente={selecionado} onMudouSituacao={() => { carregar(); setSelecionadoId(null); }} />
-          ) : (
-            <p className="text-nv-muted">Selecione um cliente.</p>
-          )}
-        </div>
+        <input className="input !w-56" placeholder="Buscar por nome..." value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
-    </div>
-  );
-}
 
-// Fase 51 — cartão de cabeçalho da ficha (nome, WhatsApp/e-mail, pacote atual, status), igual ao
-// que o canvas mostra em "Meus clientes" (artboard da Camila Duarte) — antes a ficha só tinha o
-// nome, sem esse resumo rápido no topo.
-function DetalheCliente({ cliente, onMudouSituacao }) {
-  const [sub, setSub] = useState("chat");
-  const iniciais = cliente.user.nome
-    .split(" ")
-    .slice(0, 2)
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
-  const pacote = cliente.pacotes?.[0];
-  return (
-    <div className="nv-card">
-      <div className="flex items-center justify-between gap-3 flex-wrap pb-3.5 mb-3.5 border-b border-nv-borderLight">
-        <div className="flex items-center gap-3 min-w-0">
-          {cliente.user.fotoUrl ? (
-            <img src={cliente.user.fotoUrl} alt={cliente.user.nome} className="w-11 h-11 rounded-full object-cover border border-nv-border shrink-0" />
-          ) : (
-            <div className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white shrink-0 bg-nv-blue">
-              {iniciais}
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="font-sora font-bold text-nv-ink truncate">{cliente.user.nome}</p>
-            <p className="text-xs text-nv-muted3 truncate">
-              {cliente.user.telefone}
-              {cliente.user.email ? ` · ${cliente.user.email}` : ""}
-            </p>
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          {pacote && (
-            <p className="text-[11px] text-nv-muted3 mb-0.5">
-              pacote atual · {pacote.sessoesUsadas}/{pacote.totalSessoes} sessões · {pacote.duracao === "MIN30" ? "30min" : "50min"}
-            </p>
-          )}
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
-            <StatusCliente status={cliente.statusCliente} />
-          </span>
-        </div>
-      </div>
-      <div className="flex gap-2 my-3 flex-wrap">
+      <div className="flex gap-2">
         {[
-          ["chat", "Chat / recados"],
-          ["agendar", "Agendar sessão"],
-          ["relatorios", "Relatórios"],
-          ["pacote", "Pacote / pagamento"],
-          ["notificacao", "Notificação"],
-          ["login", "Corrigir login"],
+          ["todos", "Todos"],
+          ["renovar", "Aguardando renovação"],
         ].map(([id, label]) => (
           <button
             key={id}
-            onClick={() => setSub(id)}
-            className={`text-sm px-3 py-1.5 rounded-full font-semibold transition-colors ${
-              sub === id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
+            type="button"
+            onClick={() => setFiltro(id)}
+            className={`text-[13px] px-3.5 py-1.5 rounded-[9px] font-semibold ${
+              filtro === id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-border"
             }`}
           >
             {label}
           </button>
         ))}
       </div>
-      {sub === "chat" && <ChatCliente clienteId={cliente.id} />}
-      {sub === "agendar" && <AgendarSessaoCliente clienteId={cliente.id} clienteNome={cliente.user.nome} />}
-      {sub === "relatorios" && <RelatoriosCliente clienteId={cliente.id} />}
-      {sub === "pacote" && <NovoPacoteCliente clienteId={cliente.id} />}
-      {sub === "notificacao" && <NotificacaoCliente clienteId={cliente.id} rotaBase="/profissional" />}
-      {sub === "login" && <CorrigirLoginCliente cliente={cliente} />}
-      <SituacaoCliente clienteId={cliente.id} rotaBase="/profissional" onMudou={onMudouSituacao} />
+
+      <div className="nv-card !p-0 divide-y divide-nv-borderLight">
+        {filtrados.map((c) => {
+          const pacote = c.pacotes?.[0];
+          const aguardando = c.statusCliente !== "VERDE";
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setSelecionadoId(c.id)}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left hover:bg-nv-bg transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <StatusCliente status={c.statusCliente} />
+                <div className="min-w-0">
+                  <p className="font-semibold text-nv-ink2 text-[14px] truncate">{c.user.nome}</p>
+                  <p className="text-xs text-nv-muted3 truncate">
+                    {pacote ? `Pacote ${pacote.totalSessoes} sessões · ${pacote.duracao === "MIN30" ? "30min" : "50min"}` : "Sem pacote ativo"}
+                    {" · contrato desde "}
+                    {new Date(c.criadoEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className={`text-[11.5px] font-semibold whitespace-nowrap ${aguardando ? "text-[#D6883B]" : "text-nv-green"}`}>
+                  {aguardando ? "Aguardando renovação" : "Ativo"}
+                </span>
+                <span className="text-nv-blue text-[12.5px] font-semibold whitespace-nowrap">Ver ficha →</span>
+              </div>
+            </button>
+          );
+        })}
+        {filtrados.length === 0 && <p className="text-sm text-nv-muted px-4 py-6">Nenhum cliente encontrado.</p>}
+      </div>
+    </div>
+  );
+}
+
+const TABS_FICHA_CLIENTE = [
+  ["dados", "Dados"],
+  ["prontuario", "Prontuário e evolução"],
+  ["financeiro", "Financeiro"],
+];
+
+// Fase 52 — ficha do cliente em tela cheia, igual ao canvas: cabeçalho com pacote/status +
+// "Agendar sessão" sempre visível, e as 3 abas (Dados / Prontuário e evolução / Financeiro).
+// Busca o cliente completo direto pelo id (pacotes, horário fixo, relatórios, transações), em
+// vez de depender do resumo da listagem.
+function FichaCliente({ clienteId, onVoltar, onMudouSituacao }) {
+  const [detalhe, setDetalhe] = useState(null);
+  const [abaFicha, setAbaFicha] = useState("dados");
+  const [agendando, setAgendando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get(`/profissional/clientes/${clienteId}`);
+    setDetalhe(data);
+  }
+  useEffect(() => {
+    setDetalhe(null);
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteId]);
+
+  const voltar = (
+    <button type="button" onClick={onVoltar} className="text-nv-blue text-xs font-semibold underline">
+      ← Meus clientes
+    </button>
+  );
+
+  if (!detalhe) {
+    return (
+      <div className="space-y-3 font-publicSans">
+        {voltar}
+        <p className="text-sm text-nv-muted">Carregando ficha...</p>
+      </div>
+    );
+  }
+
+  const iniciais = detalhe.user.nome.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
+  const pacote = detalhe.pacotes?.[0];
+  const horarioFixo = detalhe.horariosFixos?.[0];
+
+  return (
+    <div className="space-y-4 font-publicSans">
+      {voltar}
+
+      <div className="nv-card">
+        <div className="flex items-center justify-between gap-3 flex-wrap pb-3.5 mb-3.5 border-b border-nv-borderLight">
+          <div className="flex items-center gap-3 min-w-0">
+            {detalhe.user.fotoUrl ? (
+              <img src={detalhe.user.fotoUrl} alt={detalhe.user.nome} className="w-11 h-11 rounded-full object-cover border border-nv-border shrink-0" />
+            ) : (
+              <div className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white shrink-0 bg-nv-blue">
+                {iniciais}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-sora font-bold text-nv-ink truncate">{detalhe.user.nome}</p>
+              <p className="text-xs text-nv-muted3 truncate">
+                {detalhe.user.telefone}
+                {detalhe.user.email ? ` · ${detalhe.user.email}` : ""}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              {pacote && (
+                <p className="text-[11px] text-nv-muted3 mb-0.5">
+                  pacote atual · {pacote.sessoesUsadas}/{pacote.totalSessoes} sessões · {pacote.duracao === "MIN30" ? "30min" : "50min"}
+                </p>
+              )}
+              <StatusCliente status={detalhe.statusCliente} mostrarLabel />
+            </div>
+            <button type="button" className="btn-primary !text-xs !px-3.5 !py-2 whitespace-nowrap" onClick={() => setAgendando(true)}>
+              Agendar sessão
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {TABS_FICHA_CLIENTE.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setAbaFicha(id)}
+              className={`text-sm px-3 py-1.5 rounded-full font-semibold transition-colors ${
+                abaFicha === id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-borderLight"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {abaFicha === "dados" && (
+          <FichaDados detalhe={detalhe} pacote={pacote} horarioFixo={horarioFixo} onAtualizado={carregar} onMudouSituacao={onMudouSituacao} />
+        )}
+        {abaFicha === "prontuario" && <FichaProntuario clienteId={clienteId} relatorios={detalhe.relatorios} onNovo={carregar} />}
+        {abaFicha === "financeiro" && <FichaFinanceiroCliente transacoes={detalhe.transacoes} />}
+      </div>
+
+      {agendando && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAgendando(false);
+          }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-sora font-semibold text-nv-ink text-lg">Agendar sessão</h3>
+              <button className="text-nv-muted3 hover:text-nv-ink text-2xl leading-none" onClick={() => setAgendando(false)} title="Fechar">
+                ×
+              </button>
+            </div>
+            <AgendarSessaoCliente clienteId={clienteId} clienteNome={detalhe.user.nome} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Campo({ label, valor, destaque }) {
+  return (
+    <div>
+      <p className="text-[10.5px] font-bold text-nv-muted uppercase tracking-[0.04em] mb-0.5">{label}</p>
+      <p className={`text-[13.5px] font-semibold ${destaque ? "text-nv-blue" : "text-nv-ink2"}`}>{valor}</p>
+    </div>
+  );
+}
+
+// Fase 52 — aba "Dados": o resumo igual ao canvas (nome, WhatsApp, horário fixo, duração,
+// sessões pendentes e renovação). As ações que antes eram abas separadas ficam recolhidas
+// embaixo (agendar já virou o botão do topo) — registrar pacote, contato de notificação/data de
+// renovação e corrigir login — pra não poluir a tela com tudo aberto de uma vez.
+function FichaDados({ detalhe, pacote, horarioFixo, onAtualizado, onMudouSituacao }) {
+  const [abrirMais, setAbrirMais] = useState(null); // "pacote" | "notificacao" | "login" | null
+
+  const sessoesPendentes = pacote ? pacote.totalSessoes - pacote.sessoesUsadas : 0;
+  const horarioFixoLabel = horarioFixo ? `${DIAS.find(([v]) => v === horarioFixo.diaSemana)?.[1]}s, ${horarioFixo.horaInicio}` : "Sem horário fixo";
+  const renovacaoLabel = detalhe.renovarEm
+    ? `Renovação prevista em ${new Date(detalhe.renovarEm).toLocaleDateString("pt-BR")}`
+    : "Sem data de renovação cadastrada";
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3.5 bg-nv-bg rounded-xl p-4">
+        <Campo label="Nome completo" valor={detalhe.user.nome} />
+        <Campo label="WhatsApp" valor={detalhe.user.telefone || "-"} />
+        <Campo label="Horário fixo" valor={horarioFixoLabel} />
+        <Campo label="Duração da sessão" valor={pacote ? (pacote.duracao === "MIN30" ? "30 minutos" : "50 minutos") : "-"} />
+        <Campo label="Sessões pendentes" valor={pacote ? `${sessoesPendentes} restantes do pacote atual` : "Sem pacote ativo"} />
+        <Campo label="Renovação" valor={renovacaoLabel} destaque={!!detalhe.renovarEm} />
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {[
+          ["pacote", "Registrar pacote / renovação"],
+          ["notificacao", "Contato de notificação e renovação"],
+          ["login", "Corrigir login"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setAbrirMais(abrirMais === id ? null : id)}
+            className={`text-[12.5px] px-3 py-1.5 rounded-[8px] font-semibold border ${
+              abrirMais === id ? "bg-nv-navy text-white border-nv-navy" : "bg-white text-nv-muted border-nv-border"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {abrirMais === "pacote" && (
+        <div className="border-t border-nv-borderLight pt-3.5">
+          <NovoPacoteCliente clienteId={detalhe.id} onRegistrado={onAtualizado} />
+        </div>
+      )}
+      {abrirMais === "notificacao" && (
+        <div className="border-t border-nv-borderLight pt-3.5">
+          <NotificacaoCliente clienteId={detalhe.id} rotaBase="/profissional" onSalvo={onAtualizado} />
+        </div>
+      )}
+      {abrirMais === "login" && (
+        <div className="border-t border-nv-borderLight pt-3.5">
+          <CorrigirLoginCliente cliente={detalhe} />
+        </div>
+      )}
+
+      <SituacaoCliente clienteId={detalhe.id} rotaBase="/profissional" onMudou={onMudouSituacao} />
+    </div>
+  );
+}
+
+// Fase 52 — aba "Prontuário e evolução": histórico das evoluções desse cliente (mais recente
+// primeiro) com um formulário pra registrar uma nova. Reaproveita o mesmo RelatorioCliente que já
+// existia (POST /clientes/:id/relatorios) — só ganhou essa moldura de prontuário com a lista
+// visível, que antes não existia em lugar nenhum da tela.
+function FichaProntuario({ clienteId, relatorios, onNovo }) {
+  const [titulo, setTitulo] = useState("");
+  const [conteudo, setConteudo] = useState("");
+  const [visivel, setVisivel] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function publicar() {
+    setSalvando(true);
+    setMsg("");
+    try {
+      await api.post(`/profissional/clientes/${clienteId}/relatorios`, { titulo, conteudo, visivelParaCliente: visivel });
+      setTitulo("");
+      setConteudo("");
+      setVisivel(false);
+      setMsg("Evolução registrada!");
+      onNovo?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-nv-bg rounded-xl p-4 space-y-2.5">
+        <p className="text-[12.5px] font-semibold text-nv-ink2">Nova evolução</p>
+        <input className="input" placeholder="Título (ex: Sessão de 14/10)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+        <textarea className="input" rows={4} placeholder="Evolução da sessão..." value={conteudo} onChange={(e) => setConteudo(e.target.value)} />
+        <label className="flex items-center gap-2 text-[12.5px] text-nv-muted">
+          <input type="checkbox" checked={visivel} onChange={(e) => setVisivel(e.target.checked)} />
+          Tornar visível para o cliente
+        </label>
+        <button className="btn-primary !text-xs !px-3.5 !py-2" onClick={publicar} disabled={!titulo || !conteudo || salvando}>
+          {salvando ? "Salvando..." : "Salvar evolução"}
+        </button>
+        {msg && <p className="text-xs text-nv-muted mt-1">{msg}</p>}
+      </div>
+
+      <div className="divide-y divide-nv-borderLight">
+        {relatorios?.map((r) => (
+          <div key={r.id} className="py-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13.5px] font-semibold text-nv-ink2">{r.titulo}</p>
+              <span className="text-[10.5px] font-semibold text-nv-muted3 whitespace-nowrap">{new Date(r.criadoEm).toLocaleDateString("pt-BR")}</span>
+            </div>
+            <p className="text-[12.5px] text-nv-muted2 mt-0.5 whitespace-pre-wrap">{r.conteudo}</p>
+            {r.visivelParaCliente && (
+              <span className="inline-block mt-1 text-[10px] font-semibold text-nv-green bg-[#EFF8F3] rounded-full px-2 py-0.5">
+                Visível para o cliente
+              </span>
+            )}
+          </div>
+        ))}
+        {(!relatorios || relatorios.length === 0) && <p className="text-[13px] text-nv-muted py-3">Nenhuma evolução registrada ainda.</p>}
+      </div>
+    </div>
+  );
+}
+
+const TIPO_LABEL_FICHA = {
+  PACOTE_NOVO: "Contratação nova",
+  RENOVACAO: "Renovação",
+  SESSAO_EXTRA: "Sessão extra",
+  OUTRO: "Outro",
+};
+
+// Fase 52 — aba "Financeiro": histórico de pagamentos desse cliente (o que pagou, quando, e se já
+// foi repassado pra clínica) — antes essa informação não tinha nenhuma tela na ficha do cliente.
+function FichaFinanceiroCliente({ transacoes }) {
+  const total = (transacoes || []).reduce((s, t) => s + t.valorTotal, 0);
+  return (
+    <div className="space-y-3">
+      <div className="bg-nv-bg rounded-xl p-3.5 flex items-center justify-between">
+        <span className="text-[12.5px] font-semibold text-nv-muted">Total pago por esse cliente</span>
+        <span className="font-sora font-bold text-[17px] text-nv-navy tabular-nums">R$ {total.toFixed(2)}</span>
+      </div>
+      <div className="divide-y divide-nv-borderLight">
+        {transacoes?.map((t) => (
+          <div key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-nv-ink2">{TIPO_LABEL_FICHA[t.tipo] || t.tipo}</p>
+              <p className="text-[11px] text-nv-muted3">
+                {new Date(t.data).toLocaleDateString("pt-BR")} ·{" "}
+                {t.recebidoPor === "PROFISSIONAL" ? (t.repassado ? "repassado" : "aguardando repasse") : "recebido pela clínica"}
+              </p>
+            </div>
+            <span className="text-[13.5px] font-bold text-nv-navy tabular-nums whitespace-nowrap">R$ {t.valorTotal.toFixed(2)}</span>
+          </div>
+        ))}
+        {(!transacoes || transacoes.length === 0) && <p className="text-[13px] text-nv-muted py-3">Nenhum pagamento registrado ainda.</p>}
+      </div>
     </div>
   );
 }
@@ -1081,7 +1339,7 @@ function AgendarSessaoCliente({ clienteId, clienteNome }) {
 }
 
 // ---------------- NOTIFICAÇÃO (contato p/ avisos automáticos + data de renovação) ----------------
-function NotificacaoCliente({ clienteId, rotaBase }) {
+function NotificacaoCliente({ clienteId, rotaBase, onSalvo }) {
   const [notifEmail, setNotifEmail] = useState("");
   const [notifTelefone, setNotifTelefone] = useState("");
   const [renovarEm, setRenovarEm] = useState("");
@@ -1107,6 +1365,7 @@ function NotificacaoCliente({ clienteId, rotaBase }) {
         renovarEm: renovarEm || null,
       });
       setMsg("Salvo! O sistema vai usar esses dados pra mandar os avisos automáticos.");
+      onSalvo?.();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao salvar.");
     }
@@ -1134,7 +1393,7 @@ function NotificacaoCliente({ clienteId, rotaBase }) {
   );
 }
 
-function NovoPacoteCliente({ clienteId }) {
+function NovoPacoteCliente({ clienteId, onRegistrado }) {
   const [duracao, setDuracao] = useState("MIN50");
   const [totalSessoes, setTotalSessoes] = useState(4);
   const [valorTotal, setValorTotal] = useState("");
@@ -1152,6 +1411,7 @@ function NovoPacoteCliente({ clienteId }) {
         ? ` Seu repasse: R$ ${data.transacao.valorProfissional.toFixed(2)} · Parte da Renascer (a repassar): R$ ${data.transacao.valorRenascer.toFixed(2)}.`
         : "";
       setMsg(`Pacote registrado! ${data.totalSessoes} sessão(ões) de ${data.duracao === "MIN30" ? "30min" : "50min"} liberadas.${repasseInfo}`);
+      onRegistrado?.();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao registrar pacote.");
     }
@@ -1181,95 +1441,6 @@ function NovoPacoteCliente({ clienteId }) {
         </button>
       </div>
       {msg && <p className="text-sm mt-1">{msg}</p>}
-    </div>
-  );
-}
-
-function ChatCliente({ clienteId }) {
-  const [mensagens, setMensagens] = useState([]);
-  const [texto, setTexto] = useState("");
-  const [tipo, setTipo] = useState("mensagem");
-  const [erro, setErro] = useState("");
-
-  async function carregar() {
-    const { data } = await api.get(`/profissional/clientes/${clienteId}/mensagens`);
-    setMensagens(data);
-  }
-  useEffect(() => {
-    carregar();
-  }, [clienteId]);
-
-  async function enviar() {
-    if (!texto.trim()) return;
-    setErro("");
-    try {
-      if (tipo === "recado_diario") {
-        await api.post(`/profissional/clientes/${clienteId}/recado`, { texto });
-      } else {
-        await api.post(`/profissional/clientes/${clienteId}/mensagens`, { texto, tipo });
-      }
-      setTexto("");
-      carregar();
-    } catch (e) {
-      setErro(e?.response?.data?.erro || "Não foi possível enviar a mensagem.");
-    }
-  }
-
-  return (
-    <div>
-      <p className="text-xs text-renascer-ink/50 mb-2">
-        Por segurança, não é permitido trocar telefone/WhatsApp por aqui — todo o contato é feito dentro do app.
-      </p>
-      <div className="h-56 overflow-y-auto border border-renascer/10 rounded-lg p-3 space-y-2 mb-3 bg-renascer-light/30">
-        {mensagens.map((m) => (
-          <div key={m.id} className={`text-sm ${m.autor === "PROFISSIONAL" ? "text-right" : ""}`}>
-            <span className="inline-block bg-white px-3 py-1.5 rounded-lg border border-renascer/10">{m.texto}</span>
-          </div>
-        ))}
-        {mensagens.length === 0 && <p className="text-xs text-renascer-ink/40">Sem mensagens ainda.</p>}
-      </div>
-      {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-2">{erro}</p>}
-      <div className="flex flex-wrap gap-2">
-        <select className="input !w-full sm:!w-56" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-          <option value="mensagem">Mensagem</option>
-          <option value="recado_diario">Recado do dia (imprevisto / o que vai trabalhar)</option>
-        </select>
-        <input className="input flex-1 min-w-0" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva..." />
-        <button className="btn-primary" onClick={enviar}>
-          Enviar
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function RelatoriosCliente({ clienteId }) {
-  const [titulo, setTitulo] = useState("");
-  const [conteudo, setConteudo] = useState("");
-  const [visivel, setVisivel] = useState(false);
-  const [enviado, setEnviado] = useState(false);
-
-  async function publicar() {
-    await api.post(`/profissional/clientes/${clienteId}/relatorios`, { titulo, conteudo, visivelParaCliente: visivel });
-    setTitulo("");
-    setConteudo("");
-    setVisivel(false);
-    setEnviado(true);
-    setTimeout(() => setEnviado(false), 3000);
-  }
-
-  return (
-    <div className="space-y-3">
-      <input className="input" placeholder="Título do relatório" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-      <textarea className="input" rows={5} placeholder="Conteúdo do relatório" value={conteudo} onChange={(e) => setConteudo(e.target.value)} />
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={visivel} onChange={(e) => setVisivel(e.target.checked)} />
-        Tornar visível para o cliente
-      </label>
-      <button className="btn-primary" onClick={publicar} disabled={!titulo || !conteudo}>
-        Salvar relatório
-      </button>
-      {enviado && <p className="text-emerald-600 text-sm">Relatório salvo!</p>}
     </div>
   );
 }

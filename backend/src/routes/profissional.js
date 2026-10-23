@@ -1058,6 +1058,11 @@ router.get("/clientes/:id", async (req, res) => {
       pacotes: { orderBy: { iniciadoEm: "desc" } },
       agendamentos: { orderBy: { data: "desc" } },
       relatorios: { where: { profissionalId }, orderBy: { criadoEm: "desc" } },
+      // Fase 52 — pra alimentar a ficha nova (aba Dados mostra o horário fixo combinado, aba
+      // Financeiro mostra o histórico de pagamentos desse cliente) — nenhum dos dois vinha junto
+      // antes, a ficha tinha que adivinhar ou não mostrava.
+      horariosFixos: { where: { ativo: true } },
+      transacoes: { where: { profissionalId }, orderBy: { data: "desc" } },
     },
   });
   if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado." });

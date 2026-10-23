@@ -225,7 +225,7 @@ function AbaAtenderPacientes({ user }) {
   const SUB_ABAS = [
     { id: "agenda", label: "Agenda" },
     { id: "cadastrar", label: "Cadastrar cliente" },
-    { id: "clientes", label: "Clientes" },
+    { id: "clientes", label: "Meus clientes" },
     { id: "financeiro", label: "Financeiro" },
     { id: "config", label: "Disponibilidade" },
   ];
