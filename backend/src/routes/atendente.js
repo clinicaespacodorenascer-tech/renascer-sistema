@@ -9,6 +9,7 @@ const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
 const { inicioDoDia, fimDoDia, periodoDoMes } = require("../utils/meuDia");
+const { gerarEmailAutomatico } = require("../utils/gerarLogin");
 
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
@@ -38,8 +39,16 @@ router.post("/clientes", async (req, res) => {
   // pendência de repasse pra ela.
   const recebidoPorFinal = "PROFISSIONAL";
 
-  const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
+  if (!nome || !nome.trim()) return res.status(400).json({ erro: "Informe o nome do cliente." });
+
+  // Fase 51 — e-mail agora é opcional no cadastro rápido: se não vier um, gera sozinho.
+  let emailFinal = email ? email.toLowerCase().trim() : null;
+  if (emailFinal) {
+    const existente = await prisma.user.findUnique({ where: { email: emailFinal } });
+    if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
+  } else {
+    emailFinal = await gerarEmailAutomatico(nome);
+  }
 
   const senha = senhaProvisoria || Math.random().toString(36).slice(-8);
   const hash = await bcrypt.hash(senha, 10);
@@ -49,7 +58,7 @@ router.post("/clientes", async (req, res) => {
   const user = await prisma.user.create({
     data: {
       nome,
-      email: email.toLowerCase().trim(),
+      email: emailFinal,
       telefone,
       senha: hash,
       role: "CLIENTE",

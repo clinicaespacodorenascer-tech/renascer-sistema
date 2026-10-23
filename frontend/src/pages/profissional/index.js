@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
@@ -68,10 +67,12 @@ export default function AreaProfissional() {
 
   if (carregando) return null;
 
+  // Fase 51 — "Meu dia" saiu do menu da Profissional: o canvas (fonte de verdade do layout) nunca
+  // teve esse item pra ela, só pro Dono e pra Atendente. O componente continua no arquivo (só não
+  // é mais renderizado) pra não perder o código à toa.
   const ABAS = [
-    { id: "meudia", label: "Meu dia" },
-    { id: "agenda", label: "Agenda" },
-    { id: "clientes", label: "Clientes" },
+    { id: "agenda", label: "Minha agenda" },
+    { id: "clientes", label: "Meus clientes" },
     { id: "cadastrar", label: "Cadastrar cliente" },
     { id: "financeiro", label: "Financeiro" },
     { id: "notificacoes", label: "Avisos" },
@@ -80,7 +81,6 @@ export default function AreaProfissional() {
 
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
-      {aba === "meudia" && <AbaMeuDiaProfissional />}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "clientes" && <AbaClientes />}
       {aba === "cadastrar" && <AbaCadastrarCliente />}
@@ -94,29 +94,43 @@ export default function AreaProfissional() {
 // ---------------- CADASTRAR CLIENTE ANTIGO (sem depender da recepção) ----------------
 const FORM_CADASTRO_VAZIO = {
   nome: "",
-  email: "",
   telefone: "",
-  senhaProvisoria: "",
   duracao: "MIN50",
   totalSessoes: 4,
-  sessoesRestantes: "4",
-  valorTotal: "",
   diaSemanaFixo: "",
   horaFixa: "",
 };
 
+// Fase 51 — "há quanto tempo" compacto pro card de "Cadastrados recentemente por mim".
+function formatarHaQuanto(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return "agora há pouco";
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  return diffD === 1 ? "ontem" : `há ${diffD} dias`;
+}
+
 export function AbaCadastrarCliente() {
   const [total, setTotal] = useState(null);
   const [form, setForm] = useState(FORM_CADASTRO_VAZIO);
+  const [sessoesExtras, setSessoesExtras] = useState(0); // local-only, decorativo (igual o mock do canvas)
   const [resultado, setResultado] = useState(null);
   const [msg, setMsg] = useState("");
+  const [recentes, setRecentes] = useState([]);
+  const [excluindoId, setExcluindoId] = useState(null);
 
   async function carregarTotal() {
     const { data } = await api.get("/profissional/clientes");
     setTotal(data.length);
   }
+  async function carregarRecentes() {
+    const { data } = await api.get("/profissional/clientes/recentes");
+    setRecentes(data);
+  }
   useEffect(() => {
     carregarTotal();
+    carregarRecentes();
   }, []);
 
   async function cadastrar() {
@@ -125,21 +139,33 @@ export function AbaCadastrarCliente() {
     try {
       const { data } = await api.post("/profissional/clientes", {
         nome: form.nome,
-        email: form.email,
         telefone: form.telefone,
-        senhaProvisoria: form.senhaProvisoria || undefined,
         duracao: form.duracao,
         totalSessoes: Number(form.totalSessoes),
-        sessoesRestantes: form.sessoesRestantes !== "" ? Number(form.sessoesRestantes) : undefined,
-        valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
         diaSemanaFixo: form.diaSemanaFixo || undefined,
         horaFixa: form.horaFixa || undefined,
       });
       setResultado(data);
       setForm(FORM_CADASTRO_VAZIO);
+      setSessoesExtras(0);
       carregarTotal();
+      carregarRecentes();
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao cadastrar cliente.");
+    }
+  }
+
+  async function excluirRecente(c) {
+    if (!window.confirm(`Excluir o cadastro de ${c.nome}? Isso desfaz o cadastro por completo (e avisa o Dono).`)) return;
+    setExcluindoId(c.id);
+    try {
+      await api.delete(`/profissional/clientes/${c.id}/recente`);
+      carregarRecentes();
+      carregarTotal();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Não foi possível excluir esse cadastro.");
+    } finally {
+      setExcluindoId(null);
     }
   }
 
@@ -158,64 +184,79 @@ export function AbaCadastrarCliente() {
       <div className="nv-card">
         <h2 className="font-sora font-semibold text-nv-ink mb-1">Cadastrar cliente que você já atende</h2>
         <p className="text-xs text-nv-muted mb-3">
-          Use isso pra colocar no sistema os clientes que você já atendia antes, já com o pacote e o dia/horário fixo que
-          vocês combinaram. Se preencher o dia e o horário, a sessão já entra direto na sua Agenda.
+          Nome e WhatsApp já bastam — o login é gerado sozinho. Preenchendo o pacote e o dia/horário fixo, a agenda dela já
+          sai pronta.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-2">
-          <input className="input" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-          <input className="input" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input className="input" placeholder="Nome completo" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           <input
             className="input"
-            placeholder="Telefone"
+            placeholder="WhatsApp"
             value={form.telefone}
             onChange={(e) => setForm({ ...form, telefone: e.target.value })}
           />
-          <input
-            className="input"
-            placeholder="Senha do login (opcional, senão é gerada uma)"
-            value={form.senhaProvisoria}
-            onChange={(e) => setForm({ ...form, senhaProvisoria: e.target.value })}
-          />
         </div>
 
         <div className="border-t border-nv-borderLight mt-4 pt-4">
-          <p className="text-sm font-semibold text-nv-ink mb-2">Pacote atual (opcional)</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <select className="input" value={form.duracao} onChange={(e) => setForm({ ...form, duracao: e.target.value })}>
-              <option value="MIN30">30 minutos</option>
-              <option value="MIN50">50 minutos</option>
-            </select>
-            <input
-              type="number"
-              min="1"
-              className="input"
-              placeholder="Nº de sessões do pacote"
-              value={form.totalSessoes}
-              onChange={(e) => setForm({ ...form, totalSessoes: e.target.value })}
-            />
-            <input
-              type="number"
-              min="0"
-              className="input"
-              placeholder="Sessões que faltam"
-              value={form.sessoesRestantes}
-              onChange={(e) => setForm({ ...form, sessoesRestantes: e.target.value })}
-            />
-            <input
-              className="input"
-              placeholder="Valor pago (opcional)"
-              value={form.valorTotal}
-              onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
-            />
+          <p className="text-sm font-semibold text-nv-ink mb-2">Pacote</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-nv-muted mb-1.5">Sessões no pacote</p>
+              <div className="flex gap-1.5">
+                {[4, 8].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`nv-seg ${Number(form.totalSessoes) === n ? "nv-seg-ativo" : ""}`}
+                    onClick={() => setForm({ ...form, totalSessoes: n })}
+                  >
+                    {n} sessões
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-nv-muted mb-1.5">Duração</p>
+              <div className="flex gap-1.5">
+                {[["MIN30", "30 min"], ["MIN50", "50 min"]].map(([v, l]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`nv-seg ${form.duracao === v ? "nv-seg-ativo" : ""}`}
+                    onClick={() => setForm({ ...form, duracao: v })}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-nv-muted3 mt-1">
-            Deixe "Sessões que faltam" igual ao total do pacote se ele está no início.
-          </p>
+
+          <div className="mt-3">
+            <p className="text-xs text-nv-muted mb-1.5">Sessões extras</p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+                onClick={() => setSessoesExtras((n) => Math.max(0, n - 1))}
+              >
+                −
+              </button>
+              <span className="font-sora font-bold text-nv-ink text-sm w-5 text-center">{sessoesExtras}</span>
+              <button
+                type="button"
+                className="w-7 h-7 rounded-full bg-nv-bg text-nv-ink2 font-bold flex items-center justify-center"
+                onClick={() => setSessoesExtras((n) => n + 1)}
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="border-t border-nv-borderLight mt-4 pt-4">
-          <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo já combinado (opcional)</p>
+          <p className="text-sm font-semibold text-nv-ink mb-2">Dia e horário fixo</p>
           <div className="grid grid-cols-2 gap-2">
             <select className="input" value={form.diaSemanaFixo} onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value })}>
               <option value="">Sem dia fixo</option>
@@ -235,14 +276,14 @@ export function AbaCadastrarCliente() {
         </div>
 
         <button className="btn-primary mt-4" onClick={cadastrar}>
-          Cadastrar cliente
+          Cadastrar e gerar agenda
         </button>
         {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
         {resultado && (
           <div className="text-sm mt-2 space-y-1">
             <p className="text-nv-green">
-              Cliente cadastrado! Senha provisória: <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por
-              um canal seguro)
+              Cliente cadastrado! Login: <strong>{resultado.email}</strong> · Senha provisória:{" "}
+              <strong>{resultado.senhaProvisoria}</strong> (repasse isso pro cliente por um canal seguro)
             </p>
             {resultado.transacao && (
               <p className="text-nv-green">
@@ -256,41 +297,93 @@ export function AbaCadastrarCliente() {
           </div>
         )}
       </div>
+
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-1">Cadastrados recentemente por mim</h3>
+        <p className="text-xs text-nv-muted mb-3">Últimas 48h — dá pra desfazer se foi engano.</p>
+        <div className="flex flex-col gap-2">
+          {recentes.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-3 bg-nv-bg rounded-[10px] px-3 py-2">
+              <div>
+                <p className="text-[13px] font-semibold text-nv-ink">{c.nome}</p>
+                <p className="text-[11px] text-nv-muted3">{formatarHaQuanto(c.criadoEm)}</p>
+              </div>
+              <button
+                type="button"
+                className="text-red-600 text-xs font-semibold underline disabled:opacity-50"
+                disabled={excluindoId === c.id}
+                onClick={() => excluirRecente(c)}
+              >
+                {excluindoId === c.id ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          ))}
+          {recentes.length === 0 && <p className="text-xs text-nv-muted3">Nenhum cadastro seu nas últimas 48h.</p>}
+        </div>
+      </div>
     </div>
   );
 }
 
 // ---------------- AGENDA (estilo Trello por dia) ----------------
+const NOMES_MES_AGENDA = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+const DIAS_SEMANA_CURTO_AGENDA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+function dataISO(ano, mesIndex, dia) {
+  const mm = String(mesIndex + 1).padStart(2, "0");
+  const dd = String(dia).padStart(2, "0");
+  return `${ano}-${mm}-${dd}`;
+}
+
+// Fase 51 — "Sua semana" virou um calendário de mês de verdade, igual ao "Agenda geral" do Dono
+// (o Elismael pediu "quadro gigante de calendário" no lugar daquele quadro semanal por dia). O
+// botão "Entrar na videochamada" também saiu daqui — o atendimento não é mais feito pelo sistema,
+// então profissional (e cliente, na própria aba dela) perdem esse "iniciar sessão".
 export function AbaAgenda() {
-  const [colunas, setColunas] = useState(null);
-  const [colunaSobre, setColunaSobre] = useState(null);
+  const hoje = new Date();
+  const [ano, setAno] = useState(hoje.getFullYear());
+  const [mesIndex, setMesIndex] = useState(hoje.getMonth());
+  const [lista, setLista] = useState(null);
   const [erro, setErro] = useState("");
   const [clientes, setClientes] = useState([]);
-  const [colunaAberta, setColunaAberta] = useState(null);
+  const [diaSelecionado, setDiaSelecionado] = useState(hoje.getDate());
+  const [novaSessaoAberta, setNovaSessaoAberta] = useState(false);
   const [reagendando, setReagendando] = useState(null);
 
   async function carregar() {
-    const [a, c] = await Promise.all([api.get("/profissional/agenda"), api.get("/profissional/clientes")]);
-    setColunas(a.data);
+    const [a, c] = await Promise.all([
+      api.get(`/profissional/agenda?mes=${mesIndex + 1}&ano=${ano}`),
+      api.get("/profissional/clientes"),
+    ]);
+    setLista(a.data);
     setClientes(c.data);
   }
   useEffect(() => {
     carregar();
-  }, []);
+    setDiaSelecionado(hoje.getFullYear() === ano && hoje.getMonth() === mesIndex ? hoje.getDate() : 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesIndex, ano]);
+
+  function mudarMes(delta) {
+    let novoMes = mesIndex + delta;
+    let novoAno = ano;
+    if (novoMes < 0) {
+      novoMes = 11;
+      novoAno -= 1;
+    } else if (novoMes > 11) {
+      novoMes = 0;
+      novoAno += 1;
+    }
+    setMesIndex(novoMes);
+    setAno(novoAno);
+  }
 
   async function mudarStatus(id, status) {
     await api.put(`/profissional/agenda/${id}/status`, { status });
     carregar();
-  }
-
-  async function moverSessao(id, novoDiaSemana) {
-    setErro("");
-    try {
-      await api.put(`/profissional/agenda/${id}/mover`, { novoDiaSemana });
-      carregar();
-    } catch (e) {
-      setErro(e?.response?.data?.erro || "Não foi possível mover a sessão.");
-    }
   }
 
   async function excluirDaAgenda(ag) {
@@ -308,127 +401,146 @@ export function AbaAgenda() {
     }
   }
 
-  if (!colunas) return <p className="text-sm text-nv-muted">Carregando agenda...</p>;
+  if (!lista) return <p className="text-sm text-nv-muted">Carregando agenda...</p>;
+
+  const porDia = {};
+  for (const ag of lista) {
+    const dia = new Date(ag.data).getDate();
+    (porDia[dia] = porDia[dia] || []).push(ag);
+  }
+  const primeiroDiaSemana = new Date(ano, mesIndex, 1).getDay();
+  const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
+  const celulas = [];
+  for (let i = 0; i < primeiroDiaSemana; i++) celulas.push(null);
+  for (let d = 1; d <= diasNoMes; d++) celulas.push(d);
+  while (celulas.length % 7 !== 0) celulas.push(null);
+
+  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
 
   return (
     <div className="font-publicSans">
-      <div className="mb-3">
+      <div className="mb-4">
         <p className="nv-eyebrow mb-1">Painel da Profissional</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Sua semana</h1>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Agenda</h1>
         <p className="text-xs text-nv-muted mt-0.5">
-          Arraste o card de uma sessão pra outro dia (no computador) ou use o menu "Mover para..." (no celular) — o horário continua o mesmo.
+          {NOMES_MES_AGENDA[mesIndex]} de {ano} · clique num dia pra ver os agendamentos
         </p>
       </div>
       {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mb-3">{erro}</p>}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
-        {DIAS.map(([chave, label]) => (
-          <div
-            key={chave}
-            className={`nv-card !p-3 min-h-[200px] ${colunaSobre === chave ? "!border-nv-blue ring-2 ring-nv-blue/30" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setColunaSobre(chave);
-            }}
-            onDragLeave={() => setColunaSobre((atual) => (atual === chave ? null : atual))}
-            onDrop={(e) => {
-              e.preventDefault();
-              setColunaSobre(null);
-              const id = e.dataTransfer.getData("text/plain");
-              if (id) moverSessao(id, chave);
-            }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-sora font-semibold text-nv-blue text-sm">{label}</h3>
-              <button
-                className="text-nv-blue text-base leading-none w-6 h-6 rounded-full border border-nv-blue/30 hover:bg-nv-blue/10"
-                title="Adicionar sessão de um cliente já cadastrado"
-                onClick={() => setColunaAberta(colunaAberta === chave ? null : chave)}
-              >
-                +
-              </button>
-            </div>
-            <div className="space-y-2">
-              {colunas[chave]?.length === 0 && <p className="text-xs text-nv-muted3">Sem sessões</p>}
-              {colunas[chave]?.map((ag) => {
-                const podeMover = ag.status !== "REALIZADO" && ag.status !== "CANCELADO";
-                return (
-                  <div
-                    key={ag.id}
-                    draggable={podeMover}
-                    onDragStart={(e) => e.dataTransfer.setData("text/plain", ag.id)}
-                    className={`border border-nv-borderLight rounded-lg p-2 bg-nv-bg ${podeMover ? "cursor-move" : ""}`}
-                  >
-                    <p className="text-sm font-medium text-nv-ink2 flex items-center gap-1.5">
-                      <StatusCliente status={ag.statusCliente} />
-                      {ag.horaInicio} · {ag.cliente.user.nome}
-                    </p>
-                    <div className="flex items-center gap-1 flex-wrap mt-1">
-                      <span className={`badge ${STATUS_COR[ag.status]}`}>{ag.status}</span>
-                      {ag.pacote && (
-                        <span className="badge bg-nv-blue/10 text-nv-blue" title="Sessões realizadas / total do pacote">
-                          {ag.pacote.sessoesUsadas}/{ag.pacote.totalSessoes} sessões
-                        </span>
-                      )}
-                    </div>
-                    {podeMover && (
-                      <>
-                        <select
-                          className="input !text-xs !py-1 !w-full mt-1"
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value) moverSessao(ag.id, e.target.value);
-                          }}
-                        >
-                          <option value="">Mover para...</option>
-                          {DIAS.filter(([d]) => d !== chave).map(([d, l]) => (
-                            <option key={d} value={d}>
-                              {l}
-                            </option>
-                          ))}
-                        </select>
-                        <Link
-                          href={`/profissional/videochamada/${ag.id}`}
-                          className="block text-xs text-nv-blue underline mt-2"
-                        >
-                          🎥 Entrar na videochamada
-                        </Link>
-                        <div className="flex gap-2 mt-1 flex-wrap">
-                          <button className="text-xs text-nv-green underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
-                            Realizada
-                          </button>
-                          <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
-                            Cancelar
-                          </button>
-                          <button className="text-xs text-nv-blue underline" onClick={() => setReagendando(ag)}>
-                            Mudar data/horário
-                          </button>
-                        </div>
-                      </>
-                    )}
-                    <button
-                      className="text-xs text-red-600/70 underline mt-1"
-                      onClick={() => excluirDaAgenda(ag)}
-                      title="Remove só o card da agenda — o cadastro do cliente continua normal"
-                    >
-                      Excluir da agenda
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <div className="flex items-center gap-2 mb-3">
+        <button className="nv-seg rounded-lg" onClick={() => mudarMes(-1)}>
+          ← Mês anterior
+        </button>
+        <button className="nv-seg rounded-lg" onClick={() => mudarMes(1)}>
+          Próximo mês →
+        </button>
       </div>
-      {colunaAberta && (
+
+      <div className="flex gap-4 flex-wrap items-start">
+        <div className="flex-[3_1_560px] nv-card">
+          <div className="grid grid-cols-7 gap-1.5 mb-2">
+            {DIAS_SEMANA_CURTO_AGENDA.map((d) => (
+              <div key={d} className="text-center text-[11px] font-bold text-nv-muted3 uppercase tracking-wide">
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1.5">
+            {celulas.map((dia, i) => {
+              if (dia === null) return <div key={i} className="min-h-[86px]" />;
+              const doDia = porDia[dia] || [];
+              const chips = doDia.slice(0, 2);
+              const selecionado = dia === diaSelecionado;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setDiaSelecionado(dia)}
+                  className={`text-left rounded-[10px] p-1.5 border min-h-[86px] flex flex-col gap-1 transition-shadow hover:shadow-md ${
+                    selecionado ? "border-nv-blue shadow-md" : "border-nv-borderLight"
+                  } bg-white`}
+                >
+                  <span className={`text-xs font-bold ${selecionado ? "text-nv-blue" : "text-nv-ink2"}`}>{dia}</span>
+                  {chips.map((ag) => (
+                    <span key={ag.id} className="text-[10px] font-semibold text-white bg-nv-blue rounded px-1.5 py-0.5 truncate">
+                      {ag.horaInicio} {ag.cliente.user.nome}
+                    </span>
+                  ))}
+                  {doDia.length > 2 && <span className="text-[10px] text-nv-muted3 font-semibold">+{doDia.length - 2} mais</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex-[1_1_300px] nv-card self-start">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-sora font-semibold text-sm text-nv-ink">
+              Dia {diaSelecionado} · {NOMES_MES_AGENDA[mesIndex]}
+            </p>
+            <button
+              className="text-nv-blue text-base leading-none w-6 h-6 rounded-full border border-nv-blue/30 hover:bg-nv-blue/10"
+              title="Adicionar sessão de um cliente já cadastrado nesse dia"
+              onClick={() => setNovaSessaoAberta(true)}
+            >
+              +
+            </button>
+          </div>
+          {agendamentosDoDia.length === 0 && <p className="text-xs text-nv-muted3">Nenhum agendamento nesse dia.</p>}
+          <div className="space-y-2">
+            {agendamentosDoDia.map((ag) => {
+              const podeMudar = ag.status !== "REALIZADO" && ag.status !== "CANCELADO";
+              return (
+                <div key={ag.id} className="border border-nv-borderLight rounded-lg p-2 bg-nv-bg">
+                  <p className="text-sm font-medium text-nv-ink2 flex items-center gap-1.5">
+                    <StatusCliente status={ag.statusCliente} />
+                    {ag.horaInicio} · {ag.cliente.user.nome}
+                  </p>
+                  <div className="flex items-center gap-1 flex-wrap mt-1">
+                    <span className={`badge ${STATUS_COR[ag.status]}`}>{ag.status}</span>
+                    {ag.pacote && (
+                      <span className="badge bg-nv-blue/10 text-nv-blue" title="Sessões realizadas / total do pacote">
+                        {ag.pacote.sessoesUsadas}/{ag.pacote.totalSessoes} sessões
+                      </span>
+                    )}
+                  </div>
+                  {podeMudar && (
+                    <div className="flex gap-2 mt-1.5 flex-wrap">
+                      <button className="text-xs text-nv-green underline" onClick={() => mudarStatus(ag.id, "REALIZADO")}>
+                        Realizada
+                      </button>
+                      <button className="text-xs text-red-600 underline" onClick={() => mudarStatus(ag.id, "CANCELADO")}>
+                        Cancelar
+                      </button>
+                      <button className="text-xs text-nv-blue underline" onClick={() => setReagendando(ag)}>
+                        Mudar data/horário
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    className="text-xs text-red-600/70 underline mt-1"
+                    onClick={() => excluirDaAgenda(ag)}
+                    title="Remove só o card da agenda — o cadastro do cliente continua normal"
+                  >
+                    Excluir da agenda
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {novaSessaoAberta && (
         <NovaSessaoModal
-          diaSemana={colunaAberta}
-          diaLabel={DIAS.find(([d]) => d === colunaAberta)?.[1] || ""}
+          dataInicial={dataISO(ano, mesIndex, diaSelecionado)}
+          diaLabel={`${diaSelecionado}/${mesIndex + 1}`}
           clientes={clientes}
           onAgendado={() => {
-            setColunaAberta(null);
+            setNovaSessaoAberta(false);
             carregar();
           }}
-          onFechar={() => setColunaAberta(null)}
+          onFechar={() => setNovaSessaoAberta(false)}
         />
       )}
       {reagendando && (
@@ -535,9 +647,12 @@ function ReagendarModal({ agendamento, onReagendado, onFechar }) {
 // Agenda, sem precisar da recepção. Já vem com a data mais próxima daquele dia da semana
 // preenchida, e busca os horários livres sozinho sempre que cliente/data/duração mudam — não
 // precisa lembrar de clicar em nada pra ver as opções.
-function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }) {
+// Fase 51 — ganhou o prop "dataInicial": quando a Agenda já sabe a data exata (o dia clicado no
+// calendário de mês), usa ela direto, em vez de calcular "próxima ocorrência desse dia da semana"
+// (que podia pular pro mês seguinte quando o dia clicado já tinha passado nesse mês).
+function NovaSessaoModal({ diaSemana, dataInicial, diaLabel, clientes, onAgendado, onFechar }) {
   const [clienteId, setClienteId] = useState("");
-  const [data, setData] = useState(proximaDataDoDia(diaSemana));
+  const [data, setData] = useState(dataInicial || proximaDataDoDia(diaSemana));
   const [duracao, setDuracao] = useState("MIN50");
   const [horarios, setHorarios] = useState(null);
   const [buscando, setBuscando] = useState(false);
@@ -665,6 +780,7 @@ function NovaSessaoModal({ diaSemana, diaLabel, clientes, onAgendado, onFechar }
 export function AbaClientes() {
   const [clientes, setClientes] = useState([]);
   const [selecionadoId, setSelecionadoId] = useState(null);
+  const [detalhe, setDetalhe] = useState(null);
 
   async function carregar() {
     const { data } = await api.get("/profissional/clientes");
@@ -673,6 +789,19 @@ export function AbaClientes() {
   useEffect(() => {
     carregar();
   }, []);
+
+  // Fase 51 — a ficha agora busca o cliente completo (pacotes com valor, prontuário/relatórios,
+  // renovação) assim que seleciona, pra mostrar prontuário, financeiro do paciente e "quando ele
+  // renova" — igual ao canvas (artboard "Meus clientes", ficha da Camila Duarte). Antes a ficha só
+  // usava os dados resumidos da listagem, que não tinham nada disso.
+  useEffect(() => {
+    if (!selecionadoId) {
+      setDetalhe(null);
+      return;
+    }
+    setDetalhe(null);
+    api.get(`/profissional/clientes/${selecionadoId}`).then((r) => setDetalhe(r.data));
+  }, [selecionadoId]);
 
   const selecionado = clientes.find((c) => c.id === selecionadoId) || null;
 
@@ -719,14 +848,48 @@ export function AbaClientes() {
   );
 }
 
+// Fase 51 — cartão de cabeçalho da ficha (nome, WhatsApp/e-mail, pacote atual, status), igual ao
+// que o canvas mostra em "Meus clientes" (artboard da Camila Duarte) — antes a ficha só tinha o
+// nome, sem esse resumo rápido no topo.
 function DetalheCliente({ cliente, onMudouSituacao }) {
   const [sub, setSub] = useState("chat");
+  const iniciais = cliente.user.nome
+    .split(" ")
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase();
+  const pacote = cliente.pacotes?.[0];
   return (
     <div className="nv-card">
-      <h2 className="font-sora font-semibold text-lg text-nv-ink flex items-center gap-2">
-        <StatusCliente status={cliente.statusCliente} />
-        {cliente.user.nome}
-      </h2>
+      <div className="flex items-center justify-between gap-3 flex-wrap pb-3.5 mb-3.5 border-b border-nv-borderLight">
+        <div className="flex items-center gap-3 min-w-0">
+          {cliente.user.fotoUrl ? (
+            <img src={cliente.user.fotoUrl} alt={cliente.user.nome} className="w-11 h-11 rounded-full object-cover border border-nv-border shrink-0" />
+          ) : (
+            <div className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white shrink-0 bg-nv-blue">
+              {iniciais}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="font-sora font-bold text-nv-ink truncate">{cliente.user.nome}</p>
+            <p className="text-xs text-nv-muted3 truncate">
+              {cliente.user.telefone}
+              {cliente.user.email ? ` · ${cliente.user.email}` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          {pacote && (
+            <p className="text-[11px] text-nv-muted3 mb-0.5">
+              pacote atual · {pacote.sessoesUsadas}/{pacote.totalSessoes} sessões · {pacote.duracao === "MIN30" ? "30min" : "50min"}
+            </p>
+          )}
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+            <StatusCliente status={cliente.statusCliente} />
+          </span>
+        </div>
+      </div>
       <div className="flex gap-2 my-3 flex-wrap">
         {[
           ["chat", "Chat / recados"],
@@ -1123,15 +1286,32 @@ export function AbaFinanceiro() {
   const [valorManual, setValorManual] = useState("");
   const [processando, setProcessando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [renovar, setRenovar] = useState(null); // Fase 51 — { lista, receitaEmRisco30, taxaRenovacao90 }
+  const [contatandoId, setContatandoId] = useState(null);
 
   async function carregar() {
     const [r, c] = await Promise.all([api.get("/profissional/financeiro/resumo"), api.get("/profissional/clientes")]);
     setResumo(r.data);
     setClientes(c.data);
   }
+  async function carregarRenovar() {
+    const { data } = await api.get("/profissional/clientes-pra-renovar");
+    setRenovar(data);
+  }
   useEffect(() => {
     carregar();
+    carregarRenovar();
   }, []);
+
+  async function marcarContatado(id) {
+    setContatandoId(id);
+    try {
+      await api.put(`/profissional/clientes/${id}/marcar-contatado`);
+      carregarRenovar();
+    } finally {
+      setContatandoId(null);
+    }
+  }
 
   async function calcular() {
     const { data } = await api.post("/profissional/financeiro/calcular", { valorTotal: Number(valorCalc) });
@@ -1179,7 +1359,7 @@ export function AbaFinanceiro() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="nv-card">
-          <p className="text-sm text-nv-muted">Faturado no mês (sua parte)</p>
+          <p className="text-sm text-nv-muted">Recebido este mês</p>
           <p className="nv-num text-2xl font-bold text-nv-blue">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
           <p className="text-xs text-nv-muted mt-1">Só o que é seu — não conta a parte que fica com a Renascer.</p>
         </div>
@@ -1188,10 +1368,77 @@ export function AbaFinanceiro() {
           <p className="nv-num text-2xl font-bold text-nv-ink2">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
         </div>
         <div className="nv-card !border-amber-300 bg-amber-50">
-          <p className="text-sm text-nv-muted">Você ainda deve repassar</p>
+          <p className="text-sm text-nv-muted">Pendente de confirmação</p>
           <p className="nv-num text-2xl font-bold text-amber-700">R$ {resumo?.totalPendenteRepassar?.toFixed(2) ?? "0,00"}</p>
           <p className="text-xs text-nv-muted mt-1">Dinheiro que você recebeu direto do cliente e ainda não repassou pra Renascer.</p>
         </div>
+      </div>
+
+      {/* Fase 51 — "Clientes pra renovar" só dela: mesma ideia da fila do Setor Financeiro, mas
+          escopada aos seus próprios clientes, com botão direto pro WhatsApp já com mensagem pronta. */}
+      <div className="nv-card">
+        <h3 className="font-sora font-semibold text-nv-ink mb-1">Clientes pra renovar</h3>
+        <p className="text-xs text-nv-muted mb-3">Base de receita recorrente em risco — acompanhe antes do pacote encerrar.</p>
+        <div className="flex flex-col gap-2">
+          {renovar?.lista?.map((c) => {
+            const cor = c.dias <= 3 ? "#B3261E" : c.dias <= 10 ? "#B0580F" : "#1C7C54";
+            return (
+              <div key={c.id} className="flex items-center justify-between gap-3 flex-wrap bg-nv-bg rounded-[10px] px-3 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cor }} />
+                  <div>
+                    <p className="text-[13px] font-semibold text-nv-ink">{c.nome}</p>
+                    <p className="text-[11.5px] text-nv-muted2">
+                      {c.valorPacote != null ? `valor do pacote R$ ${c.valorPacote.toFixed(2)}` : "valor do pacote —"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-[12px] font-semibold" style={{ color: cor }}>
+                    {c.dias >= 0 ? `encerra em ${c.dias} dia${c.dias === 1 ? "" : "s"}` : "já encerrou"}
+                  </span>
+                  {c.whatsapp && (
+                    <a
+                      className="text-nv-green text-xs font-semibold underline"
+                      target="_blank"
+                      rel="noreferrer"
+                      href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                        `Oi ${c.nome}! Seu pacote no Espaço do Renascer está acabando — bora marcar a renovação? 💙`
+                      )}`}
+                    >
+                      Chamar no WhatsApp
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="text-nv-blue text-xs font-semibold underline disabled:opacity-50"
+                    disabled={contatandoId === c.id}
+                    onClick={() => marcarContatado(c.id)}
+                  >
+                    {contatandoId === c.id ? "Marcando..." : "Marcar como contatado"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {renovar && renovar.lista.length === 0 && (
+            <p className="text-xs text-nv-muted3">Nenhum cliente com renovação próxima cadastrada agora.</p>
+          )}
+        </div>
+        {renovar && (
+          <div className="flex gap-6 mt-4 pt-3 border-t border-nv-borderLight">
+            <div>
+              <p className="text-[11px] text-nv-muted">Receita em risco (30 dias)</p>
+              <p className="font-sora font-bold text-lg text-amber-700">R$ {renovar.receitaEmRisco30.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-nv-muted">Taxa de renovação (90 dias)</p>
+              <p className="font-sora font-bold text-lg text-nv-green">
+                {renovar.taxaRenovacao90 != null ? `${renovar.taxaRenovacao90}%` : "—"}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="nv-card">
@@ -1231,7 +1478,7 @@ export function AbaFinanceiro() {
             <option value="OUTRO">Outro</option>
           </select>
         </div>
-        <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} className="mb-2" />
+        <input type="file" accept="image/*" onChange={(e) => setArquivo(e.target.files[0])} className="input-file mb-2" />
         <input
           className="input mb-2"
           placeholder="Valor manual (opcional, se a IA não reconhecer)"
@@ -1286,9 +1533,12 @@ export function AbaFinanceiro() {
                 </td>
                 <td className="text-right">
                   {t.temComprovante ? (
-                    <button className="text-nv-blue text-xs underline" onClick={() => verComprovante(t.id)}>
-                      Ver comprovante
-                    </button>
+                    <span className="inline-flex items-center gap-1.5">
+                      <button className="text-nv-blue text-xs underline" onClick={() => verComprovante(t.id)}>
+                        Ver comprovante
+                      </button>
+                      <span className="text-[9.5px] text-nv-muted3 bg-nv-bg rounded-full px-1.5 py-0.5">registro imutável</span>
+                    </span>
                   ) : (
                     <span className="text-nv-muted3 text-xs">sem comprovante</span>
                   )}
@@ -1380,7 +1630,7 @@ function LinhaRepasse({ t, onMudou }) {
         </button>
       ) : (
         <div className="bg-nv-bg border border-nv-borderLight rounded-lg p-2 space-y-1 min-w-[220px]">
-          <input type="file" accept="image/*" className="text-xs" onChange={(e) => setArquivo(e.target.files[0])} />
+          <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
           <input
             className="input !py-1 !text-xs"
             placeholder="Valor manual (se não anexar foto)"
@@ -1407,30 +1657,113 @@ function LinhaRepasse({ t, onMudou }) {
 }
 
 // ---------------- NOTIFICAÇÕES ----------------
+// Fase 51 — igual canvas: feed de avisos com ícone colorido por categoria (cliente/financeiro/
+// renovação/mensagem) em vez da lista cinza genérica de antes.
+function formatarQuandoAviso(iso) {
+  const d = new Date(iso);
+  const agora = new Date();
+  const hojeInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const diaAviso = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDias = Math.round((hojeInicio - diaAviso) / 86400000);
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (diffDias <= 0) return `hoje · ${hora}`;
+  if (diffDias === 1) return `ontem · ${hora}`;
+  return `${diffDias} dias atrás`;
+}
+
+function categoriaAviso(n) {
+  const msg = (n.mensagem || "").toLowerCase();
+  if (n.tipo === "financeiro" && /confirmad/.test(msg)) {
+    return { cor: "#1C7C54", bg: "#E8F5EE", Icone: IconAvisoCheck };
+  }
+  if (n.tipo === "financeiro") return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoMoeda };
+  if (n.tipo === "renovacao") return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoRelogio };
+  if (n.tipo === "cliente") return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa };
+  if (n.tipo === "mensagem" || n.tipo === "tarefa") return { cor: "#8A4FA3", bg: "#F2E9FB", Icone: IconAvisoMensagem };
+  return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa };
+}
+
+function IconAvisoPessoa({ cor }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M4.5 20c0-4 3.3-6.8 7.5-6.8s7.5 2.8 7.5 6.8" />
+    </svg>
+  );
+}
+function IconAvisoMoeda({ cor }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5v9M9.5 9.8c0-1.3 1.1-2 2.5-2s2.5.8 2.5 1.9c0 2.6-5 1.3-5 3.9 0 1.1 1.1 1.9 2.5 1.9s2.5-.7 2.5-2" />
+    </svg>
+  );
+}
+function IconAvisoRelogio({ cor }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12.5" r="8" />
+      <path d="M12 8v5l3.3 2" />
+      <path d="M9 2.5h6" />
+    </svg>
+  );
+}
+function IconAvisoMensagem({ cor }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5.5h16v11H9.5L5 20v-3.5H4z" />
+    </svg>
+  );
+}
+function IconAvisoCheck({ cor }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M8.3 12.3l2.5 2.5 5-5.2" />
+    </svg>
+  );
+}
+
 function AbaNotificacoes() {
   const [lista, setLista] = useState([]);
   useEffect(() => {
     api.get("/comum/notificacoes").then((r) => setLista(r.data));
   }, []);
   return (
-    <div className="space-y-4 font-publicSans">
-      <div>
+    <div className="font-publicSans">
+      <div className="mb-4">
         <p className="nv-eyebrow mb-1">Painel da Profissional</p>
-        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Notificações</h1>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Avisos</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Novos clientes, pendências e lembretes</p>
       </div>
-      <div className="nv-card">
-        <p className="text-sm text-nv-muted mb-3">
-          Você recebe um aviso automático aqui sempre que um cliente estiver na 2ª ou 3ª sessão de um pacote de 4, ou faltando a última sessão de um pacote menor.
-        </p>
-        <div className="space-y-2">
-          {lista.map((n) => (
-            <div key={n.id} className={`border rounded-lg p-3 ${n.lida ? "border-nv-borderLight" : "border-nv-blue/40 bg-nv-blue/5"}`}>
-              <p className="font-medium text-sm text-nv-ink">{n.titulo}</p>
-              <p className="text-sm text-nv-muted">{n.mensagem}</p>
+      <div className="flex flex-col gap-2.5">
+        {lista.map((n) => {
+          const { cor, bg, Icone } = categoriaAviso(n);
+          return (
+            <div
+              key={n.id}
+              className={`bg-white rounded-2xl p-4 shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex items-start gap-3 ${
+                n.lida ? "" : "ring-1 ring-nv-blue/15"
+              }`}
+            >
+              <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: bg }}>
+                <Icone cor={cor} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <p className="text-[13.5px] font-semibold text-nv-ink2">{n.titulo}</p>
+                  <span className="text-[11px] text-nv-muted3 whitespace-nowrap">{formatarQuandoAviso(n.criadoEm)}</span>
+                </div>
+                <p className="text-[12.5px] text-nv-muted2 mt-0.5">{n.mensagem}</p>
+              </div>
             </div>
-          ))}
-          {lista.length === 0 && <p className="text-sm text-nv-muted3">Nenhum aviso por enquanto.</p>}
-        </div>
+          );
+        })}
+        {lista.length === 0 && (
+          <div className="bg-white rounded-2xl p-5 shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+            <p className="text-[13px] text-nv-muted2">Nenhum aviso por enquanto.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1535,7 +1868,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
         />
         <div>
           <label className="text-sm text-nv-muted block mb-1">Trocar foto</label>
-          <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files[0])} />
+          <input type="file" accept="image/*" className="input-file" onChange={(e) => setFoto(e.target.files[0])} />
         </div>
       </div>
 

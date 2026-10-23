@@ -1,45 +1,48 @@
 import { useState } from "react";
 
 const DIAS = [
-  ["SEGUNDA", "Segunda"],
-  ["TERCA", "Terça"],
-  ["QUARTA", "Quarta"],
-  ["QUINTA", "Quinta"],
-  ["SEXTA", "Sexta"],
-  ["SABADO", "Sábado"],
-  ["DOMINGO", "Domingo"],
+  ["SEGUNDA", "Seg"],
+  ["TERCA", "Ter"],
+  ["QUARTA", "Qua"],
+  ["QUINTA", "Qui"],
+  ["SEXTA", "Sex"],
+  ["SABADO", "Sáb"],
 ];
 
-// Em vez de liberar uma faixa contínua (ex: "8h às 18h"), a profissional cadastra os horários
-// EXATOS que atende em cada dia (ex: 08:30, 10:30, 18h) — isso evita que o sistema "invente"
-// horário livre que na verdade não é atendido (ex: 9:30 aparecer livre só porque cai dentro de
-// uma faixa ampla). Agrupado por dia da semana pra ficar fácil de organizar.
-//
+// Fase 51 — igual canvas: grade de horários (dias nas colunas, meia em meia hora nas linhas),
+// toca na célula pra abrir/fechar, em vez da lista de pills + input de horário de antes. Continua
+// guardando só os horários EXATOS atendidos (não uma faixa contínua), só muda a forma de marcar.
+function gerarSlots() {
+  const slots = [];
+  for (let h = 7; h <= 20; h++) {
+    slots.push(`${String(h).padStart(2, "0")}:00`);
+    slots.push(`${String(h).padStart(2, "0")}:30`);
+  }
+  return slots;
+}
+const SLOTS = gerarSlots();
+
 // Componente compartilhado: usado tanto na tela da própria profissional quanto na tela da
 // atendente (que pode ajustar os horários de qualquer profissional a pedido dela) — mesma
 // lógica, mesmo componente, pra recepção, profissional e cliente sempre falarem a mesma língua.
 export default function DisponibilidadeSemanal({ disponibilidades, setDisponibilidades, salvar, aviso, ocupados = [] }) {
-  const [novoHorario, setNovoHorario] = useState({});
   const [msg, setMsg] = useState("");
   const [salvando, setSalvando] = useState(false);
 
   function ocupadoDe(dia, hora) {
     return ocupados.find((o) => o.diaSemana === dia && o.horaInicio === hora);
   }
-
-  function adicionar(dia) {
-    const hora = novoHorario[dia];
-    if (!hora) return;
-    if (disponibilidades.some((d) => d.diaSemana === dia && d.horaInicio === hora)) {
-      setNovoHorario({ ...novoHorario, [dia]: "" });
-      return;
-    }
-    setDisponibilidades([...disponibilidades, { diaSemana: dia, horaInicio: hora }]);
-    setNovoHorario({ ...novoHorario, [dia]: "" });
+  function livre(dia, hora) {
+    return disponibilidades.some((d) => d.diaSemana === dia && d.horaInicio === hora);
   }
 
-  function remover(dia, hora) {
-    setDisponibilidades(disponibilidades.filter((d) => !(d.diaSemana === dia && d.horaInicio === hora)));
+  function alternar(dia, hora) {
+    if (ocupadoDe(dia, hora)) return; // trava: tem cliente fixo nesse horário, não dá pra fechar por aqui
+    if (livre(dia, hora)) {
+      setDisponibilidades(disponibilidades.filter((d) => !(d.diaSemana === dia && d.horaInicio === hora)));
+    } else {
+      setDisponibilidades([...disponibilidades, { diaSemana: dia, horaInicio: hora }]);
+    }
   }
 
   async function salvarClick() {
@@ -56,64 +59,64 @@ export default function DisponibilidadeSemanal({ disponibilidades, setDisponibil
   }
 
   return (
-    <div className="card space-y-4">
-      <div>
-        <h2 className="font-semibold">Horários de atendimento</h2>
-        <p className="text-xs text-renascer-ink/50 mt-1">
-          {aviso ||
-            'Cadastre só os horários exatos atendidos em cada dia — por exemplo, se atende 8:30, 10:30 e 18h na terça, cadastre só esses três, não uma faixa "8h às 18h". Assim ninguém (recepção ou cliente) consegue marcar num horário que não é atendido de verdade.'}
-        </p>
-        {ocupados.length > 0 && (
-          <p className="text-xs text-amber-700 mt-1">🔒 = horário fixo de um cliente — pra liberar, agende um novo horário pra ele primeiro.</p>
-        )}
+    <div className="font-publicSans flex flex-col gap-3">
+      <div className="bg-[#F2F7FC] border border-nv-blue/20 rounded-xl px-4 py-3 text-[12.5px] text-nv-navy">
+        {aviso || "Essa disponibilidade também é visível para o Setor Financeiro, o Dono e a Atendente, para ajudar no agendamento de novos clientes."}
       </div>
-      {DIAS.map(([dia, label]) => {
-        const horariosDoDia = disponibilidades
-          .filter((d) => d.diaSemana === dia)
-          .map((d) => d.horaInicio)
-          .sort();
-        return (
-          <div key={dia} className="border-t border-renascer/10 pt-3">
-            <p className="text-sm font-medium mb-2">{label}</p>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {horariosDoDia.length === 0 && <span className="text-xs text-renascer-ink/40">Nenhum horário cadastrado.</span>}
-              {horariosDoDia.map((h) => {
-                const ocupado = ocupadoDe(dia, h);
-                return (
-                  <span
-                    key={h}
-                    className={`badge flex items-center gap-1.5 ${ocupado ? "bg-amber-100 text-amber-700" : "bg-renascer-light text-renascer"}`}
-                  >
-                    {h}
-                    {ocupado ? (
-                      <span title={`Horário fixo de ${ocupado.nome}`}>🔒 {ocupado.nome}</span>
-                    ) : (
-                      <button className="text-renascer-ink/50 hover:text-red-600 leading-none" onClick={() => remover(dia, h)}>
-                        ×
+      {ocupados.length > 0 && (
+        <p className="text-[11.5px] text-[#B0580F]">🔒 = horário fixo de um cliente — pra liberar, agende um novo horário pra ele primeiro.</p>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-[0_1px_2px_rgba(14,30,54,0.05)] overflow-x-auto">
+        <table className="w-full text-[12px] border-collapse min-w-[560px]">
+          <thead>
+            <tr>
+              <th className="text-left text-nv-muted3 font-semibold text-[11px] px-2.5 py-2 sticky left-0 bg-white">—</th>
+              {DIAS.map(([dia, label]) => (
+                <th key={dia} className="text-nv-ink2 font-semibold text-[12.5px] px-2.5 py-2">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {SLOTS.map((hora) => (
+              <tr key={hora} className="border-t border-nv-borderLight">
+                <td className="text-nv-muted3 text-[11px] font-semibold px-2.5 py-1 whitespace-nowrap sticky left-0 bg-white">{hora}</td>
+                {DIAS.map(([dia]) => {
+                  const ocupado = ocupadoDe(dia, hora);
+                  const aberto = livre(dia, hora);
+                  return (
+                    <td key={dia} className="px-1 py-1 text-center">
+                      <button
+                        type="button"
+                        title={ocupado ? `Horário fixo de ${ocupado.nome}` : undefined}
+                        onClick={() => alternar(dia, hora)}
+                        className={`w-full rounded-md text-[11px] font-semibold py-1 transition-colors ${
+                          ocupado
+                            ? "bg-[#FBF0E3] text-[#B0580F] cursor-default"
+                            : aberto
+                            ? "bg-[#E8F5EE] text-nv-green hover:bg-[#D9EEE2]"
+                            : "bg-nv-bg text-nv-muted3 hover:bg-nv-borderLight"
+                        }`}
+                      >
+                        {ocupado ? "🔒" : aberto ? "Livre" : "—"}
                       </button>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="time"
-                className="input !w-32"
-                value={novoHorario[dia] || ""}
-                onChange={(e) => setNovoHorario({ ...novoHorario, [dia]: e.target.value })}
-              />
-              <button className="btn-secondary !py-1.5 !px-3 text-sm" onClick={() => adicionar(dia)}>
-                + adicionar
-              </button>
-            </div>
-          </div>
-        );
-      })}
-      <button className="btn-primary block" onClick={salvarClick} disabled={salvando}>
-        {salvando ? "Salvando..." : "Salvar horários"}
-      </button>
-      {msg && <p className="text-sm">{msg}</p>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button className="btn-primary text-sm" onClick={salvarClick} disabled={salvando}>
+          {salvando ? "Salvando..." : "Salvar horários"}
+        </button>
+        {msg && <span className="text-[12.5px] text-nv-muted">{msg}</span>}
+      </div>
     </div>
   );
 }

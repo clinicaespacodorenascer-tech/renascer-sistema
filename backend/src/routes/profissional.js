@@ -9,6 +9,8 @@ const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const { haConflito, diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { inicioDoDia, fimDoDia, periodoDoMes, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
+const { gerarEmailAutomatico } = require("../utils/gerarLogin");
+const { excluirCliente } = require("../utils/excluirUsuario");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -100,9 +102,29 @@ router.put("/disponibilidades", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- 2. Agenda estilo Trello (por dia da semana) ----------
+// ---------- 2. Agenda (Fase 51: virou calendário de mês, igual ao "Agenda geral" do Dono) ----------
+// Com ?mes=&ano=: devolve a lista achatada (com a data real de cada sessão) do mês pedido, pra
+// montar o calendário igual ao da Dono. Sem mes/ano: mantém o formato antigo agrupado por dia da
+// semana (ninguém mais usa, mas evita quebrar algo que ainda não migrou).
 router.get("/agenda", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
+  const { mes, ano } = req.query;
+
+  if (mes && ano) {
+    const inicio = new Date(Number(ano), Number(mes) - 1, 1);
+    const fim = new Date(Number(ano), Number(mes), 1);
+    const agendamentos = await prisma.agendamento.findMany({
+      where: { profissionalId, data: { gte: inicio, lt: fim } },
+      include: { cliente: { include: { user: { select: { nome: true, telefone: true, fotoUrl: true } } } }, pacote: true },
+      orderBy: { data: "asc" },
+    });
+    const comStatus = agendamentos.map((ag) => ({
+      ...ag,
+      statusCliente: calcularStatusCliente({ pacote: ag.pacote, renovarEm: ag.cliente.renovarEm }),
+    }));
+    return res.json(comStatus);
+  }
+
   const agendamentos = await prisma.agendamento.findMany({
     where: { profissionalId, status: { not: "CANCELADO" } },
     include: { cliente: { include: { user: { select: { nome: true, telefone: true, fotoUrl: true } } } }, pacote: true },
@@ -712,16 +734,17 @@ router.post("/clientes", async (req, res) => {
     senhaProvisoria,
     duracao,
     totalSessoes,
-    sessoesRestantes,
-    valorTotal,
     diaSemanaFixo,
     horaFixa,
   } = req.body;
-  if (!nome || !email) {
-    return res.status(400).json({ erro: "Informe nome e e-mail do cliente." });
+  if (!nome || !telefone) {
+    return res.status(400).json({ erro: "Informe nome e WhatsApp do cliente." });
   }
 
-  const existente = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+  // Fase 51 — igual canvas: login não é mais digitado à mão, é gerado sozinho a partir do
+  // nome (ex: maria482@espacodorenascer.com) — a profissional só precisa de nome + WhatsApp.
+  const emailFinal = email ? email.toLowerCase().trim() : await gerarEmailAutomatico(nome);
+  const existente = await prisma.user.findUnique({ where: { email: emailFinal } });
   if (existente) return res.status(400).json({ erro: "Já existe um usuário com esse e-mail." });
 
   const senha = senhaProvisoria || Math.random().toString(36).slice(-8);
@@ -730,7 +753,7 @@ router.post("/clientes", async (req, res) => {
   const user = await prisma.user.create({
     data: {
       nome,
-      email: email.toLowerCase().trim(),
+      email: emailFinal,
       telefone,
       senha: hash,
       role: "CLIENTE",
@@ -769,11 +792,9 @@ router.post("/clientes", async (req, res) => {
   // pagamento, ou o lançamento manual em "Anexar renovação ou pagamento").
   if (duracao && totalSessoes) {
     const total = Number(totalSessoes);
-    const usadas =
-      sessoesRestantes !== undefined && sessoesRestantes !== "" ? Math.max(0, total - Number(sessoesRestantes)) : 0;
-    const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorDoPlano(duracao, total) || 0;
+    const valorFinal = valorDoPlano(duracao, total) || 0;
     pacote = await prisma.pacote.create({
-      data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: usadas, valorTotal: valorFinal, status: "ATIVO" },
+      data: { clienteId, profissionalId, duracao, totalSessoes: total, sessoesUsadas: 0, valorTotal: valorFinal, status: "ATIVO" },
     });
   }
 
@@ -838,6 +859,93 @@ router.post("/clientes", async (req, res) => {
     agendamento,
     avisoAgenda,
   });
+});
+
+// Fase 51 — "Cadastrados recentemente por mim": lista curta pra ela conferir (e desfazer, se foi
+// engano) os cadastros que ela mesma fez nas últimas 48h. Tem que vir ANTES de "GET /clientes/:id"
+// (linha ~965) pra "recentes" não ser interpretado como um :id.
+router.get("/clientes/recentes", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const clientes = await prisma.cliente.findMany({
+    where: { profissionalAtualId: profissionalId, criadoEm: { gte: desde } },
+    include: { user: { select: { nome: true } } },
+    orderBy: { criadoEm: "desc" },
+    take: 10,
+  });
+  res.json(clientes.map((c) => ({ id: c.id, nome: c.user.nome, criadoEm: c.criadoEm })));
+});
+
+// Desfazer um cadastro recente feito por ela mesma (ex: digitou errado, duplicou). Só funciona
+// pro próprio cadastro dela e só dentro das 48h — depois disso ela fala com o Dono.
+router.delete("/clientes/:id/recente", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const desde = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: req.params.id, profissionalAtualId: profissionalId, criadoEm: { gte: desde } },
+    include: { user: { select: { nome: true } } },
+  });
+  if (!cliente) {
+    return res
+      .status(404)
+      .json({ erro: "Esse cadastro não é seu ou não é recente o suficiente pra excluir por aqui — fale com o Dono." });
+  }
+  const nomeCliente = cliente.user.nome;
+  await excluirCliente(cliente.id);
+  await notificarDonos({
+    titulo: "Cadastro desfeito",
+    mensagem: `${req.user.nome} excluiu o cadastro de ${nomeCliente} (cadastro recente, desfeito por ela mesma).`,
+    tipo: "sistema",
+  });
+  res.json({ ok: true });
+});
+
+// Fase 51 — "Clientes pra renovar" (versão da Profissional, só os dela) — mesma ideia da fila que
+// o Setor Financeiro usa, mas aqui só mostra quem está vinculado a ela, com botão de WhatsApp.
+router.get("/clientes-pra-renovar", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const agora = Date.now();
+  const [clientes, pacotesPorStatusRaw] = await Promise.all([
+    prisma.cliente.findMany({
+      where: { profissionalAtualId: profissionalId, renovarEm: { not: null }, renovarEmAvisoEnviado: false },
+      include: {
+        user: { select: { nome: true, telefone: true } },
+        pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
+      },
+      orderBy: { renovarEm: "asc" },
+    }),
+    prisma.pacote.groupBy({ by: ["status"], where: { profissionalId }, _count: { status: true } }),
+  ]);
+
+  const lista = clientes.map((c) => ({
+    id: c.id,
+    nome: c.user.nome,
+    whatsapp: c.user.telefone || c.whatsappCadastro || null,
+    valorPacote: c.pacotes[0]?.valorTotal ?? null,
+    dias: Math.ceil((new Date(c.renovarEm).getTime() - agora) / (24 * 60 * 60 * 1000)),
+  }));
+
+  const receitaEmRisco30 = lista
+    .filter((c) => c.dias >= 0 && c.dias <= 30)
+    .reduce((soma, c) => soma + (c.valorPacote || 0), 0);
+
+  const contagem = { ATIVO: 0, AGUARDANDO_RENOVACAO: 0, ENCERRADO: 0, CANCELADO: 0 };
+  for (const grupo of pacotesPorStatusRaw) contagem[grupo.status] = grupo._count.status;
+  const totalConsiderado = contagem.ATIVO + contagem.AGUARDANDO_RENOVACAO + contagem.ENCERRADO;
+  const taxaRenovacao90 =
+    totalConsiderado > 0
+      ? Number((((contagem.ATIVO + contagem.AGUARDANDO_RENOVACAO) / totalConsiderado) * 100).toFixed(1))
+      : null;
+
+  res.json({ lista, receitaEmRisco30, taxaRenovacao90 });
+});
+
+router.put("/clientes/:id/marcar-contatado", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const cliente = await prisma.cliente.findFirst({ where: { id: req.params.id, profissionalAtualId: profissionalId } });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado ou não é seu." });
+  await prisma.cliente.update({ where: { id: cliente.id }, data: { renovarEmAvisoEnviado: true } });
+  res.json({ ok: true });
 });
 
 router.get("/clientes", async (req, res) => {

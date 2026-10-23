@@ -237,6 +237,28 @@ router.get("/profissionais", async (req, res) => {
   res.json(comTaxaRenovacao);
 });
 
+// Fase 51 — editar a % de repasse (quanto fica com a profissional x quanto fica com a clínica)
+// direto do cartão "% de repasse por profissional" na aba Financeiro do Dono (canvas pedia
+// editável porque "hoje nem todo mundo é 50/50" — já era assim no cadastro, só não tinha tela
+// pra editar depois).
+router.put("/profissionais/:id/percentual-repasse", async (req, res) => {
+  const { percentualRepasse } = req.body;
+  const pct = Number(percentualRepasse);
+  if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+    return res.status(400).json({ erro: "Informe uma porcentagem entre 0 e 100." });
+  }
+  try {
+    const atualizado = await prisma.profissional.update({
+      where: { id: req.params.id },
+      data: { percentualRepasse: pct },
+      select: { id: true, percentualRepasse: true },
+    });
+    res.json(atualizado);
+  } catch (e) {
+    res.status(404).json({ erro: "Profissional não encontrada." });
+  }
+});
+
 router.get("/clientes", async (req, res) => {
   const clientes = await prisma.cliente.findMany({
     include: {
@@ -760,6 +782,7 @@ router.get("/usuarios", async (req, res) => {
       role: true,
       ativo: true,
       criadoEm: true,
+      ultimoAcessoEm: true, // Fase 51 — "Supervisão dos setores" no cartão Financeiro do Dono
       profissional: { select: { id: true } },
     },
     orderBy: { criadoEm: "desc" },
@@ -945,10 +968,40 @@ router.put("/suporte-gerencia/:id/resolver", async (req, res) => {
 
 // ---------- Renascer IA (etapa 1 — base grátis): gasto, usuários e travas de custo ----------
 router.get("/renascer-ia", async (req, res) => {
-  const [config, usuariosGratis] = await Promise.all([
+  const hoje = new Date();
+  const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+
+  const [config, usuariosIAList, mensagensHoje] = await Promise.all([
     obterConfiguracaoIA(),
-    prisma.user.count({ where: { role: "USUARIO_IA" } }),
+    prisma.user.findMany({ where: { role: "USUARIO_IA" }, select: { id: true, nome: true, email: true, criadoEm: true } }),
+    // Total de mensagens enviadas (de qualquer pessoa) hoje — só conta, nunca o texto da
+    // conversa, que é dado sensível e não aparece pro Dono (ver comentário no schema).
+    prisma.conversaIA.count({ where: { autor: "USUARIO", criadoEm: { gte: inicioHoje } } }),
   ]);
+
+  // Uso de hoje por usuário da IA, numa query só (em vez de uma chamada por usuário) — vira a
+  // lista "Usuários da IA" do painel, com status de quem já chegou no limite diário.
+  const usoHojePorUsuario = usuariosIAList.length
+    ? await prisma.conversaIA.groupBy({
+        by: ["userId"],
+        where: { autor: "USUARIO", criadoEm: { gte: inicioHoje }, userId: { in: usuariosIAList.map((u) => u.id) } },
+        _count: { _all: true },
+      })
+    : [];
+  const usoMap = Object.fromEntries(usoHojePorUsuario.map((u) => [u.userId, u._count._all]));
+
+  const tetoAtingido = config.gastoMesAtualReais >= config.tetoMensalReais;
+  const limiteHojeGratis = tetoAtingido ? config.limiteGratisDiaReduzido : config.limiteGratisDia;
+
+  const usuariosIA = usuariosIAList
+    .map((u) => ({
+      id: u.id,
+      nome: u.nome,
+      email: u.email,
+      usadoHoje: usoMap[u.id] || 0,
+      limiteHoje: limiteHojeGratis,
+    }))
+    .sort((a, b) => b.usadoHoje - a.usadoHoje);
 
   res.json({
     gastoMesAtualReais: config.gastoMesAtualReais,
@@ -956,7 +1009,9 @@ router.get("/renascer-ia", async (req, res) => {
     limiteGratisDia: config.limiteGratisDia,
     limiteGratisDiaReduzido: config.limiteGratisDiaReduzido,
     limiteAssinanteDia: config.limiteAssinanteDia,
-    usuariosGratis,
+    usuariosGratis: usuariosIAList.length,
+    mensagensHoje,
+    usuariosIA,
     // A assinatura (plano completo pago) ainda não foi construída — chega numa etapa futura da
     // Renascer IA. Por enquanto esses dois números ficam zerados, só pra não quebrar a tela.
     assinantes: 0,

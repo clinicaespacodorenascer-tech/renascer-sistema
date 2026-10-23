@@ -12,6 +12,9 @@ import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/p
 // cadastro de Profissional vinculado, mesmo entrando como Dono (ver PATCH em
 // backend/src/middleware/auth.js).
 import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig } from "../profissional/index";
+// Fase 51 — mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa,
+// reaproveitado aqui na aba "Financeiro" do Dono (as rotas /financeiro/* já liberavam DONO também).
+import { formatarMoeda, PainelFinanceiro } from "../financeiro/index";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -55,7 +58,7 @@ export default function AreaDono() {
       {aba === "clientes" && <Clientes />}
       {aba === "reativar" && <ClientesParaReativar rotaBase="/dono" />}
       {aba === "historico" && <HistoricoClientes />}
-      {aba === "financeiro" && <Financeiro />}
+      {aba === "financeiro" && <FinanceiroDono />}
       {aba === "repasses" && <RepassesProfissionais />}
       {aba === "usuarios" && <Usuarios />}
       {aba === "suporte" && <SuporteEscalado />}
@@ -74,11 +77,118 @@ export default function AreaDono() {
 // dentro da própria área de Dono, exatamente as mesmas ferramentas que uma profissional tem —
 // agenda, cadastro de cliente, lista de clientes e financeiro. A recepção também passa a ver
 // esse Dono na lista de profissionais pra agendar clientes com ele, automaticamente.
+// Fase 51 — snapshot "Sessões de hoje" + ficha do paciente selecionado, igual ao canvas
+// "Atender pacientes". O botão "Ver mês completo" leva pro mesmo calendário de mês que a
+// profissional usa na própria Agenda (que por sua vez já é igual à Agenda geral do Dono — o
+// Elismael pediu explicitamente esse tipo de calendário, "achei muito bonito").
+function AgendaAtenderHoje({ onVerMesCompleto }) {
+  const hoje = new Date();
+  const [lista, setLista] = useState(null);
+  const [selecionado, setSelecionado] = useState(null);
+
+  useEffect(() => {
+    api.get(`/profissional/agenda?mes=${hoje.getMonth() + 1}&ano=${hoje.getFullYear()}`).then((r) => {
+      const hojeStr = hoje.toDateString();
+      const doDia = r.data
+        .filter((a) => new Date(a.data).toDateString() === hojeStr && a.status !== "CANCELADO")
+        .sort((a, b) => new Date(a.data) - new Date(b.data));
+      setLista(doDia);
+      const agora = Date.now();
+      const atual = doDia.find((a) => {
+        const inicio = new Date(a.data).getTime();
+        const duracaoMin = a.duracao === "MIN30" ? 30 : 50;
+        return agora >= inicio && agora <= inicio + duracaoMin * 60000;
+      });
+      setSelecionado((atual || doDia[0] || null)?.id ?? null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (lista === null) return <p className="text-sm text-nv-muted">Carregando agenda de hoje...</p>;
+
+  const ag = lista.find((a) => a.id === selecionado) || null;
+
+  function statusBadge(a) {
+    if (a.status === "REALIZADO") return { label: "Concluída", cls: "bg-nv-green/10 text-nv-green" };
+    const inicio = new Date(a.data).getTime();
+    const duracaoMin = a.duracao === "MIN30" ? 30 : 50;
+    const agora = Date.now();
+    if (agora >= inicio && agora <= inicio + duracaoMin * 60000) return { label: "Agora", cls: "bg-nv-blue/10 text-nv-blue" };
+    return { label: "Em breve", cls: "bg-nv-bg text-nv-muted3" };
+  }
+
+  return (
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono · seus próprios pacientes</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Atender pacientes</h1>
+          <p className="text-nv-muted text-sm mt-0.5">
+            {DIAS_SEMANA_LABEL_COMPLETO[hoje.getDay()].replace("-feira", "")}, {hoje.getDate()} de{" "}
+            {NOMES_MES[hoje.getMonth()].toLowerCase()} · mesmo padrão de agenda e calendário de toda a equipe
+          </p>
+        </div>
+        <button className="btn-secondary text-sm" onClick={onVerMesCompleto}>
+          Ver mês completo
+        </button>
+      </div>
+
+      <div className="grid lg:grid-cols-[1.3fr_1fr] gap-4 items-start">
+        <div className="nv-card !p-0 overflow-hidden">
+          <p className="font-sora font-semibold text-nv-ink px-4 pt-4 pb-2">Sessões de hoje</p>
+          <div>
+            {lista.map((a) => {
+              const badge = statusBadge(a);
+              const ativo = a.id === selecionado;
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setSelecionado(a.id)}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-nv-borderLight first:border-t-0 text-left transition-colors ${
+                    ativo ? "bg-nv-blue/5" : "hover:bg-nv-bg"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-[13px] font-bold text-nv-ink2 w-12 shrink-0">
+                      {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-nv-ink truncate">{a.cliente.user.nome}</p>
+                      <p className="text-[11.5px] text-nv-muted3">
+                        {a.duracao === "MIN30" ? "30min" : "50min"} · pacote de {a.pacote?.totalSessoes ?? "-"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`text-[10.5px] font-bold rounded-full px-2 py-1 shrink-0 ${badge.cls}`}>{badge.label}</span>
+                </button>
+              );
+            })}
+            {lista.length === 0 && <p className="text-sm text-nv-muted px-4 py-4">Nenhuma sessão marcada pra hoje.</p>}
+          </div>
+        </div>
+
+        {ag && (
+          <div className="nv-card">
+            <p className="font-sora font-semibold text-nv-ink mb-2">{ag.cliente.user.nome}</p>
+            <div className="space-y-1.5 text-[12.5px] text-nv-ink2">
+              <p>📦 pacote de {ag.pacote?.totalSessoes ?? "-"} · {ag.pacote?.sessoesUsadas ?? 0} sessões usadas</p>
+              <p>⏱ sessões de {ag.duracao === "MIN30" ? "30 minutos" : "50 minutos"}</p>
+              {ag.cliente.user.telefone && <p>💬 WhatsApp: {ag.cliente.user.telefone}</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AbaAtenderPacientes({ user }) {
   const [temPerfil, setTemPerfil] = useState(!!user?.profissional);
   const [ativando, setAtivando] = useState(false);
   const [erro, setErro] = useState("");
   const [sub, setSub] = useState("agenda");
+  const [verMesCompleto, setVerMesCompleto] = useState(false);
 
   async function ativar() {
     setAtivando(true);
@@ -127,7 +237,10 @@ function AbaAtenderPacientes({ user }) {
           <button
             key={s.id}
             type="button"
-            onClick={() => setSub(s.id)}
+            onClick={() => {
+              setSub(s.id);
+              setVerMesCompleto(false);
+            }}
             className={`whitespace-nowrap px-3 py-2 text-sm font-medium rounded-t-lg transition-colors ${
               sub === s.id ? "text-renascer bg-renascer-light/60" : "text-renascer-ink/55 hover:text-renascer-ink"
             }`}
@@ -136,7 +249,21 @@ function AbaAtenderPacientes({ user }) {
           </button>
         ))}
       </div>
-      {sub === "agenda" && <AbaAgenda />}
+      {sub === "agenda" &&
+        (verMesCompleto ? (
+          <div>
+            <button
+              type="button"
+              className="text-nv-blue text-xs font-semibold underline mb-3"
+              onClick={() => setVerMesCompleto(false)}
+            >
+              ← Voltar para hoje
+            </button>
+            <AbaAgenda />
+          </div>
+        ) : (
+          <AgendaAtenderHoje onVerMesCompleto={() => setVerMesCompleto(true)} />
+        ))}
       {sub === "cadastrar" && <AbaCadastrarCliente />}
       {sub === "clientes" && <AbaClientes />}
       {sub === "financeiro" && <AbaFinanceiro />}
@@ -368,6 +495,35 @@ function PontoStatus({ status }) {
   return <span className={`nv-dot ${classe}`} />;
 }
 
+// Fase 51 — contador animado: o número sobe de 0 até o valor real quando a tela carrega (pedido
+// desde o início do projeto, "sai do 0 até tantos clientes cadastrados... pra ficar um design
+// top" — nunca tinha sido implementado). Usado nos 4 cartões de número da Visão geral.
+function NumeroAnimado({ valor, sufixo = "", duracaoMs = 900 }) {
+  const [exibido, setExibido] = useState(0);
+  useEffect(() => {
+    if (valor == null || Number.isNaN(valor)) return;
+    let frame;
+    const inicio = performance.now();
+    function tick(agora) {
+      const t = Math.min(1, (agora - inicio) / duracaoMs);
+      const facilitado = 1 - Math.pow(1 - t, 3); // ease-out cúbico — acelera rápido, desacelera suave no final
+      setExibido(valor * facilitado);
+      if (t < 1) frame = requestAnimationFrame(tick);
+      else setExibido(valor);
+    }
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [valor, duracaoMs]);
+
+  const formatado = Number.isInteger(valor) ? Math.round(exibido) : exibido.toFixed(1);
+  return (
+    <>
+      {formatado}
+      {sufixo}
+    </>
+  );
+}
+
 function Dashboard() {
   const [d, setD] = useState(null);
   const [diaSelecionado, setDiaSelecionado] = useState(() => {
@@ -425,21 +581,27 @@ function Dashboard() {
             <p className="text-xs font-semibold text-nv-muted">Profissionais ativos</p>
             <IconProfissionais />
           </div>
-          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.totalProfissionais}</p>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
+            <NumeroAnimado valor={d.totalProfissionais} />
+          </p>
         </div>
         <div className="nv-card">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-nv-muted">Clientes cadastrados</p>
             <IconClientes />
           </div>
-          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.totalClientes}</p>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
+            <NumeroAnimado valor={d.totalClientes} />
+          </p>
         </div>
         <div className="nv-card">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-nv-muted">Sessões essa semana</p>
             <IconCalendarioCheck />
           </div>
-          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">{d.sessoesSemana ?? 0}</p>
+          <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
+            <NumeroAnimado valor={d.sessoesSemana ?? 0} />
+          </p>
         </div>
         <div className="nv-card">
           <div className="flex items-center justify-between mb-2">
@@ -447,7 +609,7 @@ function Dashboard() {
             <IconTendencia />
           </div>
           <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
-            {d.taxaRenovacao != null ? `${d.taxaRenovacao}%` : "—"}
+            {d.taxaRenovacao != null ? <NumeroAnimado valor={d.taxaRenovacao} sufixo="%" /> : "—"}
           </p>
         </div>
       </div>
@@ -1010,6 +1172,7 @@ function Clientes() {
   const [profissionais, setProfissionais] = useState([]);
   const [expandido, setExpandido] = useState(null);
   const [modo, setModo] = useState("todos"); // "todos" | "porProfissional"
+  const [excluindoId, setExcluindoId] = useState(null);
 
   async function carregar() {
     const [c, p] = await Promise.all([api.get("/dono/clientes"), api.get("/dono/profissionais")]);
@@ -1019,6 +1182,21 @@ function Clientes() {
   useEffect(() => {
     carregar();
   }, []);
+
+  // Fase 51 — excluir direto da linha (igual canvas), sem precisar abrir a ficha primeiro pra
+  // achar o botão lá embaixo.
+  async function excluirCliente(c) {
+    if (!window.confirm(`Excluir o login de ${c.user.nome}? Isso apaga sessões, mensagens e pacotes dele. Não tem como desfazer.`)) return;
+    setExcluindoId(c.id);
+    try {
+      await api.delete(`/dono/clientes/${c.id}`);
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Erro ao excluir cliente.");
+    } finally {
+      setExcluindoId(null);
+    }
+  }
 
   const ordenados = [...lista].sort((a, b) => a.user.nome.localeCompare(b.user.nome));
 
@@ -1058,6 +1236,17 @@ function Clientes() {
             <span className="text-xs font-semibold text-nv-blue whitespace-nowrap">
               {expandido === c.id ? "Fechar ficha" : "Ver ficha"}
             </span>
+            <button
+              type="button"
+              className="text-xs font-semibold text-red-600 whitespace-nowrap disabled:opacity-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                excluirCliente(c);
+              }}
+              disabled={excluindoId === c.id}
+            >
+              {excluindoId === c.id ? "Excluindo..." : "Excluir"}
+            </button>
           </span>
         </div>
         {expandido === c.id && (
@@ -1318,6 +1507,206 @@ function MetricasCliente({ clienteId, rotaBase }) {
           <p className="font-semibold text-renascer">{valor}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Fase 51 — causa raiz do "Financeiro do Dono não bate com o canvas": essa aba nunca teve o
+// painel que o artboard "Financeiro-Dono.dc.html" pedia (Total recebido/Já repassado/Pendente/
+// Caixa de hoje, CAC/ROI, investimento diário, repasses pendentes por profissional, % de repasse
+// editável e supervisão dos setores) — ficou só com as 2 tabelas antigas de repasse por
+// profissional, que são úteis mas são outra coisa. Agora monta exatamente os cartões do canvas,
+// puxando de 4 fontes que já existiam (cada uma com seu próprio dado real, nada inventado):
+// /dono/financeiro (total recebido no mês), /dono/repasses-pendentes (pendente + confirmados),
+// /dono/meu-dia/caixa (caixa de hoje) e /financeiro/painel (CAC/ROI/investimento — a mesma rota
+// que o Setor Financeiro usa, que já liberava o Dono também). As tabelas antigas continuam embaixo
+// como detalhe.
+function FinanceiroDono() {
+  const [financeiro, setFinanceiro] = useState(null);
+  const [repasses, setRepasses] = useState(null);
+  const [caixa, setCaixa] = useState(null);
+  const [painel, setPainel] = useState(null);
+  const [profissionais, setProfissionais] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [pctEditando, setPctEditando] = useState({});
+  const [msgPct, setMsgPct] = useState({});
+  const [msgRepasse, setMsgRepasse] = useState({});
+
+  async function carregarTudo() {
+    const [f, r, c, p, profs, us] = await Promise.all([
+      api.get("/dono/financeiro"),
+      api.get("/dono/repasses-pendentes"),
+      api.get("/dono/meu-dia/caixa"),
+      api.get("/financeiro/painel"),
+      api.get("/dono/profissionais"),
+      api.get("/dono/usuarios"),
+    ]);
+    setFinanceiro(f.data);
+    setRepasses(r.data);
+    setCaixa(c.data);
+    setPainel(p.data);
+    setProfissionais(profs.data);
+    setUsuarios(us.data);
+  }
+  useEffect(() => {
+    carregarTudo();
+  }, []);
+
+  async function confirmarRepasse(nome, profissionalId, valor) {
+    try {
+      const { data } = await api.post(`/dono/repasses/${profissionalId}/lancar`, { valor });
+      setMsgRepasse((m) => ({ ...m, [nome]: data.aviso || "Repasse confirmado." }));
+      carregarTudo();
+    } catch (e) {
+      setMsgRepasse((m) => ({ ...m, [nome]: e?.response?.data?.erro || "Erro ao confirmar." }));
+    }
+  }
+
+  async function salvarPercentual(prof) {
+    const valor = pctEditando[prof.id];
+    if (valor === undefined) return;
+    try {
+      await api.put(`/dono/profissionais/${prof.id}/percentual-repasse`, { percentualRepasse: Number(valor) });
+      setMsgPct((m) => ({ ...m, [prof.id]: "Salvo." }));
+      carregarTudo();
+    } catch (e) {
+      setMsgPct((m) => ({ ...m, [prof.id]: e?.response?.data?.erro || "Erro ao salvar." }));
+    }
+  }
+
+  if (!financeiro || !repasses || !caixa || !painel) {
+    return <p className="text-sm text-nv-muted font-publicSans">Carregando...</p>;
+  }
+
+  const totalRecebidoMes = Object.values(financeiro.porProfissional).reduce((s, v) => s + v.totalRecebido, 0);
+  const totalPendente = Object.values(repasses.porProfissional).reduce((s, v) => s + v.totalPendente, 0);
+  const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const totalJaRepassadoMes = (repasses.confirmados || [])
+    .filter((c) => new Date(c.repassadoEm) >= inicioMes)
+    .reduce((s, c) => s + c.valorRenascer, 0);
+
+  const setores = usuarios.filter((u) => u.role === "ATENDENTE" || u.role === "FINANCEIRO");
+
+  return (
+    <div className="font-publicSans space-y-5">
+      <div>
+        <p className="nv-eyebrow mb-1">Painel do Dono</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Financeiro</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Repasses das profissionais e supervisão dos setores</p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Total recebido no mês</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-ink">R$ {formatarMoeda(totalRecebidoMes)}</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Já repassado</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-green">R$ {formatarMoeda(totalJaRepassadoMes)}</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Pendente de repasse</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-[#D6883B]">R$ {formatarMoeda(totalPendente)}</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Caixa de hoje</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-ink">R$ {formatarMoeda(caixa.saldoSistema)}</p>
+        </div>
+      </div>
+
+      {/* Fase 51 — o painel do Setor Financeiro (CAC/ROI, investimento em anúncios, calculadora de
+          imposto, retiradas e pró-labore) embutido aqui mesmo: as rotas /financeiro/* sempre
+          liberaram DONO também, então o dono lança tudo pelo próprio login — não depende de ficar
+          esperando a responsável do setor, inclusive se ela estiver de folga. */}
+      <div className="bg-[#F2F7FC] border border-nv-blue/20 rounded-2xl px-4 py-3 text-[12.5px] text-nv-navy">
+        Painel compartilhado com o Setor Financeiro — os lançamentos daqui contam exatamente igual aos dela, e ela também
+        pode mexer nos números do seu financeiro por aqui. Se um dia ela estiver de folga, você lança no lugar dela sem
+        precisar do login dela.
+      </div>
+
+      <PainelFinanceiro />
+
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-3">
+        <div>
+          <p className="font-sora font-semibold text-[15px] text-nv-navy">Repasses pendentes</p>
+          <p className="text-[12.5px] text-nv-muted2 mt-0.5">Confirme quando o valor cair na conta da clínica</p>
+        </div>
+        {Object.entries(repasses.porProfissional).length === 0 && (
+          <p className="text-[13px] text-nv-muted2">Nenhuma pendência — tudo em dia.</p>
+        )}
+        {Object.entries(repasses.porProfissional).map(([nome, info]) => (
+          <div key={nome} className="flex items-center justify-between gap-3 py-2.5 border-t border-nv-borderLight first:border-t-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-[#D6883B]" />
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-nv-ink2 truncate">{nome}</p>
+                <p className="text-xs text-nv-muted3">
+                  {info.transacoes.length} atendimento(s) pendente(s)
+                  {msgRepasse[nome] && <span className="block text-[11px] text-nv-blue mt-0.5">{msgRepasse[nome]}</span>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <span className="nv-num font-sora font-bold text-sm text-nv-ink">R$ {formatarMoeda(info.totalPendente)}</span>
+              <button className="btn-primary !text-xs !px-3.5 !py-2" onClick={() => confirmarRepasse(nome, info.profissionalId, info.totalPendente)}>
+                Confirmar recebido
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-4 flex-wrap">
+        <div className="flex-1 min-w-[320px] bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-2.5">
+          <div>
+            <p className="font-sora font-semibold text-[15px] text-nv-navy">% de repasse por profissional</p>
+            <p className="text-[12.5px] text-nv-muted2 mt-0.5">Editável — hoje nem todo mundo é 50/50</p>
+          </div>
+          {profissionais.map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-2.5 py-2 border-t border-nv-borderLight">
+              <span className="text-[13px] font-semibold text-nv-ink2 truncate">{p.user.nome}</span>
+              <div className="flex items-center gap-1.5 text-[12.5px] text-nv-muted font-semibold shrink-0">
+                Profissional
+                <input
+                  className="w-[52px] border border-nv-border rounded-[7px] px-1.5 py-1 text-center text-[13px]"
+                  value={pctEditando[p.id] ?? p.percentualRepasse}
+                  onChange={(e) => setPctEditando((s) => ({ ...s, [p.id]: e.target.value }))}
+                  onBlur={() => salvarPercentual(p)}
+                />
+                % · Clínica {100 - Number(pctEditando[p.id] ?? p.percentualRepasse)}%
+              </div>
+              {msgPct[p.id] && <span className="text-[11px] text-nv-green">{msgPct[p.id]}</span>}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 min-w-[280px] bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-2.5">
+          <div>
+            <p className="font-sora font-semibold text-[15px] text-nv-navy">Supervisão dos setores</p>
+            <p className="text-[12.5px] text-nv-muted2 mt-0.5">Quem está online agora</p>
+          </div>
+          {setores.map((u) => {
+            const p = formatarPresenca(u.ultimoAcessoEm);
+            return (
+              <div key={u.id} className="flex items-center justify-between py-2 border-t border-nv-borderLight">
+                <div className="flex items-center gap-2">
+                  <span className={`nv-dot ${p.online ? "nv-dot-ok" : ""}`} style={!p.online ? { background: "#B7C1D1" } : undefined} />
+                  <span className="text-[13px] font-semibold text-nv-ink2">
+                    {u.role === "ATENDENTE" ? "Secretaria" : "Financeiro"} · {u.nome}
+                  </span>
+                </div>
+                <span className="text-xs text-nv-muted3">{p.online ? "online agora" : p.texto.replace("Visto ", "")}</span>
+              </div>
+            );
+          })}
+          {setores.length === 0 && <p className="text-[13px] text-nv-muted2">Nenhum login de setor cadastrado ainda.</p>}
+        </div>
+      </div>
+
+      <div>
+        <p className="font-sora font-semibold text-[15px] text-nv-navy mb-3">Transações do mês (detalhe)</p>
+        <Financeiro />
+      </div>
     </div>
   );
 }
@@ -1813,7 +2202,7 @@ function Usuarios() {
         <div>
           <p className="nv-eyebrow mb-1">Painel do Dono</p>
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Usuários</h1>
-          <p className="text-nv-muted text-sm mt-0.5">Todos os logins do sistema, por papel</p>
+          <p className="text-nv-muted text-sm mt-0.5">{lista.length} logins no sistema, por papel</p>
         </div>
         <button className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
           {mostrarForm ? "Fechar" : "+ Novo usuário"}
@@ -1906,9 +2295,7 @@ function Usuarios() {
                   >
                     {PAPEL_LABEL_NV[u.role] || u.role}
                   </span>
-                  <span className={`text-xs font-semibold ${u.ativo ? "text-emerald-700" : "text-nv-muted3"}`}>
-                    {u.ativo ? "Ativo" : "Inativo"}
-                  </span>
+                  {!u.ativo && <span className="text-xs font-semibold text-nv-muted3">Inativo</span>}
                   {u.role === "DONO" && !u.profissional && (
                     <button
                       className="text-nv-blue text-xs font-semibold underline disabled:opacity-50"
@@ -2132,6 +2519,21 @@ const STATUS_SUPORTE_LABEL = {
   RESOLVIDO: "Resolvido",
 };
 
+// Fase 51 — "hoje · HH:MM" / "ontem · HH:MM" / "N dias atrás", igual ao padrão usado nos Avisos
+// da profissional — usado aqui pra mostrar quando o chamado chegou, igual ao canvas.
+function formatarQuandoTicket(iso) {
+  if (!iso) return "";
+  const data = new Date(iso);
+  const agora = new Date();
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const diaDoItem = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+  const diffDias = Math.round((hoje - diaDoItem) / (24 * 60 * 60 * 1000));
+  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (diffDias <= 0) return `hoje · ${hora}`;
+  if (diffDias === 1) return `ontem · ${hora}`;
+  return `${diffDias} dias atrás`;
+}
+
 function SuporteEscalado() {
   const [tickets, setTickets] = useState([]);
   const [resposta, setResposta] = useState({});
@@ -2197,7 +2599,7 @@ function SuporteEscalado() {
                   <p className="text-[13.5px] font-semibold text-nv-ink">
                     {t.cliente.user.nome} · com {t.cliente.profissionalAtual?.user?.nome || "-"}
                   </p>
-                  <p className="text-xs text-nv-muted2 mt-0.5">{t.assunto}</p>
+                  <p className="text-[11px] text-nv-muted3 mt-0.5">{formatarQuandoTicket(t.mensagens[0]?.criadoEm || t.criadoEm)}</p>
                 </div>
                 <span
                   className="text-[10.5px] font-bold rounded-full px-2.5 py-1"
@@ -2206,13 +2608,18 @@ function SuporteEscalado() {
                   {STATUS_SUPORTE_LABEL[t.status] || t.status}
                 </span>
               </div>
-              <div className="my-2.5 space-y-1.5">
-                {t.mensagens.map((m) => (
-                  <p key={m.id} className="text-[13.5px] text-nv-ink bg-nv-bg rounded-[10px] px-3 py-2.5">
-                    {m.texto}
-                  </p>
-                ))}
-              </div>
+              <p className="my-2.5 text-[13.5px] text-nv-ink2 italic">
+                "{t.mensagens[0]?.texto || t.assunto}"
+              </p>
+              {t.mensagens.length > 1 && (
+                <div className="mb-2.5 space-y-1.5">
+                  {t.mensagens.slice(1).map((m) => (
+                    <p key={m.id} className="text-[12.5px] text-nv-ink bg-nv-bg rounded-[10px] px-3 py-2">
+                      {m.texto}
+                    </p>
+                  ))}
+                </div>
+              )}
               {mostrarResposta ? (
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -3061,9 +3468,9 @@ function AbaRenascerIA() {
 
   if (!dados && erroCarregar) {
     return (
-      <div className="space-y-3 max-w-xl">
-        <h2 className="text-lg font-bold text-renascer-ink">Renascer IA</h2>
-        <div className="card space-y-3 border border-red-200 bg-red-50">
+      <div className="font-publicSans space-y-3 max-w-xl">
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Renascer IA</h1>
+        <div className="nv-card space-y-3 border border-red-200 bg-red-50">
           <p className="text-sm text-red-700">{erroCarregar}</p>
           <button className="btn-primary" onClick={carregar}>
             Tentar de novo
@@ -3073,109 +3480,134 @@ function AbaRenascerIA() {
     );
   }
 
-  if (!dados) return <p className="text-renascer-ink/50">Carregando...</p>;
+  if (!dados) return <p className="text-sm text-nv-muted font-publicSans">Carregando...</p>;
 
   const percentualGasto = dados.tetoMensalReais > 0 ? Math.min(100, (dados.gastoMesAtualReais / dados.tetoMensalReais) * 100) : 0;
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="font-publicSans space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-renascer-ink">Renascer IA</h2>
-        <p className="text-sm text-renascer-ink/60">Gasto, usuários e travas de custo deste mês.</p>
+        <p className="nv-eyebrow mb-1">Painel do Dono</p>
+        <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Renascer IA</h1>
+        <p className="text-nv-muted text-sm mt-0.5">Assinatura mensal de IA dentro do app, gasto e limites</p>
       </div>
 
-      <div className="card space-y-2">
-        <p className="font-semibold text-sm text-renascer-ink">Link para divulgar a Renascer IA</p>
-        <p className="text-xs text-renascer-ink/55">
-          Mande esse link pra qualquer pessoa conhecer e se cadastrar na Renascer IA — não precisa já ser cliente da clínica.
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Usuários grátis ativos</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-ink">{dados.usuariosGratis}</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Assinantes pagantes</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-ink">{dados.assinaturaDisponivel ? dados.assinantes : "—"}</p>
+          {!dados.assinaturaDisponivel && <p className="text-[11px] text-nv-muted3 mt-1">Chega na próxima etapa (assinatura)</p>}
+        </div>
+        <div className="nv-card">
+          <p className="text-xs font-semibold text-nv-muted mb-2">Mensagens hoje</p>
+          <p className="nv-num font-sora font-bold text-[25px] text-nv-ink">{dados.mensagensHoje}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="font-sora font-semibold text-[15px] text-nv-navy">Gasto do mês com a IA</p>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12.5px] font-semibold text-nv-muted">Teto mensal (R$)</span>
+            <input className="input !w-24 !py-1.5 !text-sm" value={teto} onChange={(e) => setTeto(e.target.value)} />
+          </div>
+        </div>
+        <div className="h-2.5 rounded-full bg-nv-bg overflow-hidden">
+          <div
+            className={`h-full ${percentualGasto >= 100 ? "bg-nv-red" : percentualGasto >= 80 ? "bg-[#D6883B]" : "bg-nv-blue"}`}
+            style={{ width: `${percentualGasto}%` }}
+          />
+        </div>
+        <p className="text-[12.5px] text-nv-muted2">
+          R$ {dados.gastoMesAtualReais.toFixed(2)} de R$ {dados.tetoMensalReais.toFixed(2)} usados neste mês · {percentualGasto.toFixed(0)}% do teto
         </p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-2.5">
+        <div>
+          <p className="font-sora font-semibold text-[15px] text-nv-navy">Link de divulgação</p>
+          <p className="text-[12.5px] text-nv-muted2 mt-0.5">Envie para clientes e profissionais acessarem a Renascer IA direto pelo app.</p>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <code className="text-xs sm:text-sm bg-renascer-light px-3 py-2 rounded-lg break-all text-renascer-ink/80">
+          <code className="flex-1 min-w-[220px] text-[12.5px] bg-nv-bg px-3 py-2 rounded-lg break-all text-nv-ink2">
             {linkCadastroIA}
           </code>
-          <button className="btn-primary !py-1.5" onClick={copiarLinkIA} type="button">
+          <button className="btn-primary !text-xs !px-3.5 !py-2" onClick={copiarLinkIA} type="button">
             {linkCopiado ? "Copiado!" : "Copiar link"}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="card space-y-2">
-          <p className="text-xs font-bold text-renascer-ink/60">Gasto com a IA no mês</p>
-          <p className="text-2xl font-extrabold text-renascer-ink">
-            R$ {dados.gastoMesAtualReais.toFixed(2)}{" "}
-            <span className="text-sm font-semibold text-renascer-ink/50">de R$ {dados.tetoMensalReais.toFixed(2)}</span>
-          </p>
-          <div className="h-2 rounded-full bg-renascer-light overflow-hidden">
-            <div className="h-full bg-renascer" style={{ width: `${percentualGasto}%` }} />
-          </div>
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-2.5">
+        <div>
+          <p className="font-sora font-semibold text-[15px] text-nv-navy">Usuários da IA</p>
+          <p className="text-[12.5px] text-nv-muted2 mt-0.5">Uso de hoje, do maior pro menor — só a contagem de mensagens, nunca o conteúdo da conversa.</p>
         </div>
-        <div className="card space-y-1">
-          <p className="text-xs font-bold text-renascer-ink/60">Usuários grátis</p>
-          <p className="text-2xl font-extrabold text-renascer-ink">{dados.usuariosGratis}</p>
-        </div>
-        <div className="card space-y-1 opacity-60">
-          <p className="text-xs font-bold text-renascer-ink/60">Assinantes</p>
-          <p className="text-2xl font-extrabold text-renascer-ink">—</p>
-          <p className="text-xs text-renascer-ink/50">Chega na próxima etapa (assinatura)</p>
-        </div>
-        <div className="card space-y-1 opacity-60">
-          <p className="text-xs font-bold text-renascer-ink/60">Assinaturas no mês</p>
-          <p className="text-2xl font-extrabold text-renascer-ink">—</p>
-          <p className="text-xs text-renascer-ink/50">Chega na próxima etapa (assinatura)</p>
-        </div>
+        {dados.usuariosIA.length === 0 && <p className="text-[13px] text-nv-muted2">Ninguém se cadastrou na Renascer IA ainda.</p>}
+        {dados.usuariosIA.map((u) => {
+          const chegouNoLimite = u.usadoHoje >= u.limiteHoje;
+          return (
+            <div key={u.id} className="flex items-center justify-between gap-3 py-2.5 border-t border-nv-borderLight first:border-t-0">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-nv-ink2 truncate">{u.nome}</p>
+                <p className="text-xs text-nv-muted3 truncate">{u.email}</p>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0">
+                <span className="text-xs text-nv-muted2 whitespace-nowrap">
+                  {u.usadoHoje} de {u.limiteHoje} mensagens
+                </span>
+                <span
+                  className={`text-[10.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ${
+                    chegouNoLimite ? "bg-[#FBEAEA] text-nv-red" : "bg-[#EEF1F7] text-nv-muted"
+                  }`}
+                >
+                  {chegouNoLimite ? "Chegou no limite" : "Grátis"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="card space-y-4">
+      <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-4">
+        <div>
+          <p className="font-sora font-semibold text-[15px] text-nv-navy">Travas de custo</p>
+          <p className="text-[12.5px] text-nv-muted2 mt-0.5">Ao atingir o teto mensal, o grátis cai pro limite reduzido até o mês virar.</p>
+        </div>
+
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p className="font-semibold text-sm text-renascer-ink">Teto mensal de gasto com a IA</p>
-            <p className="text-xs text-renascer-ink/55">Ao atingir, o grátis cai para o limite reduzido até o mês virar.</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-semibold">R$</span>
-            <input className="input !w-28" value={teto} onChange={(e) => setTeto(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
-          <div>
-            <p className="font-semibold text-sm text-renascer-ink">Limite de mensagens por dia</p>
-            <p className="text-xs text-renascer-ink/55">O limite do assinante ainda não é usado nesta etapa.</p>
-          </div>
+          <p className="text-[13px] font-semibold text-nv-ink2">Limite de mensagens por dia</p>
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-1.5 text-sm font-semibold">
+            <label className="flex items-center gap-1.5 text-[12.5px] font-semibold text-nv-muted">
               Grátis
-              <input className="input !w-20" value={limiteGratis} onChange={(e) => setLimiteGratis(e.target.value)} />
+              <input className="input !w-16 !py-1.5 !text-sm" value={limiteGratis} onChange={(e) => setLimiteGratis(e.target.value)} />
             </label>
-            <label className="flex items-center gap-1.5 text-sm font-semibold">
+            <label className="flex items-center gap-1.5 text-[12.5px] font-semibold text-nv-muted">
               Assinante
-              <input className="input !w-20" value={limiteAssinante} onChange={(e) => setLimiteAssinante(e.target.value)} />
+              <input className="input !w-16 !py-1.5 !text-sm" value={limiteAssinante} onChange={(e) => setLimiteAssinante(e.target.value)} />
             </label>
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
-          <div>
-            <p className="font-semibold text-sm text-renascer-ink">Uma conta por WhatsApp e por e-mail</p>
-            <p className="text-xs text-renascer-ink/55">O mesmo WhatsApp ou e-mail não consegue criar duas contas.</p>
-          </div>
-          <span className="badge bg-green-100 text-green-800">Ativa</span>
+        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-nv-borderLight pt-3.5">
+          <p className="text-[13px] font-semibold text-nv-ink2">Uma conta por WhatsApp e por e-mail</p>
+          <span className="text-[10.5px] font-bold rounded-full px-2.5 py-1 bg-[#E8F5EE] text-nv-green">Ativa</span>
         </div>
 
-        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-renascer-ink/[0.06] pt-4">
-          <div>
-            <p className="font-semibold text-sm text-renascer-ink">Tamanho máximo de cada resposta</p>
-            <p className="text-xs text-renascer-ink/55">Nenhuma resposta da IA sai muito grande, pra não sair caro.</p>
-          </div>
-          <span className="badge bg-green-100 text-green-800">Ativa</span>
+        <div className="flex items-center justify-between gap-3 flex-wrap border-t border-nv-borderLight pt-3.5">
+          <p className="text-[13px] font-semibold text-nv-ink2">Tamanho máximo de cada resposta</p>
+          <span className="text-[10.5px] font-bold rounded-full px-2.5 py-1 bg-[#E8F5EE] text-nv-green">Ativa</span>
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="btn-primary" onClick={salvar} disabled={salvando}>
+          <button className="btn-primary text-sm" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando..." : "Salvar limites"}
           </button>
-          {mensagem && <span className="text-sm text-renascer-ink/60">{mensagem}</span>}
+          {mensagem && <span className="text-[12.5px] text-nv-muted">{mensagem}</span>}
         </div>
       </div>
     </div>
