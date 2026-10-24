@@ -10,6 +10,7 @@ const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente")
 const { parseValorMonetario } = require("../utils/financeiro");
 const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
 const {
+  hojeBrasil,
   inicioDoDia,
   periodoDoMes,
   trimestreAtual,
@@ -49,7 +50,11 @@ router.get("/dashboard", async (req, res) => {
     }),
   ]);
 
-  const hoje = new Date();
+  // Fase 59 — correção de bug: "hoje" tem que ser o dia de hoje em Brasília, não no UTC do
+  // servidor (ver comentário de hojeBrasil() em utils/meuDia.js) — senão, nas últimas 3h do dia
+  // (21h–24h em Brasília), o painel passa a considerar "hoje" o dia seguinte, e tudo que aconteceu
+  // mais cedo no dia de verdade (agendamentos, pagamentos) some das contas de "hoje"/"semana".
+  const hoje = hojeBrasil();
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
   const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);

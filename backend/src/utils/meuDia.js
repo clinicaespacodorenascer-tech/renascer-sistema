@@ -7,10 +7,23 @@ const prisma = require("../lib/prisma");
 
 // ---------- Período ----------
 
+// Fase 59 — correção de bug: "hoje" em horário de Brasília (UTC-3, sem horário de verão desde
+// 2019), não simplesmente `new Date()`. O servidor (Railway) roda em UTC, e usar o instante UTC
+// puro pra decidir "qual é o dia de hoje" vira o dia 3h ANTES da meia-noite real em Brasília —
+// ex: às 21h de sexta em Brasília já são 00h de sábado em UTC. Nessas 3h finais do dia (21h–24h
+// em Brasília), tudo que dependia de "hoje" sem essa correção (saldo de caixa do dia, investimento
+// em anúncio de hoje, "a receber hoje", etc.) passava a procurar dados do dia seguinte — que ainda
+// não existem — e mostrava tudo zerado, mesmo com o dia de hoje cheio de agendamento/pagamento.
+function hojeBrasil() {
+  const agoraBrasil = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return new Date(agoraBrasil.getUTCFullYear(), agoraBrasil.getUTCMonth(), agoraBrasil.getUTCDate());
+}
+
 // Meia-noite do dia informado (ou de hoje, se não vier nada) — usado como chave de dia em
 // ChecklistConclusao e ConferenciaCaixa, e como início do filtro "hoje" em várias contas abaixo.
 function inicioDoDia(dataStr) {
-  const base = dataStr ? new Date(`${dataStr}T00:00:00`) : new Date();
+  if (!dataStr) return hojeBrasil();
+  const base = new Date(`${dataStr}T00:00:00`);
   return new Date(base.getFullYear(), base.getMonth(), base.getDate());
 }
 
@@ -190,6 +203,7 @@ async function calcularSaldoCaixaDoDia(dataStr) {
 }
 
 module.exports = {
+  hojeBrasil,
   inicioDoDia,
   fimDoDia,
   periodoDoMes,

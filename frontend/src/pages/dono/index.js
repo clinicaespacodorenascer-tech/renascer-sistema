@@ -648,7 +648,12 @@ function Dashboard() {
           {diaAtivo && (
             <div className="bg-nv-bg rounded-xl p-4">
               <p className="text-xs font-semibold text-nv-ink2 mb-3">
-                {diaAtivo.label} · {new Date(diaAtivo.data).toLocaleDateString("pt-BR")}
+                {/* Fase 59 — correção de bug: diaAtivo.data vem do backend como meia-noite UTC
+                    REPRESENTANDO o dia certo (não um instante real) — formatar com
+                    toLocaleDateString("pt-BR") sem fixar timeZone:"UTC" deixa o navegador
+                    converter pro fuso local (Brasília, UTC-3), o que jogava a data mostrada
+                    1 dia pra trás (ex: sexta aparecia como 22/10 em vez de 23/10). */}
+                {diaAtivo.label} · {new Date(diaAtivo.data).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
