@@ -1684,6 +1684,7 @@ function Clientes() {
   }
 
   function LinhaCliente({ c }) {
+    const [histKey, setHistKey] = useState(0); // Fase 60 — força o Histórico de pagamentos recarregar após registrar renovação manual
     const pacote = c.pacotes[0];
     const contratadoEm = formatarDataCurta(pacote?.iniciadoEm);
     const encerraEm = formatarDataCurta(c.renovarEm || pacote?.encerradoEm);
@@ -1736,7 +1737,8 @@ function Clientes() {
             <MetricasCliente clienteId={c.id} rotaBase="/dono" />
             <ContratoCliente clienteId={c.id} />
             <NotificacaoECliente cliente={c} onExcluido={carregar} />
-            <HistoricoPagamentos clienteId={c.id} rotaBase="/dono" />
+            <HistoricoPagamentos key={histKey} clienteId={c.id} rotaBase="/dono" />
+            <RegistrarRenovacaoDono clienteId={c.id} onRegistrado={() => setHistKey((k) => k + 1)} />
             <TrocarProfissionalCliente
               clienteId={c.id}
               profissionalAtualNome={c.profissionalAtual?.user?.nome && nomeProfissional(c)}
@@ -2061,6 +2063,140 @@ function HistoricoPagamentos({ clienteId, rotaBase }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Fase 60 — o Dono lança um pacote/renovação em nome da profissional, pra quando ela recebeu o
+// pagamento direto (Pix/cartão pelo WhatsApp, por exemplo) e manda o comprovante pra ele em vez de
+// registrar ela mesma no sistema (enquanto o time todo não pega o jeito da ferramenta). Fica igual
+// a um lançamento feito pela própria profissional: ela segue com a pendência de repasse pra
+// Renascer, e o pagamento conta pra ela normalmente (aparece no Financeiro/histórico dela).
+function RegistrarRenovacaoDono({ clienteId, onRegistrado }) {
+  const [aberto, setAberto] = useState(false);
+  const [tipo, setTipo] = useState("RENOVACAO");
+  const [duracao, setDuracao] = useState("MIN50");
+  const [totalSessoes, setTotalSessoes] = useState(4);
+  const [valorTotal, setValorTotal] = useState("");
+  const [pagamentoParcial, setPagamentoParcial] = useState(false);
+  const [valorPacoteTotal, setValorPacoteTotal] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const [arquivo, setArquivo] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function registrar() {
+    setEnviando(true);
+    setMsg("");
+    try {
+      const imagemBase64 = arquivo ? await lerArquivoBase64(arquivo) : null;
+      const { data } = await api.post(`/dono/clientes/${clienteId}/pacotes`, {
+        duracao,
+        totalSessoes: Number(totalSessoes),
+        valorTotal: valorTotal ? Number(valorTotal) : undefined,
+        valorPacoteTotal: pagamentoParcial && valorPacoteTotal ? Number(valorPacoteTotal) : undefined,
+        tipo,
+        observacao: observacao || undefined,
+        imagemBase64,
+        mimeType: arquivo?.type,
+      });
+      setMsg(
+        `Registrado! Já conta pra ela, com pendência de repasse de R$ ${data.transacao.valorRenascer.toFixed(2)} pra Renascer.` +
+          (arquivo ? " Comprovante anexado." : "") +
+          (pagamentoParcial && valorPacoteTotal ? " Marcado como pagamento parcial." : "")
+      );
+      setValorTotal("");
+      setPagamentoParcial(false);
+      setValorPacoteTotal("");
+      setObservacao("");
+      setArquivo(null);
+      onRegistrado?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao registrar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (!aberto) {
+    return (
+      <button type="button" className="text-xs font-semibold text-nv-blue underline" onClick={() => setAberto(true)}>
+        + Registrar renovação/pagamento em nome da profissional
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-nv-blue/20 rounded-lg p-3 space-y-2">
+      <p className="text-xs font-medium text-renascer-ink/60">
+        Pra quando ela recebeu o pagamento direto (ex: Pix pelo WhatsApp) e mandou o comprovante pra você em vez de
+        lançar ela mesma — fica igual a um lançamento dela: conta no histórico/Financeiro dela e já nasce com a
+        pendência de repasse pra Renascer.
+      </p>
+      <div className="flex flex-wrap gap-2 items-center">
+        <select className="input !w-auto !text-xs" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          <option value="RENOVACAO">Renovação</option>
+          <option value="PACOTE_NOVO">Contratação nova</option>
+          <option value="SESSAO_EXTRA">Sessão extra</option>
+          <option value="OUTRO">Outro</option>
+        </select>
+        <select className="input !w-auto !text-xs" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+          <option value="MIN30">30 minutos</option>
+          <option value="MIN50">50 minutos</option>
+        </select>
+        <input
+          type="number"
+          min="1"
+          className="input !w-24 !text-xs"
+          placeholder="Nº sessões"
+          value={totalSessoes}
+          onChange={(e) => setTotalSessoes(e.target.value)}
+        />
+        <input
+          className="input !w-28 !text-xs"
+          placeholder={pagamentoParcial ? "Valor pago agora" : "Valor (opcional)"}
+          value={valorTotal}
+          onChange={(e) => setValorTotal(e.target.value)}
+        />
+      </div>
+      <label className="flex items-center gap-1.5 text-xs text-nv-muted">
+        <input
+          type="checkbox"
+          checked={pagamentoParcial}
+          onChange={(e) => {
+            setPagamentoParcial(e.target.checked);
+            if (!e.target.checked) setValorPacoteTotal("");
+          }}
+        />
+        Pagamento parcial — vai completar o valor depois
+      </label>
+      {pagamentoParcial && (
+        <input
+          className="input !w-44 !text-xs"
+          placeholder="Valor total do pacote"
+          value={valorPacoteTotal}
+          onChange={(e) => setValorPacoteTotal(e.target.value)}
+        />
+      )}
+      <input
+        className="input !text-xs w-full"
+        placeholder="Observação (opcional) — ex: ela me mandou o comprovante pelo WhatsApp"
+        value={observacao}
+        onChange={(e) => setObservacao(e.target.value)}
+      />
+      <div>
+        <label className="text-xs text-nv-muted block mb-1">Anexar comprovante (opcional)</label>
+        <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
+      </div>
+      <div className="flex items-center gap-3">
+        <button className="btn-secondary" onClick={registrar} disabled={enviando}>
+          {enviando ? "Registrando..." : "Registrar"}
+        </button>
+        <button type="button" className="text-xs text-renascer-ink/40 underline" onClick={() => setAberto(false)}>
+          Cancelar
+        </button>
+      </div>
+      {msg && <p className="text-sm w-full text-nv-ink">{msg}</p>}
     </div>
   );
 }

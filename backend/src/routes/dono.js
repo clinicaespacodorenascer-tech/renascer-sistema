@@ -7,7 +7,7 @@ const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
 const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
-const { parseValorMonetario } = require("../utils/financeiro");
+const { parseValorMonetario, valorDoPlano, calcularRepasse, transacaoDuplicada } = require("../utils/financeiro");
 const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
 const {
   hojeBrasil,
@@ -478,6 +478,105 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
     orderBy: { data: "desc" },
   });
   res.json(transacoes.map((t) => ({ ...t, temComprovante: !!t.comprovanteMimeType })));
+});
+
+// Fase 60 — o Dono registra uma renovação/pacote novo EM NOME da profissional (ex: ela recebeu o
+// Pix direto no WhatsApp, mandou o comprovante pra ele, mas ainda não sabe/conseguiu lançar
+// sozinha no sistema — enquanto o time todo não pega o jeito). É exatamente a mesma conta de
+// quando a própria profissional registra (utils/financeiro calcularRepasse, pagamento parcial
+// igual à Fase 59): ela aparece como quem recebeu o dinheiro (recebidoPor: PROFISSIONAL), fica
+// com a pendência de repasse pra Renascer, e o lançamento aparece no histórico/Financeiro dela
+// normalmente — só a observação registra que foi o Dono quem lançou, pra ficar rastreável.
+router.post("/clientes/:id/pacotes", async (req, res) => {
+  const { duracao, totalSessoes, valorTotal, valorPacoteTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
+  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, include: { user: true } });
+  if (!cliente?.profissionalAtualId) {
+    return res.status(400).json({ erro: "Esse cliente ainda não tem uma profissional vinculada — vincule antes de registrar." });
+  }
+  const profissional = await prisma.profissional.findUnique({ where: { id: cliente.profissionalAtualId }, include: { user: true } });
+
+  const valorOficial = valorDoPlano(duracao, totalSessoes);
+  const valorFinal = valorTotal ? parseValorMonetario(valorTotal) : valorOficial;
+  if (!valorFinal) return res.status(400).json({ erro: "Informe duração, quantidade de sessões e/ou valor válidos." });
+
+  const duplicada = await transacaoDuplicada(prisma, cliente.id, valorFinal);
+  if (duplicada) {
+    return res.status(400).json({
+      erro: "Já existe um pagamento desse mesmo valor pra esse cliente registrado hoje — não lancei de novo pra não duplicar o repasse.",
+      duplicado: true,
+      transacaoExistente: duplicada,
+    });
+  }
+
+  const precoPacoteParsed = valorPacoteTotal ? parseValorMonetario(valorPacoteTotal) : null;
+  const precoPacoteFinal = precoPacoteParsed && precoPacoteParsed > valorFinal ? precoPacoteParsed : valorFinal;
+
+  await prisma.pacote.updateMany({
+    where: { clienteId: cliente.id, status: { in: ["ATIVO", "AGUARDANDO_RENOVACAO"] } },
+    data: { status: "ENCERRADO", encerradoEm: new Date() },
+  });
+
+  const pacote = await prisma.pacote.create({
+    data: {
+      clienteId: cliente.id,
+      profissionalId: cliente.profissionalAtualId,
+      duracao,
+      totalSessoes,
+      valorTotal: precoPacoteFinal,
+      status: "ATIVO",
+    },
+  });
+
+  const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, profissional.percentualRepasse);
+  const observacaoFinal = observacao
+    ? `${observacao} (lançado por ${req.user.nome}, Dono, no lugar dela)`
+    : `Lançado por ${req.user.nome} (Dono) em nome da profissional.`;
+  const transacao = await prisma.transacaoFinanceira.create({
+    data: {
+      profissionalId: cliente.profissionalAtualId,
+      clienteId: cliente.id,
+      tipo: tipo || "RENOVACAO",
+      valorTotal: valorFinal,
+      valorPacoteTotal: precoPacoteFinal > valorFinal ? precoPacoteFinal : null,
+      valorProfissional,
+      valorRenascer,
+      recebidoPor: "PROFISSIONAL",
+      origem: "PROFISSIONAL",
+      comprovanteBase64: imagemBase64 || null,
+      comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
+      observacao: observacaoFinal,
+    },
+  });
+
+  const pendenteRegistro = precoPacoteFinal > valorFinal ? precoPacoteFinal - valorFinal : 0;
+
+  await notificar(cliente.userId, {
+    titulo: "Novo pacote liberado",
+    mensagem: `Seu pacote de ${totalSessoes} sessão(ões) foi confirmado. Já pode agendar seus horários!`,
+    tipo: "sistema",
+  });
+
+  if (profissional.user) {
+    await notificar(profissional.user.id, {
+      titulo: "Renovação lançada pra você",
+      mensagem:
+        `${req.user.nome} registrou o pagamento de ${cliente.user?.nome || "um cliente"} em seu nome (R$ ${valorFinal.toFixed(2)}) — ` +
+        `já conta pra você, e falta repassar R$ ${valorRenascer.toFixed(2)} pra Renascer.`,
+      tipo: "financeiro",
+      referenciaTipo: "TRANSACAO",
+      referenciaId: transacao.id,
+    });
+  }
+
+  await notificarAtendentes({
+    titulo: "Renovação lançada pelo Dono",
+    mensagem:
+      `${req.user.nome} registrou pagamento de R$ ${valorFinal.toFixed(2)} de ${cliente.user?.nome || "um cliente"} em nome de ${profissional.user?.nome || "uma profissional"}.` +
+      (pendenteRegistro > 0 ? ` Pagamento parcial — ainda falta R$ ${pendenteRegistro.toFixed(2)} do pacote.` : ""),
+    tipo: "financeiro",
+  });
+
+  res.json({ pacote, transacao });
 });
 
 // Contrato assinado (foto do documento, foto do rosto, CPF/nome informados e data do aceite) —
