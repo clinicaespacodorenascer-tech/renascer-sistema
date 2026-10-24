@@ -2854,7 +2854,11 @@ function EditarUsuario({ usuario, onSalvo }) {
       await api.put(`/dono/usuarios/${usuario.id}`, { nome, email, telefone, novaSenha: novaSenha || undefined });
       setMsg("Salvo!");
       setNovaSenha("");
-      onSalvo?.();
+      // Fase 58 — antes, o "Salvo!" nunca chegava a aparecer: o onSalvo() fechava esse painel
+      // (desmontava esse componente) na mesma hora que a mensagem era setada, então ela nunca
+      // era renderizada de verdade — parecia que "não salvava", mesmo salvando certinho. Agora
+      // dá um tempinho pra pessoa VER a confirmação antes de fechar.
+      setTimeout(() => onSalvo?.(), 1100);
     } catch (e) {
       setMsg(e?.response?.data?.erro || "Erro ao salvar.");
     }
@@ -2864,9 +2868,25 @@ function EditarUsuario({ usuario, onSalvo }) {
     <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-2">
       <div className="grid sm:grid-cols-2 gap-2">
         <input className="input" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-        <input className="input" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input
+          className="input"
+          placeholder="E-mail"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck="false"
+        />
         <input className="input" placeholder="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
-        <input className="input" placeholder="Nova senha (deixe em branco pra não trocar)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+        <input
+          className="input"
+          placeholder="Nova senha (deixe em branco pra não trocar)"
+          value={novaSenha}
+          onChange={(e) => setNovaSenha(e.target.value)}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck="false"
+        />
       </div>
       <button className="btn-primary text-sm" onClick={salvar}>
         Salvar alterações

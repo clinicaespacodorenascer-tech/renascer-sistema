@@ -60,6 +60,10 @@ export default function Login() {
               placeholder="E-mail, CPF ou telefone"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="username"
+              spellCheck="false"
               required
             />
             <div className="relative">
@@ -69,6 +73,10 @@ export default function Login() {
                 placeholder="Senha"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="current-password"
+                spellCheck="false"
                 required
               />
               <button
