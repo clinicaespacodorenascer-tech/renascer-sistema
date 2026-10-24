@@ -1781,7 +1781,12 @@ function Clientes() {
         </div>
       </div>
 
-      {mostrarForm && <NovoClienteDono profissionais={profissionais} onCadastrado={() => { setMostrarForm(false); carregar(); }} />}
+      {/* Fase 59 — correção de bug: antes esse onCadastrado fechava o formulário (setMostrarForm(false))
+          assim que o cadastro dava certo, o que desmontava o NovoClienteDono ANTES da pessoa conseguir
+          ver (e copiar) a telinha "Acesso criado — copie e envie pro cliente" com o e-mail/senha
+          gerados — por isso parecia que o login "não aparecia". Agora só atualiza a lista em segundo
+          plano; quem cadastrou fecha o formulário manualmente (botão "Fechar") depois de copiar. */}
+      {mostrarForm && <NovoClienteDono profissionais={profissionais} onCadastrado={() => carregar()} />}
 
       {recentes.length > 0 && (
         <div className="nv-card mb-4">
