@@ -427,6 +427,7 @@ model SolicitacaoNovoPaciente {
   horaFixa       String?
 
   valorTotal          Float?
+  valorPacoteTotal    Float?  // Fase 59 — valor cheio do pacote, só quando valorTotal acima é um pagamento parcial dele
   tipo                TipoTransacao?
   comprovanteBase64   String?        @db.Text
   comprovanteMimeType String?
@@ -628,6 +629,21 @@ model TransacaoFinanceira {
   data           DateTime       @default(now())
   observacao     String?
 
+  // Fase 59 — pagamento parcial: quando o cliente paga só parte do valor combinado agora (ex:
+  // metade de um pacote de R$120) e completa depois. valorTotal acima continua sendo só o que
+  // entrou de fato NESSE lançamento (o repasse — valorProfissional/valorRenascer — também
+  // continua calculado só em cima disso, igual sempre foi); valorPacoteTotal guarda o valor
+  // CHEIO combinado, só quando é maior que o que já foi pago. Pendente = valorPacoteTotal -
+  // valorTotal, enquanto quitadoEm estiver vazio. Quando o restante é pago, isso NÃO edita este
+  // registro (cada lançamento financeiro continua um registro imutável) — cria-se uma segunda
+  // transação (o complemento, com seu próprio repasse) referenciando esta por complementoDeId, e
+  // só então quitadoEm é marcado aqui.
+  valorPacoteTotal Float?
+  quitadoEm        DateTime?
+  complementoDeId  String?
+  complementoDe    TransacaoFinanceira?  @relation("ComplementoPagamento", fields: [complementoDeId], references: [id])
+  complementos     TransacaoFinanceira[] @relation("ComplementoPagamento")
+
   criadoEm       DateTime       @default(now())
 
   @@index([profissionalId])
@@ -635,6 +651,7 @@ model TransacaoFinanceira {
   @@index([data])
   @@index([recebidoPor, repassado])
   @@index([origem])
+  @@index([complementoDeId])
   @@map("transacoes_financeiras")
 }
 

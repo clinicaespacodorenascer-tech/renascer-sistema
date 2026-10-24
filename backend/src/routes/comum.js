@@ -4,6 +4,8 @@ const prisma = require("../lib/prisma");
 const { autenticar } = require("../middleware/auth");
 const { vapidPublicKey } = require("../utils/push");
 const { inicioDoDia } = require("../utils/meuDia");
+const { calcularRepasse, parseValorMonetario } = require("../utils/financeiro");
+const { notificar, notificarDonos } = require("../utils/notificar");
 
 const router = express.Router();
 router.use(autenticar);
@@ -130,6 +132,118 @@ router.get("/transacoes/:id/repasse-comprovante", async (req, res) => {
   }
 
   res.json({ base64: transacao.repasseComprovanteBase64, mimeType: transacao.repasseComprovanteMimeType || "image/jpeg" });
+});
+
+// ---------- Fase 59 — Pagamentos parciais (pendências) ----------
+// Quando um cliente paga só parte do valor combinado agora e completa depois (ex: metade de um
+// pacote de R$120), o lançamento original fica marcado com valorPacoteTotal > valorTotal. Essas
+// duas rotas são comuns a Dono/Atendente/Financeiro (veem tudo) e Profissional (só o que é dela)
+// — mesma regra de permissão já usada nos comprovantes acima.
+router.get("/transacoes/pendentes", async (req, res) => {
+  if (req.user.role === "CLIENTE" || req.user.role === "USUARIO_IA") {
+    return res.status(403).json({ erro: "Você não tem permissão para acessar isso." });
+  }
+
+  const pendentes = await prisma.transacaoFinanceira.findMany({
+    where: {
+      valorPacoteTotal: { not: null },
+      quitadoEm: null,
+      ...(req.user.role === "PROFISSIONAL" ? { profissionalId: req.user.profissional.id } : {}),
+    },
+    select: {
+      id: true,
+      tipo: true,
+      valorTotal: true,
+      valorPacoteTotal: true,
+      data: true,
+      observacao: true,
+      cliente: { select: { id: true, user: { select: { nome: true } } } },
+      profissional: { select: { id: true, user: { select: { nome: true } } } },
+    },
+    orderBy: { data: "desc" },
+  });
+
+  res.json(
+    pendentes.map((t) => ({
+      ...t,
+      valorPendente: Number((t.valorPacoteTotal - t.valorTotal).toFixed(2)),
+    }))
+  );
+});
+
+// Registra que o restante de um pagamento parcial foi pago. NÃO edita o lançamento original
+// (cada transação financeira continua um registro imutável) — cria uma segunda transação (o
+// complemento, com seu próprio repasse calculado só em cima desse valor) referenciando a
+// original, e só então marca a original como quitada.
+router.put("/transacoes/:id/quitar", async (req, res) => {
+  if (req.user.role === "CLIENTE" || req.user.role === "USUARIO_IA") {
+    return res.status(403).json({ erro: "Você não tem permissão para acessar isso." });
+  }
+
+  const original = await prisma.transacaoFinanceira.findUnique({ where: { id: req.params.id } });
+  if (!original) return res.status(404).json({ erro: "Pagamento não encontrado." });
+  if (req.user.role === "PROFISSIONAL" && original.profissionalId !== req.user.profissional.id) {
+    return res.status(403).json({ erro: "Você não tem permissão para mexer nesse pagamento." });
+  }
+  if (!original.valorPacoteTotal) {
+    return res.status(400).json({ erro: "Esse pagamento não tem valor pendente." });
+  }
+  if (original.quitadoEm) {
+    return res.status(400).json({ erro: "Esse pagamento já foi quitado." });
+  }
+
+  const pendente = Number((original.valorPacoteTotal - original.valorTotal).toFixed(2));
+  const { valor, imagemBase64, mimeType, observacao } = req.body;
+  const valorQuitacao = valor ? parseValorMonetario(valor) : pendente;
+  if (!valorQuitacao || valorQuitacao <= 0) {
+    return res.status(400).json({ erro: "Informe um valor válido pra quitação." });
+  }
+
+  const profissional = await prisma.profissional.findUnique({
+    where: { id: original.profissionalId },
+    include: { user: { select: { nome: true } } },
+  });
+  const cliente = await prisma.cliente.findUnique({
+    where: { id: original.clienteId },
+    include: { user: { select: { nome: true } } },
+  });
+
+  const { valorProfissional, valorRenascer } = calcularRepasse(valorQuitacao, profissional.percentualRepasse);
+  const complemento = await prisma.transacaoFinanceira.create({
+    data: {
+      profissionalId: original.profissionalId,
+      clienteId: original.clienteId,
+      tipo: original.tipo,
+      valorTotal: valorQuitacao,
+      valorProfissional,
+      valorRenascer,
+      recebidoPor: original.recebidoPor,
+      origem: req.user.role === "PROFISSIONAL" ? "PROFISSIONAL" : "ATENDENTE",
+      comprovanteBase64: imagemBase64 || null,
+      comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
+      observacao: observacao || `Complemento do pagamento parcial de ${new Date(original.data).toLocaleDateString("pt-BR")}.`,
+      complementoDeId: original.id,
+    },
+  });
+
+  await prisma.transacaoFinanceira.update({ where: { id: original.id }, data: { quitadoEm: new Date() } });
+
+  await notificarDonos({
+    titulo: "Pagamento pendente quitado",
+    mensagem: `${cliente?.user?.nome || "Um cliente"} completou o pagamento pendente de R$ ${valorQuitacao.toFixed(2)} — repasse esperado: R$ ${valorRenascer.toFixed(2)}.`,
+    tipo: "financeiro",
+  });
+  if (req.user.role !== "PROFISSIONAL") {
+    await notificar(profissional.userId, {
+      titulo: "Pendência quitada",
+      mensagem: `O restante do pagamento de ${cliente?.user?.nome || "um cliente"} foi registrado — R$ ${valorQuitacao.toFixed(2)} a mais, repasse de R$ ${valorRenascer.toFixed(2)}.`,
+      tipo: "financeiro",
+      referenciaTipo: "TRANSACAO",
+      referenciaId: complemento.id,
+    });
+  }
+
+  res.json({ original: { ...original, quitadoEm: new Date() }, complemento });
 });
 
 // ---------- Checklist de "Meu dia" (Fase 30) ----------

@@ -448,7 +448,7 @@ router.post("/agendamentos", async (req, res) => {
 // no cadastro do cliente pra poder ser visto depois, e já contabiliza automaticamente
 // quanto vai pra profissional e quanto fica pra Renascer (aparece no painel do Dono no mesmo dia).
 router.post("/clientes/:id/pacotes", async (req, res) => {
-  const { duracao, totalSessoes, valorTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
+  const { duracao, totalSessoes, valorTotal, valorPacoteTotal, tipo, imagemBase64, mimeType, observacao } = req.body;
   // É sempre a profissional que recebe o pagamento direto do cliente e repassa a parte da
   // Renascer — por isso todo lançamento feito pela atendente já nasce como pendência de repasse.
   const recebidoPorFinal = "PROFISSIONAL";
@@ -471,13 +471,27 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     });
   }
 
+  // Fase 59 — pagamento parcial: quando o valor pago agora é menor que o preço cheio combinado
+  // do pacote, o pacote entra com o preço CHEIO (valorPacoteTotal) e a transação registra só o
+  // que entrou de fato agora (valorFinal) + o quanto ficou pendente — o repasse sai calculado só
+  // em cima do que entrou, igual sempre foi.
+  const precoPacoteParsed = valorPacoteTotal ? parseValorMonetario(valorPacoteTotal) : null;
+  const precoPacoteFinal = precoPacoteParsed && precoPacoteParsed > valorFinal ? precoPacoteParsed : valorFinal;
+
   await prisma.pacote.updateMany({
     where: { clienteId: cliente.id, status: { in: ["ATIVO", "AGUARDANDO_RENOVACAO"] } },
     data: { status: "ENCERRADO", encerradoEm: new Date() },
   });
 
   const pacote = await prisma.pacote.create({
-    data: { clienteId: cliente.id, profissionalId: cliente.profissionalAtualId, duracao, totalSessoes, valorTotal: valorFinal, status: "ATIVO" },
+    data: {
+      clienteId: cliente.id,
+      profissionalId: cliente.profissionalAtualId,
+      duracao,
+      totalSessoes,
+      valorTotal: precoPacoteFinal,
+      status: "ATIVO",
+    },
   });
 
   const { valorProfissional, valorRenascer } = calcularRepasse(valorFinal, profissional.percentualRepasse);
@@ -487,6 +501,7 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
       clienteId: cliente.id,
       tipo: tipo || "PACOTE_NOVO",
       valorTotal: valorFinal,
+      valorPacoteTotal: precoPacoteFinal > valorFinal ? precoPacoteFinal : null,
       valorProfissional,
       valorRenascer,
       recebidoPor: recebidoPorFinal,
@@ -496,6 +511,8 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
       observacao: observacao || null,
     },
   });
+
+  const pendenteRegistro = precoPacoteFinal > valorFinal ? precoPacoteFinal - valorFinal : 0;
 
   await notificar(cliente.userId, {
     titulo: "Novo pacote liberado",
@@ -513,7 +530,9 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
 
   await notificarDonos({
     titulo: "Tem dinheiro na área!",
-    mensagem: `Pagamento de R$ ${valorFinal.toFixed(2)} de ${cliente.user?.nome || "um cliente"} registrado pela recepção — repasse esperado da profissional: R$ ${valorRenascer.toFixed(2)}.`,
+    mensagem:
+      `Pagamento de R$ ${valorFinal.toFixed(2)} de ${cliente.user?.nome || "um cliente"} registrado pela recepção — repasse esperado da profissional: R$ ${valorRenascer.toFixed(2)}.` +
+      (pendenteRegistro > 0 ? ` Pagamento parcial — ainda falta R$ ${pendenteRegistro.toFixed(2)} do pacote.` : ""),
     tipo: "financeiro",
   });
 
@@ -530,6 +549,8 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
       id: true,
       tipo: true,
       valorTotal: true,
+      valorPacoteTotal: true,
+      quitadoEm: true,
       valorProfissional: true,
       valorRenascer: true,
       data: true,

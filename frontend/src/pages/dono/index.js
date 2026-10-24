@@ -1207,7 +1207,10 @@ const FORM_CLIENTE_VAZIO_DONO = {
   totalSessoes: 4,
   diaSemanaFixo: "",
   horaFixa: "",
+  horarioPersonalizado: false,
   valorTotal: "",
+  pagamentoParcial: false,
+  valorPacoteTotal: "",
   canalOrigem: "",
 };
 const DIAS_FIXOS_DONO = [
@@ -1260,6 +1263,7 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
   const [form, setForm] = useState(FORM_CLIENTE_VAZIO_DONO);
   const [sessoesExtras, setSessoesExtras] = useState(0);
   const [pacotePersonalizado, setPacotePersonalizado] = useState(false); // Fase 56 — "Personalizado" no nº de sessões do pacote
+  const [horarioPersonalizadoAberto, setHorarioPersonalizadoAberto] = useState(false); // Fase 59 — painel de "Horário personalizado"
   const [arquivo, setArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [nomeCadastrado, setNomeCadastrado] = useState("");
@@ -1285,7 +1289,9 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
         totalSessoes: Number(form.totalSessoes),
         diaSemanaFixo: form.diaSemanaFixo || undefined,
         horaFixa: form.horaFixa || undefined,
+        horarioPersonalizado: form.horarioPersonalizado || undefined,
         valorTotal: form.valorTotal ? Number(form.valorTotal) : undefined,
+        valorPacoteTotal: form.pagamentoParcial && form.valorPacoteTotal ? Number(form.valorPacoteTotal) : undefined,
         imagemBase64,
         mimeType: arquivo?.type,
         canalOrigem: form.canalOrigem || undefined,
@@ -1294,6 +1300,7 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
       setNomeCadastrado(form.nome);
       setForm(FORM_CLIENTE_VAZIO_DONO);
       setSessoesExtras(0);
+      setHorarioPersonalizadoAberto(false);
       setArquivo(null);
       onCadastrado?.();
     } catch (e) {
@@ -1425,45 +1432,105 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
         {!form.profissionalAtualId ? (
           <p className="text-xs text-nv-muted">Escolha a profissional acima pra ver os horários livres dela.</p>
         ) : (
-          (() => {
-            const grupos = horariosLivresPorDiaDono(profissionais, form.profissionalAtualId);
-            if (grupos.length === 0) {
-              return <p className="text-xs text-nv-muted">Essa profissional não tem nenhum horário livre configurado agora.</p>;
-            }
-            return (
-              <div className="space-y-2">
-                {form.diaSemanaFixo && (
-                  <button
-                    type="button"
-                    className="text-xs text-nv-blue font-semibold underline"
-                    onClick={() => setForm({ ...form, diaSemanaFixo: "", horaFixa: "" })}
-                  >
-                    Limpar seleção (sem dia fixo)
-                  </button>
-                )}
-                {grupos.map((g) => (
-                  <div key={g.dia}>
-                    <p className="text-[11.5px] text-nv-muted3 mb-1">{g.label}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {g.horarios.map((h) => {
-                        const ativo = form.diaSemanaFixo === g.dia && form.horaFixa === h;
-                        return (
-                          <button
-                            key={h}
-                            type="button"
-                            className={`nv-seg ${ativo ? "nv-seg-ativo" : ""}`}
-                            onClick={() => setForm({ ...form, diaSemanaFixo: g.dia, horaFixa: h })}
-                          >
-                            {h}
-                          </button>
-                        );
-                      })}
-                    </div>
+          <div className="space-y-3">
+            {(() => {
+              const grupos = horariosLivresPorDiaDono(profissionais, form.profissionalAtualId);
+              return (
+                <div className="space-y-2">
+                  {form.diaSemanaFixo && (
+                    <button
+                      type="button"
+                      className="text-xs text-nv-blue font-semibold underline"
+                      onClick={() => {
+                        setForm({ ...form, diaSemanaFixo: "", horaFixa: "", horarioPersonalizado: false });
+                        setHorarioPersonalizadoAberto(false);
+                      }}
+                    >
+                      Limpar seleção (sem dia fixo)
+                    </button>
+                  )}
+                  {grupos.length === 0 ? (
+                    <p className="text-xs text-nv-muted">Essa profissional não tem nenhum horário livre configurado agora.</p>
+                  ) : (
+                    grupos.map((g) => (
+                      <div key={g.dia}>
+                        <p className="text-[11.5px] text-nv-muted3 mb-1">{g.label}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {g.horarios.map((h) => {
+                            const ativo = !form.horarioPersonalizado && form.diaSemanaFixo === g.dia && form.horaFixa === h;
+                            return (
+                              <button
+                                key={h}
+                                type="button"
+                                className={`nv-seg ${ativo ? "nv-seg-ativo" : ""}`}
+                                onClick={() => {
+                                  setForm({ ...form, diaSemanaFixo: g.dia, horaFixa: h, horarioPersonalizado: false });
+                                  setHorarioPersonalizadoAberto(false);
+                                }}
+                              >
+                                {h}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Fase 59 — pra quando a profissional combinou um horário direto (ex: WhatsApp) mas ainda não
+                colocou na disponibilidade dela no sistema. Cria o horário na agenda dela na hora. */}
+            <div className="pt-2 border-t border-nv-borderLight/70">
+              {!horarioPersonalizadoAberto ? (
+                <button
+                  type="button"
+                  className="text-xs text-nv-blue font-semibold underline"
+                  onClick={() => setHorarioPersonalizadoAberto(true)}
+                >
+                  + Horário personalizado (ela ainda não colocou esse horário no sistema)
+                </button>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[11.5px] text-nv-muted3">
+                    Use quando ela já confirmou o horário com você (ex: no WhatsApp) mas ainda não marcou na
+                    disponibilidade dela. Esse horário entra na agenda dela automaticamente.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="input !w-auto"
+                      value={form.horarioPersonalizado ? form.diaSemanaFixo : ""}
+                      onChange={(e) => setForm({ ...form, diaSemanaFixo: e.target.value, horarioPersonalizado: true })}
+                    >
+                      <option value="">Dia da semana</option>
+                      {DIAS_FIXOS_DONO.map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="time"
+                      className="input !w-auto"
+                      value={form.horarioPersonalizado ? form.horaFixa : ""}
+                      onChange={(e) => setForm({ ...form, horaFixa: e.target.value, horarioPersonalizado: true })}
+                    />
+                    <button
+                      type="button"
+                      className="text-xs text-nv-muted3 underline"
+                      onClick={() => {
+                        setHorarioPersonalizadoAberto(false);
+                        if (form.horarioPersonalizado) setForm({ ...form, diaSemanaFixo: "", horaFixa: "", horarioPersonalizado: false });
+                      }}
+                    >
+                      Cancelar
+                    </button>
                   </div>
-                ))}
-              </div>
-            );
-          })()
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -1482,7 +1549,7 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
           </select>
           <input
             className="input"
-            placeholder="Valor (opcional)"
+            placeholder={form.pagamentoParcial ? "Valor pago agora" : "Valor (opcional)"}
             value={form.valorTotal}
             onChange={(e) => setForm({ ...form, valorTotal: e.target.value })}
           />
@@ -1494,6 +1561,33 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
             ))}
           </select>
         </div>
+
+        {/* Fase 59 — pagamento parcial: ela paga só parte do valor agora e completa depois (ex:
+            metade de um pacote de R$120). O "pendente" fica visível na ficha e no Financeiro até
+            alguém registrar que o restante foi pago. */}
+        <label className="flex items-center gap-1.5 mt-2 text-xs text-nv-muted">
+          <input
+            type="checkbox"
+            checked={form.pagamentoParcial}
+            onChange={(e) => setForm({ ...form, pagamentoParcial: e.target.checked, valorPacoteTotal: e.target.checked ? form.valorPacoteTotal : "" })}
+          />
+          Pagamento parcial — ela vai completar o valor depois
+        </label>
+        {form.pagamentoParcial && (
+          <div className="mt-1.5">
+            <input
+              className="input !w-44"
+              placeholder="Valor total do pacote"
+              value={form.valorPacoteTotal}
+              onChange={(e) => setForm({ ...form, valorPacoteTotal: e.target.value })}
+            />
+            <p className="text-[11px] text-nv-muted3 mt-1">
+              "Valor pago agora" acima fica registrado como já recebido; a diferença pro valor total do pacote fica
+              pendente, visível na ficha do cliente e no Financeiro, até alguém registrar que o restante foi pago.
+            </p>
+          </div>
+        )}
+
         <div className="mt-2">
           <label className="text-xs text-nv-muted block mb-1">Anexar comprovante (opcional)</label>
           <input type="file" accept="image/*" className="input-file" onChange={(e) => setArquivo(e.target.files[0])} />
@@ -1862,35 +1956,101 @@ function NotificacaoECliente({ cliente, onExcluido }) {
 function HistoricoPagamentos({ clienteId, rotaBase }) {
   const [lista, setLista] = useState([]);
   const [carregado, setCarregado] = useState(false);
+  // Fase 59 — pagamento parcial: cada transação pode ter valorPacoteTotal > valorTotal (ficou
+  // faltando pagar o resto). "quitando" controla o mini-formulário inline pra registrar o
+  // restante sem precisar sair da ficha do cliente.
+  const [quitando, setQuitando] = useState(null);
+  const [valorQuitacao, setValorQuitacao] = useState("");
+  const [msgQuitacao, setMsgQuitacao] = useState("");
+  const [enviandoQuitacao, setEnviandoQuitacao] = useState(false);
 
-  useEffect(() => {
+  async function carregar() {
     setCarregado(false);
-    api.get(`${rotaBase}/clientes/${clienteId}/transacoes`).then((r) => {
-      setLista(r.data);
-      setCarregado(true);
-    });
+    const r = await api.get(`${rotaBase}/clientes/${clienteId}/transacoes`);
+    setLista(r.data);
+    setCarregado(true);
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteId, rotaBase]);
+
+  function abrirQuitacao(t) {
+    setQuitando(t.id);
+    setValorQuitacao(String((t.valorPacoteTotal - t.valorTotal).toFixed(2)));
+    setMsgQuitacao("");
+  }
+
+  async function confirmarQuitacao(t) {
+    setEnviandoQuitacao(true);
+    setMsgQuitacao("");
+    try {
+      await api.put(`/comum/transacoes/${t.id}/quitar`, { valor: valorQuitacao });
+      setQuitando(null);
+      carregar();
+    } catch (e) {
+      setMsgQuitacao(e?.response?.data?.erro || "Erro ao registrar a quitação.");
+    } finally {
+      setEnviandoQuitacao(false);
+    }
+  }
 
   return (
     <div className="bg-white border border-renascer/10 rounded-lg p-3 space-y-1">
       <p className="text-xs font-medium text-renascer-ink/60">Pagamentos registrados</p>
       {!carregado && <p className="text-xs text-renascer-ink/40">Carregando...</p>}
       {carregado && lista.length === 0 && <p className="text-xs text-renascer-ink/40">Nenhum pagamento registrado ainda.</p>}
-      {lista.map((t) => (
-        <div key={t.id} className="flex items-center justify-between flex-wrap gap-1 text-xs border-t border-renascer/10 pt-1">
-          <span>
-            {new Date(t.data).toLocaleDateString("pt-BR")} · {t.profissional?.user?.nome} · {TIPO_LABEL[t.tipo] || t.tipo} · R${" "}
-            {t.valorTotal.toFixed(2)}
-          </span>
-          {t.temComprovante ? (
-            <button className="text-renascer underline" onClick={() => verComprovante(t.id)}>
-              Ver comprovante
-            </button>
-          ) : (
-            <span className="text-renascer-ink/30">sem comprovante</span>
-          )}
-        </div>
-      ))}
+      {lista.map((t) => {
+        const pendente = t.valorPacoteTotal && !t.quitadoEm ? Number((t.valorPacoteTotal - t.valorTotal).toFixed(2)) : 0;
+        return (
+          <div key={t.id} className="border-t border-renascer/10 pt-1">
+            <div className="flex items-center justify-between flex-wrap gap-1 text-xs">
+              <span>
+                {new Date(t.data).toLocaleDateString("pt-BR")} · {t.profissional?.user?.nome} · {TIPO_LABEL[t.tipo] || t.tipo} · R${" "}
+                {t.valorTotal.toFixed(2)}
+                {pendente > 0 && <span className="text-[#B0580F] font-semibold"> · pendente R$ {pendente.toFixed(2)}</span>}
+                {t.valorPacoteTotal && t.quitadoEm && <span className="text-nv-green font-semibold"> · quitado</span>}
+              </span>
+              <div className="flex items-center gap-2">
+                {t.temComprovante ? (
+                  <button className="text-renascer underline" onClick={() => verComprovante(t.id)}>
+                    Ver comprovante
+                  </button>
+                ) : (
+                  <span className="text-renascer-ink/30">sem comprovante</span>
+                )}
+                {pendente > 0 && quitando !== t.id && (
+                  <button className="text-[#B0580F] underline font-semibold" onClick={() => abrirQuitacao(t)}>
+                    Registrar restante
+                  </button>
+                )}
+              </div>
+            </div>
+            {quitando === t.id && (
+              <div className="flex flex-wrap items-center gap-2 mt-1 bg-[#FBF0E3] rounded-lg px-2 py-1.5">
+                <span className="text-[11px] text-[#B0580F]">Valor pago agora:</span>
+                <input
+                  className="input !w-24 !py-1 !text-xs"
+                  value={valorQuitacao}
+                  onChange={(e) => setValorQuitacao(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-nv-green underline"
+                  disabled={enviandoQuitacao}
+                  onClick={() => confirmarQuitacao(t)}
+                >
+                  {enviandoQuitacao ? "Salvando..." : "Confirmar"}
+                </button>
+                <button type="button" className="text-xs text-renascer-ink/40 underline" onClick={() => setQuitando(null)}>
+                  Cancelar
+                </button>
+                {msgQuitacao && <span className="text-[11px] text-red-600 w-full">{msgQuitacao}</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

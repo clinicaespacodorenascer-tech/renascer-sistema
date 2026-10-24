@@ -462,6 +462,8 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
       id: true,
       tipo: true,
       valorTotal: true,
+      valorPacoteTotal: true,
+      quitadoEm: true,
       valorProfissional: true,
       valorRenascer: true,
       data: true,

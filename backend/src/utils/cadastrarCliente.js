@@ -96,7 +96,9 @@ async function cadastrarClienteComProfissional({
   totalSessoes,
   diaSemanaFixo,
   horaFixa,
+  horarioPersonalizado, // Fase 59 — true quando dia/hora vieram do "Horário personalizado", não da lista de livres dela
   valorTotal,
+  valorPacoteTotal, // Fase 59 — preço CHEIO do pacote, só vem quando valorTotal acima é um pagamento parcial dele
   tipo,
   imagemBase64,
   mimeType,
@@ -114,6 +116,31 @@ async function cadastrarClienteComProfissional({
     const erro = new Error("Escolha a profissional que vai atender esse cliente.");
     erro.status = 400;
     throw erro;
+  }
+
+  // Fase 59 — "Horário personalizado": o Dono/Atendente combinou um dia+hora direto com a
+  // profissional (ex: pelo WhatsApp) que ela ainda não colocou na disponibilidade dela no
+  // sistema. Em vez de travar o cadastro até ela mexer no sistema, a gente já cria esse horário
+  // na disponibilidade dela agora — ele passa a aparecer na agenda/grade dela normalmente (e,
+  // quando ela aceitar o paciente, fica reservado pra ele como qualquer outro horário fixo). Só
+  // barra se esse exato dia+hora já for o horário fixo de OUTRO cliente — aí sim dá erro, pra
+  // não marcar um paciente em cima do horário de outro sem querer.
+  if (horarioPersonalizado && diaSemanaFixo && horaFixa) {
+    const slotExistente = await prisma.disponibilidade.findFirst({
+      where: { profissionalId: profissionalAtualId, diaSemana: diaSemanaFixo, horaInicio: horaFixa },
+    });
+    if (slotExistente?.ocupadoPorClienteId) {
+      const erro = new Error("Esse horário já está ocupado (já é o horário fixo de outro cliente) — escolha outro horário.");
+      erro.status = 400;
+      throw erro;
+    }
+    if (!slotExistente) {
+      await prisma.disponibilidade.create({
+        data: { profissionalId: profissionalAtualId, diaSemana: diaSemanaFixo, horaInicio: horaFixa, ativo: true },
+      });
+    } else if (!slotExistente.ativo) {
+      await prisma.disponibilidade.update({ where: { id: slotExistente.id }, data: { ativo: true } });
+    }
   }
 
   const profissional = await prisma.profissional.findUnique({
@@ -184,6 +211,7 @@ async function cadastrarClienteComProfissional({
       diaSemanaFixo: diaSemanaFixo || null,
       horaFixa: horaFixa || null,
       valorTotal: valorTotal ? parseValorMonetario(valorTotal) : null,
+      valorPacoteTotal: valorPacoteTotal ? parseValorMonetario(valorPacoteTotal) : null,
       tipo: tipo || null,
       comprovanteBase64: imagemBase64 || null,
       comprovanteMimeType: imagemBase64 ? mimeType || "image/jpeg" : null,
@@ -271,7 +299,14 @@ async function aceitarSolicitacaoNovoPaciente({ solicitacaoId, profissionalId })
 
   let transacao = null;
   let avisoFinanceiro = null;
-  const valorFinal = solicitacao.valorTotal || null;
+  const valorFinal = solicitacao.valorTotal || null; // valor que de fato entrou agora
+  // Fase 59 — pagamento parcial: valorPacoteTotal só vem preenchido quando o valor pago agora é
+  // menor que o preço cheio combinado do pacote. Sem isso (caso de sempre), o preço do pacote
+  // continua sendo o próprio valor pago — nada muda do comportamento anterior.
+  const precoPacoteFinal =
+    solicitacao.valorPacoteTotal && valorFinal && solicitacao.valorPacoteTotal > valorFinal
+      ? solicitacao.valorPacoteTotal
+      : valorFinal;
   if (valorFinal) {
     if (!pacote) {
       pacote = await prisma.pacote.create({
@@ -281,12 +316,12 @@ async function aceitarSolicitacaoNovoPaciente({ solicitacaoId, profissionalId })
           duracao: solicitacao.duracao || "MIN50",
           totalSessoes: solicitacao.totalSessoes || 1,
           sessoesUsadas: 0,
-          valorTotal: valorFinal,
+          valorTotal: precoPacoteFinal,
           status: "ATIVO",
         },
       });
-    } else if (pacote.valorTotal !== valorFinal) {
-      pacote = await prisma.pacote.update({ where: { id: pacote.id }, data: { valorTotal: valorFinal } });
+    } else if (pacote.valorTotal !== precoPacoteFinal) {
+      pacote = await prisma.pacote.update({ where: { id: pacote.id }, data: { valorTotal: precoPacoteFinal } });
     }
 
     const duplicada = await transacaoDuplicada(prisma, clienteId, valorFinal);
@@ -301,6 +336,7 @@ async function aceitarSolicitacaoNovoPaciente({ solicitacaoId, profissionalId })
           clienteId,
           tipo: solicitacao.tipo || "PACOTE_NOVO",
           valorTotal: valorFinal,
+          valorPacoteTotal: precoPacoteFinal > valorFinal ? precoPacoteFinal : null,
           valorProfissional,
           valorRenascer,
           recebidoPor: "PROFISSIONAL",
@@ -311,9 +347,12 @@ async function aceitarSolicitacaoNovoPaciente({ solicitacaoId, profissionalId })
         },
       });
 
+      const pendenteAceite = precoPacoteFinal > valorFinal ? precoPacoteFinal - valorFinal : 0;
       await notificarDonos({
         titulo: "Tem dinheiro na área!",
-        mensagem: `${nomeProfissional} aceitou ${nome} e confirmou o pagamento de R$ ${valorFinal.toFixed(2)} — repasse esperado: R$ ${valorRenascer.toFixed(2)}.`,
+        mensagem:
+          `${nomeProfissional} aceitou ${nome} e confirmou o pagamento de R$ ${valorFinal.toFixed(2)} — repasse esperado: R$ ${valorRenascer.toFixed(2)}.` +
+          (pendenteAceite > 0 ? ` Pagamento parcial — ainda falta R$ ${pendenteAceite.toFixed(2)} do pacote.` : ""),
         tipo: "financeiro",
       });
     }

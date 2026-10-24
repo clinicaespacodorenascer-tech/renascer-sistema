@@ -43,6 +43,94 @@ export function formatarMoeda(v) {
   return (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Fase 59 — pagamentos parciais: lista, de TODOS os profissionais, os pagamentos em que o
+// cliente pagou só parte do valor combinado e ainda falta completar — rota /comum/transacoes/
+// pendentes (também usada pela Profissional, filtrada só pra ela). Exportado porque o mesmo
+// painel aparece tanto aqui (Setor Financeiro) quanto na aba Financeiro do Dono.
+export function PagamentosPendentes() {
+  const [lista, setLista] = useState([]);
+  const [carregado, setCarregado] = useState(false);
+  const [quitando, setQuitando] = useState(null);
+  const [valorQuitacao, setValorQuitacao] = useState("");
+  const [msgQuitacao, setMsgQuitacao] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  async function carregar() {
+    const { data } = await api.get("/comum/transacoes/pendentes");
+    setLista(data);
+    setCarregado(true);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  function abrirQuitacao(t) {
+    setQuitando(t.id);
+    setValorQuitacao(String(t.valorPendente.toFixed(2)));
+    setMsgQuitacao("");
+  }
+
+  async function confirmarQuitacao(t) {
+    setEnviando(true);
+    setMsgQuitacao("");
+    try {
+      await api.put(`/comum/transacoes/${t.id}/quitar`, { valor: valorQuitacao });
+      setQuitando(null);
+      carregar();
+    } catch (e) {
+      setMsgQuitacao(e?.response?.data?.erro || "Erro ao registrar a quitação.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (!carregado || lista.length === 0) return null; // nada pendente (ou ainda carregando) — não polui o painel
+
+  return (
+    <div className="nv-card">
+      <p className="font-sora font-semibold text-nv-navy mb-1">Pagamentos pendentes</p>
+      <p className="text-xs text-nv-muted mb-3">
+        Clientes que pagaram só parte do valor combinado agora — o restante ainda não foi registrado.
+      </p>
+      <div className="space-y-2">
+        {lista.map((t) => (
+          <div key={t.id} className="border-t border-nv-borderLight pt-2 first:border-t-0 first:pt-0">
+            <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
+              <span>
+                <strong>{t.cliente?.user?.nome}</strong> · {t.profissional?.user?.nome} · pago R$ {t.valorTotal.toFixed(2)} de R${" "}
+                {t.valorPacoteTotal.toFixed(2)} · <span className="text-[#B0580F] font-semibold">pendente R$ {t.valorPendente.toFixed(2)}</span>
+              </span>
+              {quitando !== t.id && (
+                <button type="button" className="text-xs text-[#B0580F] font-semibold underline" onClick={() => abrirQuitacao(t)}>
+                  Registrar restante
+                </button>
+              )}
+            </div>
+            {quitando === t.id && (
+              <div className="flex flex-wrap items-center gap-2 mt-1.5 bg-[#FBF0E3] rounded-lg px-2 py-1.5">
+                <span className="text-[11px] text-[#B0580F]">Valor pago agora:</span>
+                <input className="input !w-24 !py-1 !text-xs" value={valorQuitacao} onChange={(e) => setValorQuitacao(e.target.value)} />
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-nv-green underline"
+                  disabled={enviando}
+                  onClick={() => confirmarQuitacao(t)}
+                >
+                  {enviando ? "Salvando..." : "Confirmar"}
+                </button>
+                <button type="button" className="text-xs text-nv-muted3 underline" onClick={() => setQuitando(null)}>
+                  Cancelar
+                </button>
+                {msgQuitacao && <span className="text-[11px] text-red-600 w-full">{msgQuitacao}</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ================================================================================================
 // ---------------- Painel financeiro ----------------
 // ================================================================================================
@@ -149,6 +237,8 @@ export function PainelFinanceiro() {
         <h1 className="font-sora font-bold text-[26px] md:text-[29px] text-nv-navy mb-1">Painel financeiro</h1>
         <p className="text-[14px] text-nv-muted">Lançamentos e indicadores de hoje</p>
       </div>
+
+      <PagamentosPendentes />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <CardStat
