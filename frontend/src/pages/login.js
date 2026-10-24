@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import api, { salvarSessao, rotaPorPapel } from "../lib/api";
 import Logo from "../components/Logo";
@@ -10,6 +10,17 @@ export default function Login() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
+
+  // Fase 58 — quando o interceptor do api.js redireciona pra cá por causa de um login expirado
+  // (token com mais de 30 dias, ou inválido), mostra um aviso explicando o motivo — em vez da
+  // pessoa só cair na tela de login sem entender por quê.
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.sessao === "expirada") {
+      setErro("Seu login expirou — é só entrar de novo com seu e-mail/telefone e senha de sempre.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.sessao]);
 
   async function entrar(e) {
     e.preventDefault();
