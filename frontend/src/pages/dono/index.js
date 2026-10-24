@@ -2574,6 +2574,10 @@ function Usuarios() {
   const [editando, setEditando] = useState(null);
   const [ativandoId, setAtivandoId] = useState(null);
   const [supervisionandoId, setSupervisionandoId] = useState(null); // Fase 33 — Secretaria/Supervisão
+  // Fase 57 — filtro por papel + busca por nome/e-mail: a lista de usuários cresceu demais (197+
+  // logins, a maioria cliente) e ficou difícil achar um login específico pra editar.
+  const [filtroPapel, setFiltroPapel] = useState("TODOS");
+  const [buscaUsuario, setBuscaUsuario] = useState("");
 
   async function carregar() {
     const [u, p] = await Promise.all([api.get("/dono/usuarios"), api.get("/dono/profissionais")]);
@@ -2628,6 +2632,16 @@ function Usuarios() {
       setAtivandoId(null);
     }
   }
+
+  const termoBuscaUsuario = buscaUsuario.trim().toLowerCase();
+  const listaFiltrada = lista
+    .filter((u) => filtroPapel === "TODOS" || u.role === filtroPapel)
+    .filter(
+      (u) =>
+        !termoBuscaUsuario ||
+        u.nome.toLowerCase().includes(termoBuscaUsuario) ||
+        (u.email || "").toLowerCase().includes(termoBuscaUsuario)
+    );
 
   return (
     <div className="font-publicSans">
@@ -2700,11 +2714,54 @@ function Usuarios() {
         </div>
       )}
 
+      <div className="flex items-center gap-2.5 flex-wrap mb-3">
+        <div className="relative flex-1 min-w-[220px]">
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            className="w-[15px] h-[15px] text-nv-muted3 absolute left-3 top-1/2 -translate-y-1/2"
+            aria-hidden="true"
+          >
+            <circle cx="8.8" cy="8.8" r="6" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M13.3 13.3L18 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <input
+            type="text"
+            value={buscaUsuario}
+            onChange={(e) => setBuscaUsuario(e.target.value)}
+            placeholder="Buscar por nome ou e-mail..."
+            className="w-full rounded-[10px] border border-nv-border bg-white pl-9 pr-3 py-2 text-[13px] text-nv-ink2 placeholder:text-nv-muted3 focus:outline-none focus:ring-2 focus:ring-nv-blue/25"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[
+            ["TODOS", "Todos"],
+            ["DONO", "Donos"],
+            ["ATENDENTE", "Atendentes"],
+            ["PROFISSIONAL", "Profissionais"],
+            ["FINANCEIRO", "Setor financeiro"],
+            ["CLIENTE", "Clientes"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFiltroPapel(id)}
+              className={`text-[12px] px-3 py-1.5 rounded-[9px] font-semibold whitespace-nowrap ${
+                filtroPapel === id ? "bg-nv-blue text-white" : "bg-white text-nv-muted border border-nv-border"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="nv-card-flat px-6 py-1">
         <p className="text-xs text-nv-muted py-3 border-b border-nv-borderLight">
           Como dono, você pode editar ou excluir qualquer login (cliente, profissional, atendente ou outro dono).
+          {" "}{listaFiltrada.length} de {lista.length} login(s) nesse filtro.
         </p>
-        {lista.map((u) => {
+        {listaFiltrada.map((u) => {
           const cor = PAPEL_COR_NV[u.role] || PAPEL_COR_NV.CLIENTE;
           return (
             <div key={u.id}>
