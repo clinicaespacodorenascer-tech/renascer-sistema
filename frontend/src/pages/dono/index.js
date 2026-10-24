@@ -309,7 +309,7 @@ function ClientesParaReativar({ rotaBase }) {
           Clientes pausados, em ordem alfabética — chama no WhatsApp e, se topar voltar, vincula com uma profissional.
         </p>
       </div>
-      <div className="nv-card !p-0 px-5">
+      <div className="nv-card-flat px-5">
         {ordenada.map((c) => {
           const linkReativar = c.whatsapp
             ? "https://wa.me/" +
@@ -426,7 +426,7 @@ function HistoricoClientes() {
         </div>
       </div>
 
-      <div className="nv-card !p-0 px-6 py-1">
+      <div className="nv-card-flat px-6 py-1">
         {eventos.map((h) => {
           const detalhes = [h.profissionalNome && `com ${h.profissionalNome}`, h.pacoteResumo, h.whatsapp && `WhatsApp: ${h.whatsapp}`]
             .filter(Boolean)
@@ -1714,7 +1714,7 @@ function Clientes() {
         </div>
       )}
 
-      <div className="nv-card !p-0 px-5">
+      <div className="nv-card-flat px-5">
         {modo === "todos" &&
           ordenados.map((c) => <LinhaCliente key={c.id} c={c} />)}
         {modo === "porProfissional" &&
@@ -2337,7 +2337,7 @@ function RepassesProfissionais() {
         específico como recebido dentro da lista.
       </p>
 
-      <div className="nv-card !p-0 px-6 py-1">
+      <div className="nv-card-flat px-6 py-1">
         {mostrarPendentes && profissionais.length === 0 && (
           <p className="text-sm text-nv-muted py-4">Nenhuma pendência de repasse no momento — tudo em dia.</p>
         )}
@@ -2700,7 +2700,7 @@ function Usuarios() {
         </div>
       )}
 
-      <div className="nv-card !p-0 px-6 py-1">
+      <div className="nv-card-flat px-6 py-1">
         <p className="text-xs text-nv-muted py-3 border-b border-nv-borderLight">
           Como dono, você pode editar ou excluir qualquer login (cliente, profissional, atendente ou outro dono).
         </p>

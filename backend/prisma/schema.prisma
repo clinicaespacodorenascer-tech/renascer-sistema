@@ -370,6 +370,10 @@ model Cliente {
   // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
   renovarEm             DateTime?
   renovarEmAvisoEnviado Boolean  @default(false)
+  // Fase 57 — "Marcar como contatado": quando alguém do Financeiro/Dono já ligou/chamou esse
+  // cliente sobre a renovação que está chegando (tela "Clientes pra renovar" novo layout). Fica
+  // null de novo sempre que uma nova data de renovarEm é definida (novo ciclo).
+  renovarContatadoEm    DateTime?
 
   // Situação atual (ativo na lista da profissional, ou marcado como "não renovou e saiu") e o
   // WhatsApp exato que ele informou no cadastro — guardado à parte pra nunca se perder, mesmo
@@ -779,6 +783,13 @@ model Notificacao {
   mensagem  String
   tipo      String   // "renovacao" | "pendencia" | "tarefa" | "financeiro" | "sistema"
   lida      Boolean  @default(false)
+  // Fase 57 — "a que registro esse aviso se refere", pra abrir direto na ficha/comprovante
+  // específico em vez de só trocar de aba. referenciaTipo é "CLIENTE" (abre a ficha desse
+  // cliente) ou "TRANSACAO" (abre o comprovante dessa transação); referenciaId é o id do
+  // registro. Os dois ficam null em avisos sem um registro único (ex: resumo diário com vários
+  // clientes) — nesse caso o clique continua só trocando de aba, como já era antes.
+  referenciaTipo String?
+  referenciaId   String?
   criadoEm  DateTime @default(now())
 
   @@index([userId])

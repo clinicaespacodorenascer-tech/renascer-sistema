@@ -74,7 +74,7 @@ function ClientesParaReativar({ rotaBase }) {
           Clientes pausados, em ordem alfabética — chama no WhatsApp e, se topar voltar, vincula com uma profissional.
         </p>
       </div>
-      <div className="nv-card !p-0 px-5">
+      <div className="nv-card-flat px-5">
         {ordenada.map((c) => {
           const linkReativar = c.whatsapp
             ? "https://wa.me/" +
@@ -993,7 +993,7 @@ function Clientes() {
         </div>
       )}
 
-      <div className="nv-card !p-0 px-5">
+      <div className="nv-card-flat px-5">
         {ordenados.map((c) => {
           // Fase 51 — igual canvas: progresso de sessões no lugar do e-mail, e a badge de
           // "aguardando renovação" direto na linha (sem precisar abrir a ficha pra ver).
@@ -1244,7 +1244,7 @@ function AgendaGeral() {
         </div>
       )}
 
-      <div className="nv-card !p-0 px-5">
+      <div className="nv-card-flat px-5">
         {Object.entries(porDia).map(([dia, agendamentos]) => (
           <div key={dia}>
             <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-4 pb-1.5 capitalize">{dia}</p>

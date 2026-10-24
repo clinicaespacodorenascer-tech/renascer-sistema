@@ -70,6 +70,15 @@ export default function AreaProfissional() {
   // sistema contabilize certo quantas sessões foram feitas de verdade.
   const [pendentesConfirmar, setPendentesConfirmar] = useState([]);
   const [popupDispensados, setPopupDispensados] = useState([]); // "lembrar depois" — só nesta visita
+  // Fase 57 — "precisão" dos Avisos: quando o clique num aviso vem com referenciaTipo/referenciaId
+  // (CLIENTE ou TRANSACAO), guarda aqui pra passar pra aba certa abrir direto na ficha/comprovante
+  // daquele registro específico, em vez de só trocar de aba.
+  const [referencia, setReferencia] = useState({ tipo: null, id: null });
+
+  function irPara(aba, referenciaTipo, referenciaId) {
+    setReferencia({ tipo: referenciaTipo || null, id: referenciaId || null });
+    setAba(aba);
+  }
 
   async function carregarPendentesConfirmar() {
     try {
@@ -124,10 +133,10 @@ export default function AreaProfissional() {
       )}
       {aba === "agenda" && <AbaAgenda />}
       {aba === "novos" && <AbaNovosPacientes />}
-      {aba === "clientes" && <AbaClientes />}
+      {aba === "clientes" && <AbaClientes clienteIdInicial={referencia.tipo === "CLIENTE" ? referencia.id : null} />}
       {aba === "cadastrar" && <AbaCadastrarCliente />}
-      {aba === "financeiro" && <AbaFinanceiro />}
-      {aba === "notificacoes" && <AbaNotificacoes />}
+      {aba === "financeiro" && <AbaFinanceiro transacaoIdInicial={referencia.tipo === "TRANSACAO" ? referencia.id : null} />}
+      {aba === "notificacoes" && <AbaNotificacoes onIrPara={irPara} />}
       {aba === "config" && <AbaConfig />}
     </LayoutNovo>
   );
@@ -1031,11 +1040,13 @@ function NovaSessaoModal({ diaSemana, dataInicial, diaLabel, clientes, onAgendad
 // aguardando renovação, e a ficha abre em tela cheia (não mais numa coluna ao lado) com 3 abas —
 // Dados, Prontuário e evolução, Financeiro — e um botão "Agendar sessão" sempre à mão no topo. O
 // chat interno foi removido (o Elismael pediu pra tirar, não é mais usado).
-export function AbaClientes() {
+// Fase 57 — `clienteIdInicial`: quando vem de um aviso com precisão (ex: "Ver ficha" de um
+// aviso de cliente específico), já abre a ficha dele direto, sem precisar achar na lista.
+export function AbaClientes({ clienteIdInicial } = {}) {
   const [clientes, setClientes] = useState([]);
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("todos");
-  const [selecionadoId, setSelecionadoId] = useState(null);
+  const [selecionadoId, setSelecionadoId] = useState(clienteIdInicial || null);
 
   async function carregar() {
     const { data } = await api.get("/profissional/clientes");
@@ -1696,7 +1707,9 @@ function NovoPacoteCliente({ clienteId, onRegistrado }) {
 }
 
 // ---------------- FINANCEIRO ----------------
-export function AbaFinanceiro() {
+// Fase 57 — `transacaoIdInicial`: quando vem de um aviso com precisão (financeiro pendente ou já
+// confirmado), já abre o comprovante daquela transação específica direto, assim que a aba carrega.
+export function AbaFinanceiro({ transacaoIdInicial } = {}) {
   const [resumo, setResumo] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [valorCalc, setValorCalc] = useState("");
@@ -1723,6 +1736,11 @@ export function AbaFinanceiro() {
     carregar();
     carregarRenovar();
   }, []);
+
+  useEffect(() => {
+    if (transacaoIdInicial) verComprovante(transacaoIdInicial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transacaoIdInicial]);
 
   async function marcarContatado(id) {
     setContatandoId(id);
@@ -1778,20 +1796,29 @@ export function AbaFinanceiro() {
         <p className="text-nv-muted text-sm mt-0.5">Repasses, comprovantes e transações do mês</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Fase 57 — 3 cards na ordem/nome do Canva (Recebido este mês / Pendente de confirmação /
+          % repasse atual); "Repasse Renascer" virou um 4º card menor, pra não perder a informação. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="nv-card">
           <p className="text-sm text-nv-muted">Recebido este mês</p>
           <p className="nv-num text-2xl font-bold text-nv-blue">R$ {resumo?.totalProfissional?.toFixed(2) ?? "0,00"}</p>
           <p className="text-xs text-nv-muted mt-1">Só o que é seu — não conta a parte que fica com a Renascer.</p>
         </div>
-        <div className="nv-card">
-          <p className="text-sm text-nv-muted">Repasse Renascer</p>
-          <p className="nv-num text-2xl font-bold text-nv-ink2">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
-        </div>
         <div className="nv-card !border-amber-300 bg-amber-50">
           <p className="text-sm text-nv-muted">Pendente de confirmação</p>
           <p className="nv-num text-2xl font-bold text-amber-700">R$ {resumo?.totalPendenteRepassar?.toFixed(2) ?? "0,00"}</p>
           <p className="text-xs text-nv-muted mt-1">Dinheiro que você recebeu direto do cliente e ainda não repassou pra Renascer.</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">% repasse atual</p>
+          <p className="nv-num text-2xl font-bold text-nv-green">
+            {resumo?.percentualRepasse != null ? `${resumo.percentualRepasse}% / ${100 - resumo.percentualRepasse}%` : "—"}
+          </p>
+          <p className="text-xs text-nv-muted mt-1">Sua parte / parte da Renascer, em cada pagamento.</p>
+        </div>
+        <div className="nv-card">
+          <p className="text-sm text-nv-muted">Repasse Renascer</p>
+          <p className="nv-num text-2xl font-bold text-nv-ink2">R$ {resumo?.totalRenascer?.toFixed(2) ?? "0,00"}</p>
         </div>
       </div>
 
@@ -1918,57 +1945,61 @@ export function AbaFinanceiro() {
         )}
       </div>
 
-      <div className="nv-card overflow-x-auto">
-        <h3 className="font-sora font-semibold text-nv-ink mb-3">Transações do mês</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-nv-muted">
-              <th className="py-1">Data</th>
-              <th>Cliente</th>
-              <th>Tipo</th>
-              <th>Total</th>
-              <th>Seu repasse</th>
-              <th>Repasse à Renascer</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {resumo?.transacoes?.map((t) => (
-              <tr key={t.id} className="border-t border-nv-borderLight">
-                <td className="py-1 text-nv-ink2">{new Date(t.data).toLocaleDateString("pt-BR")}</td>
-                <td className="text-nv-ink2">{t.cliente?.user?.nome || "-"}</td>
-                <td className="text-nv-ink2">
-                  {TIPO_LABEL[t.tipo] || t.tipo}
-                  {t.origem === "ATENDENTE" && (
-                    <span className="block text-[10px] text-nv-muted3">fechado pela recepção</span>
-                  )}
-                </td>
-                <td className="text-nv-ink2">R$ {t.valorTotal.toFixed(2)}</td>
-                <td className="text-nv-ink2">R$ {t.valorProfissional.toFixed(2)}</td>
-                <td>
-                  {t.recebidoPor === "PROFISSIONAL" ? (
-                    <LinhaRepasse t={t} onMudou={carregar} />
-                  ) : (
-                    <span className="text-nv-muted3 text-xs">recebido pela clínica</span>
-                  )}
-                </td>
-                <td className="text-right">
-                  {t.temComprovante ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <button className="text-nv-blue text-xs underline" onClick={() => verComprovante(t.id)}>
-                        Ver comprovante
-                      </button>
-                      <span className="text-[9.5px] text-nv-muted3 bg-nv-bg rounded-full px-1.5 py-0.5">registro imutável</span>
+      {/* Fase 57 — "Transações do mês" virou "Histórico de repasses", redesenhado pro visual do
+          Canva: uma linha por transação (título + data/status), valor à direita e as mesmas ações
+          de sempre (anexar/ver comprovante da transação, e o fluxo de repasse pra Renascer quando
+          for ela quem recebeu direto). */}
+      <div className="nv-card-flat px-6 py-1">
+        <h3 className="font-sora font-semibold text-nv-ink px-0 pt-4 pb-1">Histórico de repasses</h3>
+        {resumo?.transacoes?.length === 0 && <p className="text-sm text-nv-muted pb-4">Nenhuma transação neste mês.</p>}
+        {resumo?.transacoes?.map((t) => {
+          const statusLabel =
+            t.recebidoPor !== "PROFISSIONAL"
+              ? { texto: "Recebido pela clínica", cor: "text-nv-muted2", bg: "" }
+              : t.repassado
+              ? { texto: "Confirmado", cor: "text-emerald-700", bg: "bg-emerald-50" }
+              : t.repasseSolicitadoEm
+              ? { texto: "Aguardando confirmação", cor: "text-amber-700", bg: "bg-amber-50" }
+              : { texto: "Pendente", cor: "text-amber-700", bg: "bg-amber-50" };
+          return (
+            <div key={t.id} className="flex items-start justify-between gap-3 flex-wrap py-3 border-t border-nv-borderLight first:border-t-0">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-nv-ink2">
+                  {TIPO_LABEL[t.tipo] || t.tipo} · {t.cliente?.user?.nome || "cliente"}
+                </p>
+                <p className="text-[11.5px] text-nv-muted3 flex items-center gap-1.5 flex-wrap mt-0.5">
+                  {new Date(t.data).toLocaleDateString("pt-BR")}
+                  {statusLabel.bg && (
+                    <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${statusLabel.bg} ${statusLabel.cor}`}>
+                      {statusLabel.texto}
                     </span>
-                  ) : (
-                    <span className="text-nv-muted3 text-xs">sem comprovante</span>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {resumo?.transacoes?.length === 0 && <p className="text-sm text-nv-muted mt-2">Nenhuma transação neste mês.</p>}
+                  {!statusLabel.bg && <span className={statusLabel.cor}>{statusLabel.texto}</span>}
+                  {t.origem === "ATENDENTE" && <span>· fechado pela recepção</span>}
+                </p>
+                {t.recebidoPor === "PROFISSIONAL" && !t.repassado && (
+                  <div className="mt-1.5">
+                    <LinhaRepasse t={t} onMudou={carregar} />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="nv-num text-[13.5px] font-bold text-nv-ink">R$ {t.valorTotal.toFixed(2)}</span>
+                <span className="text-[11px] text-nv-muted3">seu repasse R$ {t.valorProfissional.toFixed(2)}</span>
+                {t.temComprovante ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <button className="text-nv-blue text-xs underline" onClick={() => verComprovante(t.id)}>
+                      Ver comprovante
+                    </button>
+                    <span className="text-[9.5px] text-nv-muted3 bg-nv-bg rounded-full px-1.5 py-0.5">registro imutável</span>
+                  </span>
+                ) : (
+                  <span className="text-nv-muted3 text-xs">sem comprovante</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2092,16 +2123,26 @@ function formatarQuandoAviso(iso) {
   return `${diffDias} dias atrás`;
 }
 
+// Fase 56 — além do ícone/cor, cada categoria de aviso agora também diz qual é a "ação" do canva
+// (texto do link + pra qual aba levar ao clicar) — é o que faltava pra bater com o layout novo.
 function categoriaAviso(n) {
   const msg = (n.mensagem || "").toLowerCase();
   if (n.tipo === "financeiro" && /confirmad/.test(msg)) {
-    return { cor: "#1C7C54", bg: "#E8F5EE", Icone: IconAvisoCheck };
+    return { cor: "#1C7C54", bg: "#E8F5EE", Icone: IconAvisoCheck, acaoTexto: "Ver comprovante", acaoAba: "financeiro" };
   }
-  if (n.tipo === "financeiro") return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoMoeda };
-  if (n.tipo === "renovacao") return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoRelogio };
-  if (n.tipo === "cliente") return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa };
-  if (n.tipo === "mensagem" || n.tipo === "tarefa") return { cor: "#8A4FA3", bg: "#F2E9FB", Icone: IconAvisoMensagem };
-  return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa };
+  if (n.tipo === "financeiro") {
+    return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoMoeda, acaoTexto: "Ver financeiro", acaoAba: "financeiro" };
+  }
+  if (n.tipo === "renovacao") {
+    return { cor: "#B0580F", bg: "#FBF0E3", Icone: IconAvisoRelogio, acaoTexto: "Ver cliente", acaoAba: "clientes" };
+  }
+  if (n.tipo === "cliente") {
+    return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa, acaoTexto: "Ver ficha", acaoAba: "clientes" };
+  }
+  if (n.tipo === "mensagem" || n.tipo === "tarefa") {
+    return { cor: "#8A4FA3", bg: "#F2E9FB", Icone: IconAvisoMensagem, acaoTexto: "Responder", acaoAba: "clientes" };
+  }
+  return { cor: "#0B5FA8", bg: "#EAF1FA", Icone: IconAvisoPessoa, acaoTexto: "Ver ficha", acaoAba: "clientes" };
 }
 
 function IconAvisoPessoa({ cor }) {
@@ -2145,7 +2186,12 @@ function IconAvisoCheck({ cor }) {
   );
 }
 
-function AbaNotificacoes() {
+// Fase 56 — redesenhada no padrão do canva: card com borda fina (em vez de só sombra), barra
+// colorida na lateral só pros avisos não lidos, e um link de ação no rodapé do card (na cor da
+// categoria) que leva direto pra aba certa — "Ver ficha"/"Ver cliente" pra Meus clientes,
+// "Ver financeiro"/"Ver comprovante" pra Financeiro, "Responder" pra Meus clientes (onde fica o
+// histórico/relatório do cliente).
+function AbaNotificacoes({ onIrPara }) {
   const [lista, setLista] = useState([]);
   useEffect(() => {
     api.get("/comum/notificacoes").then((r) => setLista(r.data));
@@ -2159,13 +2205,12 @@ function AbaNotificacoes() {
       </div>
       <div className="flex flex-col gap-2.5">
         {lista.map((n) => {
-          const { cor, bg, Icone } = categoriaAviso(n);
+          const { cor, bg, Icone, acaoTexto, acaoAba } = categoriaAviso(n);
           return (
             <div
               key={n.id}
-              className={`bg-white rounded-2xl p-4 shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex items-start gap-3 ${
-                n.lida ? "" : "ring-1 ring-nv-blue/15"
-              }`}
+              className="bg-white rounded-2xl p-4 border flex items-start gap-3"
+              style={{ borderColor: n.lida ? "#E5EAF2" : cor, borderLeftWidth: n.lida ? 1 : 3 }}
             >
               <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: bg }}>
                 <Icone cor={cor} />
@@ -2176,12 +2221,24 @@ function AbaNotificacoes() {
                   <span className="text-[11px] text-nv-muted3 whitespace-nowrap">{formatarQuandoAviso(n.criadoEm)}</span>
                 </div>
                 <p className="text-[12.5px] text-nv-muted2 mt-0.5">{n.mensagem}</p>
+                {onIrPara && (
+                  <div className="flex justify-end mt-1.5">
+                    <button
+                      type="button"
+                      className="text-[12px] font-semibold"
+                      style={{ color: cor }}
+                      onClick={() => onIrPara(acaoAba, n.referenciaTipo, n.referenciaId)}
+                    >
+                      {acaoTexto}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
         {lista.length === 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
+          <div className="bg-white rounded-2xl p-5 border border-nv-borderLight">
             <p className="text-[13px] text-nv-muted2">Nenhum aviso por enquanto.</p>
           </div>
         )}

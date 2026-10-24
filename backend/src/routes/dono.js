@@ -383,6 +383,8 @@ router.put("/clientes/:id/vincular-profissional", async (req, res) => {
         nomeProfissionalAntiga ? ` (estava com ${nomeProfissionalAntiga})` : ""
       }.`,
       tipo: "cliente",
+      referenciaTipo: "CLIENTE",
+      referenciaId: cliente.id,
     });
   }
   res.json(cliente);
@@ -431,6 +433,8 @@ router.put("/clientes/:id/reativar", async (req, res) => {
       titulo: "Novo cliente pra você!",
       mensagem: `${cliente.user.nome} foi reativado(a) e vinculado(a) a você.`,
       tipo: "cliente",
+      referenciaTipo: "CLIENTE",
+      referenciaId: cliente.id,
     });
   }
   res.json({ ok: true });
@@ -488,6 +492,7 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
   if (renovarEm !== undefined) {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
+    dados.renovarContatadoEm = null;
   }
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
   res.json(cliente);
@@ -665,6 +670,8 @@ router.put("/repasses/:transacaoId/marcar", async (req, res) => {
     titulo: "Repasse confirmado",
     mensagem: `Seu repasse de R$ ${transacao.valorRenascer.toFixed(2)} foi conferido e confirmado — já saiu da sua lista de pendências.`,
     tipo: "financeiro",
+    referenciaTipo: "TRANSACAO",
+    referenciaId: transacao.id,
   });
 
   res.json(atualizada);
@@ -690,6 +697,8 @@ router.put("/transacoes/:id/reclassificar-profissional", async (req, res) => {
     titulo: "Lembrete de repasse",
     mensagem: `Um pagamento antigo (R$ ${transacao.valorTotal.toFixed(2)}) foi corrigido: você recebeu direto e precisa repassar R$ ${transacao.valorRenascer.toFixed(2)} pra Renascer, se ainda não repassou.`,
     tipo: "financeiro",
+    referenciaTipo: "TRANSACAO",
+    referenciaId: transacao.id,
   });
 
   res.json(atualizada);
@@ -804,6 +813,8 @@ router.post("/usuarios", async (req, res) => {
           titulo: "Novo cliente pra você!",
           mensagem: `${nome} foi vinculado(a) a você.`,
           tipo: "cliente",
+          referenciaTipo: "CLIENTE",
+          referenciaId: user.cliente.id,
         });
       }
     }

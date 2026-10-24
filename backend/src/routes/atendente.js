@@ -263,6 +263,7 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
   if (renovarEm !== undefined) {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
+    dados.renovarContatadoEm = null;
   }
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
   res.json(cliente);
@@ -434,6 +435,8 @@ router.post("/agendamentos", async (req, res) => {
       titulo: "Nova sessão agendada",
       mensagem: `${clienteAgendado?.user?.nome || "Um cliente"} tem uma sessão marcada para ${new Date(data).toLocaleDateString("pt-BR")} às ${horaInicio}.`,
       tipo: "sistema",
+      referenciaTipo: "CLIENTE",
+      referenciaId: clienteId,
     });
   }
 
@@ -504,6 +507,8 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
     titulo: "Lembrete de repasse",
     mensagem: `Pagamento de ${cliente.user?.nome || "seu cliente"} registrado — você recebe direto e precisa repassar R$ ${valorRenascer.toFixed(2)} pra Renascer (anexe o comprovante na aba Financeiro assim que repassar).`,
     tipo: "financeiro",
+    referenciaTipo: "TRANSACAO",
+    referenciaId: transacao.id,
   });
 
   await notificarDonos({

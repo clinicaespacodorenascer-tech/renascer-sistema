@@ -98,6 +98,8 @@ async function verificarLembretesDeRenovacao() {
           titulo: "Cliente perto de renovar",
           mensagem: `${c.user.nome} está perto da data prevista de renovação (${dataFormatada}). Que tal chamar pra confirmar?`,
           tipo: "renovacao",
+          referenciaTipo: "CLIENTE",
+          referenciaId: c.id,
         });
       }
 
@@ -225,6 +227,8 @@ async function verificarSessoesParaConfirmar() {
       titulo: "Marque essa sessão",
       mensagem: `A sessão de ${ag.cliente.user.nome} às ${ag.horaInicio} já passou — foi feita? Marque como "Realizada" ou "Cliente faltou" pra manter sua agenda certinha.`,
       tipo: "sistema",
+      referenciaTipo: "CLIENTE",
+      referenciaId: ag.clienteId,
     });
     await prisma.agendamento.update({ where: { id: ag.id }, data: { avisoConcluirSessaoEnviado: true } });
   }

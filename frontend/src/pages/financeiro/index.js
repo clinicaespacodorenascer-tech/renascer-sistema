@@ -17,11 +17,13 @@ export default function AreaFinanceiro() {
 
   const ABAS = [
     { id: "painel", label: "Painel financeiro" },
-    // Fase 53 — "Clientes": fila de renovação de TODOS os profissionais organizada por data
-    // (pedido do Elismael). Nome diferente de "Clientes pra renovar" de propósito — essa aba aqui
-    // embaixo já existia e é outra coisa (reativar quem já saiu/foi excluído), não misturar.
-    { id: "clientes", label: "Clientes" },
-    { id: "renovar", label: "Clientes pra renovar" },
+    // Fase 53 — "Clientes pra renovar": fila de renovação de TODOS os profissionais organizada
+    // por data (pedido do Elismael), redesenhada na Fase 57 pro visual do Canva — esse é o nome e
+    // o conteúdo que aparecem lá. Nome diferente de "Clientes pra reativar" de propósito — essa
+    // aba aqui embaixo já existia e é outra coisa (reativar quem já saiu/foi excluído), não
+    // misturar.
+    { id: "clientes", label: "Clientes pra renovar" },
+    { id: "renovar", label: "Clientes pra reativar" },
     { id: "repasses", label: "Repasses" },
     { id: "agenda", label: "Agenda geral" },
   ];
@@ -400,37 +402,79 @@ function IconeLupa({ className }) {
 // ordem alfabética dentro do mesmo dia, profissional responsável, valor do pacote, duração e
 // botão de WhatsApp com mensagem pronta. Usada pelo Setor Financeiro (aba própria) e pelo Dono
 // (embutida dentro do Financeiro dele — por isso o `compacto`, que tira o cabeçalho repetido).
+// Fase 57 — quantos dias faltam (negativo = já atrasado) até a data de renovação, comparando só
+// o DIA (sem hora), em UTC pra bater com como renovarEm é salvo.
+function diasAteRenovacao(iso) {
+  if (!iso) return null;
+  const alvo = new Date(iso);
+  const alvoUTC = Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth(), alvo.getUTCDate());
+  const hoje = new Date();
+  const hojeUTC = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return Math.round((alvoUTC - hojeUTC) / (24 * 60 * 60 * 1000));
+}
+function urgenciaRenovacao(dias) {
+  if (dias == null) return { cor: "#96A2B6", texto: "sem data de renovação" };
+  if (dias < 0) return { cor: "#D94F4F", texto: `atrasado ${-dias} dia${-dias === 1 ? "" : "s"}` };
+  if (dias === 0) return { cor: "#D94F4F", texto: "encerra hoje" };
+  if (dias === 1) return { cor: "#D94F4F", texto: "encerra amanhã" };
+  if (dias <= 3) return { cor: "#D94F4F", texto: `encerra em ${dias} dias` };
+  if (dias <= 10) return { cor: "#D6883B", texto: `encerra em ${dias} dias` };
+  return { cor: "#1C7C54", texto: `encerra em ${dias} dias` };
+}
+
+// Fase 57 — redesenhado pro visual do Canva ("Novo Layout"): lista única em linhas (sem agrupar
+// por data), ordenada por urgência (quem encerra antes primeiro), com bolinha colorida +
+// "encerra em N dias" e o botão "Marcar como contatado" (fica registrado — Cliente.renovarContatadoEm
+// — pra não ligar duas vezes pro mesmo cliente sem necessidade). Os cards de "Receita em risco" e
+// "Taxa de renovação" só aparecem na tela cheia (não no `compacto` do Dono, que já tem "Análise de
+// renovações" logo abaixo com números parecidos).
 export function ClientesRenovarPorData({ compacto }) {
   const [lista, setLista] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busca, setBusca] = useState("");
+  const [resumo, setResumo] = useState(null);
 
   useEffect(() => {
     setLista(null);
     api.get(`/financeiro/clientes-renovar-por-data${mostrarTodos ? "?todos=1" : ""}`).then((r) => setLista(r.data));
   }, [mostrarTodos]);
 
+  useEffect(() => {
+    if (compacto) return;
+    api.get("/financeiro/renovacoes-resumo").then((r) => setResumo(r.data));
+  }, [compacto]);
+
+  async function marcarContatado(id) {
+    setLista((old) =>
+      old.map((c) => (c.id === id ? { ...c, renovarContatadoEm: c.renovarContatadoEm ? null : new Date().toISOString() } : c))
+    );
+    await api.put(`/financeiro/clientes/${id}/marcar-contatado`);
+  }
+
   if (!lista) return <p className="text-sm text-nv-muted">Carregando...</p>;
 
   const termo = busca.trim().toLowerCase();
-  const listaFiltrada = termo
+  const listaFiltrada = (termo
     ? lista.filter((c) => c.nome.toLowerCase().includes(termo) || (c.profissionalNome || "").toLowerCase().includes(termo))
-    : lista;
-
-  const grupos = {};
-  for (const c of listaFiltrada) {
-    const chave = chaveDataUTC(c.renovarEm);
-    (grupos[chave] = grupos[chave] || []).push(c);
-  }
-  const gruposOrdenados = Object.entries(grupos).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    : lista
+  )
+    .slice()
+    .sort((a, b) => {
+      const da = diasAteRenovacao(a.renovarEm);
+      const db = diasAteRenovacao(b.renovarEm);
+      if (da == null && db == null) return a.nome.localeCompare(b.nome);
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da - db;
+    });
 
   return (
     <div className="space-y-5">
       {!compacto && (
         <div>
           <p className="font-sora text-[11px] font-bold uppercase tracking-[0.09em] text-nv-gold mb-1.5">Setor Financeiro</p>
-          <h1 className="font-sora font-bold text-[26px] md:text-[29px] text-nv-navy mb-1">Clientes</h1>
-          <p className="text-[14px] text-nv-muted">Fila de renovação de todos os profissionais, organizada por data</p>
+          <h1 className="font-sora font-bold text-[26px] md:text-[29px] text-nv-navy mb-1">Clientes pra renovar</h1>
+          <p className="text-[14px] text-nv-muted">Base de receita recorrente em risco — acompanhe antes do pacote encerrar.</p>
         </div>
       )}
 
@@ -456,54 +500,77 @@ export function ClientesRenovarPorData({ compacto }) {
         </button>
       </div>
 
-      {gruposOrdenados.length === 0 && (
-        <p className="text-[13px] text-nv-muted bg-white rounded-2xl p-5">
-          {termo
-            ? "Nenhum cliente encontrado para essa busca."
-            : "Nenhum cliente com data de renovação cadastrada agora."}
-        </p>
-      )}
-
-      {gruposOrdenados.map(([chave, itens]) => (
-        <div key={chave} className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)]">
-          <p
-            className={`text-[12.5px] font-bold uppercase tracking-[0.04em] mb-3 ${
-              chave < chaveHojeLocal() ? "text-nv-red" : chave === chaveHojeLocal() ? "text-nv-blue" : "text-nv-muted"
-            }`}
-          >
-            {labelGrupoData(chave)} · {itens.length} cliente{itens.length === 1 ? "" : "s"}
+      <div className="nv-card-flat px-6 py-1">
+        {listaFiltrada.length === 0 && (
+          <p className="text-[13px] text-nv-muted py-4">
+            {termo ? "Nenhum cliente encontrado para essa busca." : "Nenhum cliente com data de renovação cadastrada agora."}
           </p>
-          <div className="divide-y divide-nv-borderLight">
-            {itens
-              .slice()
-              .sort((a, b) => a.nome.localeCompare(b.nome))
-              .map((c) => (
-                <div key={c.id} className="flex items-center justify-between gap-3 flex-wrap py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-semibold text-nv-ink2">{c.nome}</p>
-                    <p className="text-[11.5px] text-nv-muted3">
-                      {c.profissionalNome}
-                      {c.valorPacote != null ? ` · R$ ${c.valorPacote.toFixed(2)}` : ""}
-                      {c.duracao ? ` · ${DURACAO_LABEL_FIN[c.duracao] || c.duracao}` : ""}
-                    </p>
-                  </div>
-                  {c.whatsapp && (
-                    <a
-                      className="text-nv-green text-xs font-semibold underline whitespace-nowrap"
-                      target="_blank"
-                      rel="noreferrer"
-                      href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-                        `Oi ${c.nome}! Aqui é do Espaço do Renascer — vi que seu pacote está terminando, bora marcar a renovação? 💙`
-                      )}`}
-                    >
-                      Chamar no WhatsApp
-                    </a>
-                  )}
+        )}
+        {listaFiltrada.map((c) => {
+          const dias = diasAteRenovacao(c.renovarEm);
+          const { cor, texto } = urgenciaRenovacao(dias);
+          const contatado = !!c.renovarContatadoEm;
+          return (
+            <div
+              key={c.id}
+              className="flex items-center justify-between gap-3 flex-wrap py-3 border-t border-nv-borderLight first:border-t-0"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cor }} />
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-semibold text-nv-ink2">{c.nome}</p>
+                  <p className="text-[11.5px] text-nv-muted3">
+                    com {c.profissionalNome}
+                    {c.valorPacote != null ? ` · valor do pacote R$ ${c.valorPacote.toFixed(2)}` : ""}
+                    {c.duracao ? ` · ${DURACAO_LABEL_FIN[c.duracao] || c.duracao}` : ""}
+                  </p>
                 </div>
-              ))}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: cor }}>
+                  {texto}
+                </span>
+                {c.whatsapp && (
+                  <a
+                    className="text-nv-green text-[12px] font-semibold underline whitespace-nowrap"
+                    target="_blank"
+                    rel="noreferrer"
+                    href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                      `Oi ${c.nome}! Aqui é do Espaço do Renascer — vi que seu pacote está terminando, bora marcar a renovação? 💙`
+                    )}`}
+                  >
+                    Chamar no WhatsApp
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => marcarContatado(c.id)}
+                  className={`text-[12px] font-semibold underline whitespace-nowrap ${
+                    contatado ? "text-nv-muted2" : "text-nv-blue"
+                  }`}
+                >
+                  {contatado ? "Contatado · desfazer" : "Marcar como contatado"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {resumo && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="nv-card">
+            <p className="text-xs font-semibold text-nv-muted mb-2">Receita em risco (30 dias)</p>
+            <p className="font-sora font-bold text-[21px] text-nv-red tabular-nums">R$ {resumo.receitaEmRisco30d.toFixed(2)}</p>
+          </div>
+          <div className="nv-card">
+            <p className="text-xs font-semibold text-nv-muted mb-2">Taxa de renovação (90 dias)</p>
+            <p className="font-sora font-bold text-[21px] text-nv-green tabular-nums">
+              {resumo.taxaRenovacao90d == null ? "—" : `${resumo.taxaRenovacao90d}%`}
+            </p>
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -600,43 +667,50 @@ function ClientesParaRenovar() {
     <div className="flex flex-col gap-4">
       <div>
         <p className="font-sora text-[11px] font-bold uppercase tracking-[0.09em] text-nv-gold mb-1.5">Setor Financeiro</p>
-        <h1 className="font-sora font-bold text-[26px] text-nv-navy mb-1">Clientes pra renovar</h1>
-        <p className="text-[14px] text-nv-muted">Fila de quem saiu e ainda não voltou — chame no WhatsApp e vincule de novo com uma profissional.</p>
+        <h1 className="font-sora font-bold text-[26px] text-nv-navy mb-1">Clientes pra reativar</h1>
+        <p className="text-[14px] text-nv-muted">
+          Fila de quem saiu e ainda não voltou — chame no WhatsApp e vincule de novo com uma profissional.
+        </p>
       </div>
-      {lista.map((c) => (
-        <div key={c.id} className="bg-white rounded-2xl p-[18px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="font-semibold text-nv-ink2">{c.nome}</p>
-            <p className="text-[12.5px] text-nv-muted2">{c.pacoteResumo || "—"} · saiu em {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "—"}</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {c.whatsapp && (
-              <a
-                className="text-[12.5px] text-nv-green font-semibold underline"
-                target="_blank"
-                rel="noreferrer"
-                href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}`}
+
+      <div className="nv-card-flat px-6 py-1">
+        {lista.length === 0 && <p className="text-[13px] text-nv-muted2 py-4">Nenhum cliente esperando reativação agora.</p>}
+        {lista.map((c) => (
+          <div key={c.id} className="flex items-center justify-between flex-wrap gap-3 py-3 border-t border-nv-borderLight first:border-t-0">
+            <div className="min-w-0">
+              <p className="text-[13.5px] font-semibold text-nv-ink2">{c.nome}</p>
+              <p className="text-[11.5px] text-nv-muted3">
+                {c.pacoteResumo || "—"} · saiu em {c.excluidoEm ? new Date(c.excluidoEm).toLocaleDateString("pt-BR") : "—"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+              {c.whatsapp && (
+                <a
+                  className="text-[12px] text-nv-green font-semibold underline whitespace-nowrap"
+                  target="_blank"
+                  rel="noreferrer"
+                  href={`https://wa.me/55${c.whatsapp.replace(/\D/g, "")}`}
+                >
+                  Chamar no WhatsApp
+                </a>
+              )}
+              <select
+                className="border border-nv-border rounded-[9px] px-2 py-1.5 text-[12px]"
+                value={escolha[c.id] || ""}
+                onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
               >
-                Chamar no WhatsApp
-              </a>
-            )}
-            <select
-              className="border border-nv-border rounded-[9px] px-2 py-1.5 text-[12.5px]"
-              value={escolha[c.id] || ""}
-              onChange={(e) => setEscolha({ ...escolha, [c.id]: e.target.value })}
-            >
-              <option value="">Vincular com...</option>
-              {profissionais.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.user.nome}
-                </option>
-              ))}
-            </select>
-            <BotaoNv onClick={() => reativar(c.id)}>Reativar</BotaoNv>
+                <option value="">Vincular com...</option>
+                {profissionais.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.user.nome}
+                  </option>
+                ))}
+              </select>
+              <BotaoNv onClick={() => reativar(c.id)}>Reativar</BotaoNv>
+            </div>
           </div>
-        </div>
-      ))}
-      {lista.length === 0 && <p className="text-[13px] text-nv-muted2">Nenhum cliente esperando reativação agora.</p>}
+        ))}
+      </div>
     </div>
   );
 }

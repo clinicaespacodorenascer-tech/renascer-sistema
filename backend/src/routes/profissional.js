@@ -491,6 +491,10 @@ router.get("/financeiro/resumo", async (req, res) => {
   });
   const totalPendenteRepassar = pendentesRepasse.reduce((s, t) => s + t.valorRenascer, 0);
 
+  // Fase 57 — "% repasse atual" (card do Canva): o percentual combinado com essa profissional,
+  // já na forma "quanto fica com ela / quanto fica com a Renascer" (ex: "70% / 30%").
+  const prof = await prisma.profissional.findUnique({ where: { id: profissionalId }, select: { percentualRepasse: true } });
+
   res.json({
     transacoes: transacoes.map((t) => ({
       ...t,
@@ -501,6 +505,7 @@ router.get("/financeiro/resumo", async (req, res) => {
     totalProfissional,
     totalRenascer,
     totalPendenteRepassar,
+    percentualRepasse: prof?.percentualRepasse ?? null,
     mes: m + 1,
     ano: a,
   });
@@ -1148,6 +1153,7 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
   if (renovarEm !== undefined) {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
+    dados.renovarContatadoEm = null;
   }
   const atualizado = await prisma.cliente.update({ where: { id: cliente.id }, data: dados });
   res.json(atualizado);

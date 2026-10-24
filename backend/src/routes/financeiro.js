@@ -251,8 +251,48 @@ router.get("/clientes-renovar-por-data", async (req, res) => {
       valorPacote: c.pacotes[0]?.valorTotal ?? null,
       duracao: c.pacotes[0]?.duracao ?? null,
       renovarEm: c.renovarEm,
+      renovarContatadoEm: c.renovarContatadoEm,
     }))
   );
+});
+
+// Fase 57 — "Marcar como contatado" (novo layout): alterna o campo Cliente.renovarContatadoEm.
+// É um toggle simples (manda de novo pra desfazer, caso tenha marcado sem querer) — volta a ficar
+// vazio sozinho sempre que uma nova data de renovarEm é definida (novo ciclo de renovação).
+router.put("/clientes/:id/marcar-contatado", async (req, res) => {
+  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, select: { renovarContatadoEm: true } });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado." });
+
+  const atualizado = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { renovarContatadoEm: cliente.renovarContatadoEm ? null : new Date() },
+  });
+  res.json({ renovarContatadoEm: atualizado.renovarContatadoEm });
+});
+
+// Fase 57 — números de resumo pro topo/rodapé da tela "Clientes" (novo layout, igual ao Canva):
+// quanto de receita (valor de pacote) está "em risco" nos próximos 30 dias (inclui quem já está
+// atrasado) e a taxa de renovação dos últimos 90 dias (quantos clientes que chegaram no fim do
+// pacote de fato renovaram, vs. quantos saíram/foram excluídos por não renovar).
+router.get("/renovacoes-resumo", async (req, res) => {
+  const agora = new Date();
+  const em30Dias = new Date(agora.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const ha90Dias = new Date(agora.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const [clientesEmRisco, renovaram, saíram] = await Promise.all([
+    prisma.cliente.findMany({
+      where: { situacao: "ATIVO", renovarEm: { lte: em30Dias } },
+      include: { pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 } },
+    }),
+    prisma.historicoCliente.count({ where: { tipo: "RENOVOU", criadoEm: { gte: ha90Dias } } }),
+    prisma.historicoCliente.count({ where: { tipo: "EXCLUIDO", criadoEm: { gte: ha90Dias } } }),
+  ]);
+
+  const receitaEmRisco30d = clientesEmRisco.reduce((s, c) => s + (c.pacotes[0]?.valorTotal || 0), 0);
+  const baseRenovacao = renovaram + saíram;
+  const taxaRenovacao90d = baseRenovacao > 0 ? Math.round((renovaram / baseRenovacao) * 100) : null;
+
+  res.json({ receitaEmRisco30d, taxaRenovacao90d });
 });
 
 router.get("/profissionais", async (req, res) => {

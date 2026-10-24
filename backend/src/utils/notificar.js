@@ -6,9 +6,9 @@ const { enviarPushParaUsuario } = require("./push");
 // notificações e se o Railway tiver as chaves VAPID configuradas). Se o push falhar por
 // qualquer motivo, isso nunca derruba quem chamou — o aviso já foi salvo, e é isso que garante
 // o funcionamento mínimo do sistema.
-async function notificar(userId, { titulo, mensagem, tipo = "sistema", url }) {
+async function notificar(userId, { titulo, mensagem, tipo = "sistema", url, referenciaTipo, referenciaId }) {
   const notificacao = await prisma.notificacao.create({
-    data: { userId, titulo, mensagem, tipo },
+    data: { userId, titulo, mensagem, tipo, referenciaTipo: referenciaTipo || null, referenciaId: referenciaId || null },
   });
   enviarPushParaUsuario(userId, { titulo, mensagem, url }).catch((erro) => console.error("Push falhou:", erro));
   return notificacao;

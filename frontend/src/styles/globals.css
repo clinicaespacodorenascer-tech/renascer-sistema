@@ -51,12 +51,21 @@ h3 {
   background: rgba(0, 80, 150, 0.4);
 }
 
+/* Fase 50 — .btn-primary/.btn-secondary/.input são usados em centenas de pontos por TODO o
+   sistema (dono, atendente, profissional, cliente) — inclusive dentro de telas já "redesenhadas"
+   (Fases 35-46), porque aquelas fases trocaram a casca e os cartões em volta, mas deixaram os
+   próprios controles de formulário (botão, campo de texto) apontando pra essas classes antigas,
+   que ainda usavam as cores "renascer" de antes do redesign. Por isso botão/campo continuavam com
+   a cara antiga mesmo em tela já redesenhada. Agora essas 3 classes usam os tokens nv-* (o mesmo
+   padrão já usado no Setor Financeiro, nascido 100% no visual novo desde a Fase 31) — como são
+   classes globais, o visual novo chega em todo botão/campo do sistema de uma vez, sem precisar
+   editar tela por tela. */
 .btn-primary {
-  @apply relative bg-renascer-gradient text-white rounded-xl px-5 py-3 font-semibold tracking-wide shadow-lift transition-all duration-200 hover:shadow-glow hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none;
+  @apply relative bg-nv-blue text-white rounded-[9px] px-5 py-2.5 font-semibold font-publicSans text-[13.5px] tracking-wide transition-colors duration-150 hover:bg-nv-blueDark disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
 .btn-secondary {
-  @apply bg-white/80 backdrop-blur text-renascer border border-renascer/20 rounded-xl px-5 py-3 font-medium transition-all duration-200 hover:border-renascer/40 hover:bg-white hover:shadow-soft;
+  @apply bg-white text-nv-blue border border-nv-border rounded-[9px] px-5 py-2.5 font-semibold font-publicSans text-[13.5px] transition-colors duration-150 hover:border-nv-blue/40 hover:bg-nv-bg;
 }
 
 .card {
@@ -64,7 +73,13 @@ h3 {
 }
 
 .input {
-  @apply w-full rounded-xl border border-renascer-ink/15 px-4 py-3 bg-white transition-shadow focus:outline-none focus:ring-2 focus:ring-renascer/30 focus:border-renascer/40;
+  @apply w-full rounded-[9px] border border-nv-border px-3.5 py-2.5 bg-white font-publicSans text-[13.5px] text-nv-ink2 transition-shadow focus:outline-none focus:ring-2 focus:ring-nv-blue/30 focus:border-nv-blue/40;
+}
+
+/* Fase 50 — botão nativo de "Escolher arquivo" (input type="file") reskinado com o mesmo azul do
+   resto do sistema, em vez do botão cinza padrão do navegador. */
+.input-file {
+  @apply text-[12.5px] text-nv-muted file:mr-3 file:rounded-[9px] file:border-0 file:bg-nv-blue file:text-white file:px-3.5 file:py-2 file:text-[12.5px] file:font-semibold file:cursor-pointer hover:file:bg-nv-blueDark;
 }
 
 .badge {
@@ -88,6 +103,20 @@ h3 {
 .nv-card:hover {
   box-shadow: 0 10px 30px -14px rgba(13, 27, 48, 0.18);
   transform: translateY(-1px);
+}
+
+/* Fase 57 — correção de um bug visual que aparecia em várias listas (Clientes, Histórico,
+   Repasses, Avisos etc, em várias telas: Dono, Atendente, Financeiro): elas usavam
+   "nv-card !p-0 px-N" pra zerar o padding de 20px do .nv-card e colocar um padding próprio só
+   nos lados — só que em CSS, "!important" (o "!" do Tailwind) sempre ganha de uma regra sem
+   "!important", não importa a ordem das classes. Isso fazia o "!p-0" anular TAMBÉM o "px-N" que
+   vinha depois (padding virava 0 nos 4 lados de verdade), e o conteúdo das linhas (bolinha de
+   status, nome, botões "Ver ficha"/"Excluir" etc) ficava colado/cortado bem na borda arredondada
+   do card. Esse ".nv-card-flat" é igual ao ".nv-card" (fundo branco, borda, cantos arredondados)
+   só que SEM o padding de 20px embutido — assim dá pra colocar o padding que quiser (px-5, px-6
+   py-1...) sem precisar cancelar nada, sem esse bug.  */
+.nv-card-flat {
+  @apply bg-white rounded-2xl border border-nv-border;
 }
 
 .nv-eyebrow {

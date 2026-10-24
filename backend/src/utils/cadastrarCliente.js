@@ -206,6 +206,8 @@ async function cadastrarClienteComProfissional({
     titulo: "Novo paciente aguardando seu aceite!",
     mensagem: `${nome} foi cadastrado(a) por ${quemCadastrou} pra você atender. Confira em "Novos pacientes" e aceite pra confirmar na sua agenda.`,
     tipo: "cliente",
+    referenciaTipo: "CLIENTE",
+    referenciaId: clienteId,
   });
 
   return { user, cliente: user.cliente, senha, solicitacao };

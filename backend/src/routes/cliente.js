@@ -402,6 +402,8 @@ router.post("/chat", exigirContrato, async (req, res) => {
     titulo: "Nova mensagem do cliente",
     mensagem: texto.slice(0, 120),
     tipo: "sistema",
+    referenciaTipo: "CLIENTE",
+    referenciaId: clienteId,
   });
 
   res.json(msg);
