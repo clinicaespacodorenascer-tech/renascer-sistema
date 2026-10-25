@@ -18,6 +18,7 @@ const { parseValorMonetario } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { inicioDoDia, fimDoDia, calcularSaldoCaixaDoDia } = require("../utils/meuDia");
 const { listarClientesParaRenovar } = require("../utils/renovacoes");
+const { gerarRelatorioMensal } = require("../utils/relatorioMensal");
 
 const router = express.Router();
 router.use(autenticar, permitir("FINANCEIRO", "DONO"));
@@ -406,6 +407,55 @@ router.get("/agenda-geral", async (req, res) => {
     take: 150,
   });
   res.json(agendamentos);
+});
+
+// ======================================================================================
+// ---------- Fase 70 — "Fazendo as contas do Renascer": custo de funcionários + relatório
+// mensal de CAC/leads/conversão/lucro vs. perda ----------
+// ======================================================================================
+
+// Lista/gerencia o custo mensal de cada funcionário que não é profissional (atendente,
+// financeiro, outro) — alimenta o CAC do relatório mensal junto com o investimento em anúncio.
+router.get("/custos-funcionarios", async (req, res) => {
+  const lista = await prisma.custoFuncionario.findMany({ orderBy: [{ ativo: "desc" }, { nome: "asc" }] });
+  res.json(lista);
+});
+
+router.post("/custos-funcionarios", async (req, res) => {
+  const { nome, cargo, valorMensal } = req.body;
+  if (!nome || !cargo || valorMensal === undefined) {
+    return res.status(400).json({ erro: "Nome, cargo e valor mensal são obrigatórios." });
+  }
+  const criado = await prisma.custoFuncionario.create({
+    data: { nome, cargo, valorMensal: parseValorMonetario(valorMensal), criadoPorId: req.user.id },
+  });
+  res.json(criado);
+});
+
+router.put("/custos-funcionarios/:id", async (req, res) => {
+  const { nome, cargo, valorMensal, ativo } = req.body;
+  const dados = {
+    ...(nome !== undefined && { nome }),
+    ...(cargo !== undefined && { cargo }),
+    ...(valorMensal !== undefined && { valorMensal: parseValorMonetario(valorMensal) }),
+    ...(ativo !== undefined && { ativo }),
+  };
+  const atualizado = await prisma.custoFuncionario.update({ where: { id: req.params.id }, data: dados });
+  res.json(atualizado);
+});
+
+router.delete("/custos-funcionarios/:id", async (req, res) => {
+  await prisma.custoFuncionario.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
+// Relatório mensal: CAC (investimento em anúncio + custo de funcionários, dividido pelos
+// clientes novos de verdade do mês), leads/conversão, renovação vs. saída e lucro vs. perda do
+// mês — tudo calculado em utils/relatorioMensal.js (ver comentário lá pra de onde vem cada número).
+router.get("/relatorio-mensal", async (req, res) => {
+  const { mes, ano } = req.query;
+  const relatorio = await gerarRelatorioMensal({ mes, ano });
+  res.json(relatorio);
 });
 
 module.exports = router;

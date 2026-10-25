@@ -57,6 +57,10 @@ export default function AreaFinanceiro() {
     { id: "renovar", label: "Clientes pra reativar" },
     { id: "repasses", label: "Repasses" },
     { id: "agenda", label: "Agenda geral" },
+    // Fase 70 — "Fazendo as contas do Renascer": CAC, custo da equipe, leads/conversão e lucro
+    // vs. perda do mês, num relatório que o Elismael gera quando quiser (não fica calculando sozinho
+    // o tempo todo, só quando ele pede).
+    { id: "relatorio", label: "Relatório mensal (CAC)" },
   ];
 
   const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
@@ -83,6 +87,7 @@ export default function AreaFinanceiro() {
       {aba === "renovar" && <ClientesParaRenovar />}
       {aba === "repasses" && <Repasses />}
       {aba === "agenda" && <AgendaGeral />}
+      {aba === "relatorio" && <RelatorioMensalCAC />}
     </LayoutNovo>
   );
 }
@@ -1008,6 +1013,301 @@ function AgendaGeral() {
         </table>
         {lista.length === 0 && <p className="text-[13px] text-nv-muted2 py-2">Nenhum agendamento nessa janela.</p>}
       </div>
+    </div>
+  );
+}
+
+// ======================================================================================
+// Fase 70 — "Fazendo as contas do Renascer": relatório mensal de CAC (custo de aquisição por
+// cliente), leads/conversão e lucro vs. perda, pedido pelo Elismael pra enxergar a matemática
+// real do negócio (quanto custa trazer um paciente — anúncio + equipe — frente ao que ele paga
+// na primeira compra). Exportado porque também aparece dentro do Financeiro do Dono (ver
+// dono/index.js), do mesmo jeito que PainelFinanceiro/ClientesRenovarPorData já aparecem lá.
+// ======================================================================================
+
+const CARGO_FUNCIONARIO_LABEL = { ATENDENTE: "Atendente", FINANCEIRO: "Financeiro", OUTRO: "Outro" };
+const NOMES_MES_RELATORIO = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+export function RelatorioMensalCAC() {
+  const agora = new Date();
+  const [mes, setMes] = useState(agora.getMonth() + 1);
+  const [ano, setAno] = useState(agora.getFullYear());
+  const [relatorio, setRelatorio] = useState(null);
+  const [gerando, setGerando] = useState(false);
+
+  const [funcionarios, setFuncionarios] = useState(null);
+  const [novoFuncionario, setNovoFuncionario] = useState({ nome: "", cargo: "ATENDENTE", valorMensal: "" });
+  const [salvandoFuncionario, setSalvandoFuncionario] = useState(false);
+  const [msgFuncionario, setMsgFuncionario] = useState("");
+
+  async function carregarFuncionarios() {
+    const { data } = await api.get("/financeiro/custos-funcionarios");
+    setFuncionarios(data);
+  }
+
+  async function gerarRelatorio() {
+    setGerando(true);
+    try {
+      const { data } = await api.get(`/financeiro/relatorio-mensal?mes=${mes}&ano=${ano}`);
+      setRelatorio(data);
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  useEffect(() => {
+    carregarFuncionarios();
+    gerarRelatorio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function adicionarFuncionario() {
+    if (!novoFuncionario.nome.trim() || !novoFuncionario.valorMensal) {
+      setMsgFuncionario("Preencha nome e valor mensal.");
+      return;
+    }
+    setSalvandoFuncionario(true);
+    setMsgFuncionario("");
+    try {
+      await api.post("/financeiro/custos-funcionarios", novoFuncionario);
+      setNovoFuncionario({ nome: "", cargo: "ATENDENTE", valorMensal: "" });
+      await carregarFuncionarios();
+    } catch (e) {
+      setMsgFuncionario(e?.response?.data?.erro || "Erro ao salvar.");
+    } finally {
+      setSalvandoFuncionario(false);
+    }
+  }
+
+  async function alternarAtivoFuncionario(f) {
+    await api.put(`/financeiro/custos-funcionarios/${f.id}`, { ativo: !f.ativo });
+    carregarFuncionarios();
+  }
+
+  async function removerFuncionario(id) {
+    await api.delete(`/financeiro/custos-funcionarios/${id}`);
+    carregarFuncionarios();
+  }
+
+  return (
+    <div className="space-y-6 font-publicSans">
+      <div>
+        <p className="nv-eyebrow mb-1">Setor Financeiro</p>
+        <h1 className="font-sora font-bold text-[26px] md:text-[29px] text-nv-navy mb-1">Relatório mensal — CAC e conversão</h1>
+        <p className="text-[14px] text-nv-muted">
+          Quanto custou trazer cada paciente (anúncio + equipe), quantos leads chegaram, quantos converteram, e se o mês
+          deu lucro ou prejuízo. Gere quando quiser — o sistema não recalcula sozinho o tempo todo.
+        </p>
+      </div>
+
+      <div className="nv-card-flat px-6 py-5">
+        <p className="font-sora font-semibold text-[15px] text-nv-navy mb-1">Custo da equipe (por mês)</p>
+        <p className="text-[12.5px] text-nv-muted2 mb-4">
+          Atendente, financeiro ou qualquer outro funcionário que não seja profissional — quem é profissional já tem o
+          ganho calculado por repasse de sessão, isso aqui é o custo fixo de quem toca o dia a dia da clínica.
+        </p>
+
+        {funcionarios === null && <p className="text-sm text-nv-muted">Carregando...</p>}
+        {funcionarios && funcionarios.length === 0 && (
+          <p className="text-[13px] text-nv-muted py-2">Nenhum funcionário cadastrado ainda.</p>
+        )}
+        {funcionarios && funcionarios.length > 0 && (
+          <div className="divide-y divide-nv-borderLight mb-4">
+            {funcionarios.map((f) => (
+              <div key={f.id} className="flex items-center justify-between gap-3 flex-wrap py-2.5">
+                <div className="min-w-0">
+                  <p className={`text-[13.5px] font-semibold ${f.ativo ? "text-nv-ink2" : "text-nv-muted3 line-through"}`}>
+                    {f.nome}
+                  </p>
+                  <p className="text-[11.5px] text-nv-muted3">
+                    {CARGO_FUNCIONARIO_LABEL[f.cargo] || f.cargo} · R$ {formatarMoeda(f.valorMensal)}/mês
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => alternarAtivoFuncionario(f)}
+                    className="text-[12px] font-semibold underline text-nv-blue whitespace-nowrap"
+                  >
+                    {f.ativo ? "Desativar" : "Reativar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removerFuncionario(f.id)}
+                    className="text-[12px] font-semibold underline text-nv-red whitespace-nowrap"
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2.5 flex-wrap">
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Nome</label>
+            <input
+              type="text"
+              value={novoFuncionario.nome}
+              onChange={(e) => setNovoFuncionario((n) => ({ ...n, nome: e.target.value }))}
+              className="w-full rounded-[9px] border border-nv-border px-3 py-2 text-[13px]"
+              placeholder="Ex: Patrícia"
+            />
+          </div>
+          <div className="min-w-[140px]">
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Cargo</label>
+            <select
+              value={novoFuncionario.cargo}
+              onChange={(e) => setNovoFuncionario((n) => ({ ...n, cargo: e.target.value }))}
+              className="w-full rounded-[9px] border border-nv-border px-3 py-2 text-[13px] bg-white"
+            >
+              <option value="ATENDENTE">Atendente</option>
+              <option value="FINANCEIRO">Financeiro</option>
+              <option value="OUTRO">Outro</option>
+            </select>
+          </div>
+          <div className="w-[140px]">
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Valor mensal (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={novoFuncionario.valorMensal}
+              onChange={(e) => setNovoFuncionario((n) => ({ ...n, valorMensal: e.target.value }))}
+              className="w-full rounded-[9px] border border-nv-border px-3 py-2 text-[13px]"
+              placeholder="2000"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={salvandoFuncionario}
+            onClick={adicionarFuncionario}
+            className="btn-primary !py-2 !px-4 text-[13px]"
+          >
+            {salvandoFuncionario ? "Salvando..." : "Adicionar"}
+          </button>
+        </div>
+        {msgFuncionario && <p className="text-[12px] text-nv-red mt-2">{msgFuncionario}</p>}
+      </div>
+
+      <div className="nv-card-flat px-6 py-5">
+        <div className="flex items-end gap-2.5 flex-wrap">
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Mês</label>
+            <select
+              value={mes}
+              onChange={(e) => setMes(Number(e.target.value))}
+              className="rounded-[9px] border border-nv-border px-3 py-2 text-[13px] bg-white"
+            >
+              {NOMES_MES_RELATORIO.map((nome, i) => (
+                <option key={i} value={i + 1}>
+                  {nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Ano</label>
+            <input
+              type="number"
+              value={ano}
+              onChange={(e) => setAno(Number(e.target.value))}
+              className="w-[90px] rounded-[9px] border border-nv-border px-3 py-2 text-[13px]"
+            />
+          </div>
+          <button type="button" disabled={gerando} onClick={gerarRelatorio} className="btn-primary !py-2 !px-4 text-[13px]">
+            {gerando ? "Gerando..." : "Gerar relatório"}
+          </button>
+        </div>
+      </div>
+
+      {relatorio && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Custo total de aquisição</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">
+                R$ {formatarMoeda(relatorio.custos.custoTotalAquisicao)}
+              </p>
+              <p className="text-[11px] text-nv-muted3 mt-1">
+                anúncio R$ {formatarMoeda(relatorio.custos.investimentoAnuncioMes)} + equipe R${" "}
+                {formatarMoeda(relatorio.custos.custoFuncionariosMes)}
+              </p>
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">CAC (por cliente novo)</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">
+                {relatorio.cac == null ? "—" : `R$ ${formatarMoeda(relatorio.cac)}`}
+              </p>
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Receita do mês</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">R$ {formatarMoeda(relatorio.receitaMes)}</p>
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Lucro vs. perda (aquisição)</p>
+              <p
+                className={`font-sora font-bold text-[21px] tabular-nums ${
+                  relatorio.lucroVsPerdaMes >= 0 ? "text-nv-green" : "text-nv-red"
+                }`}
+              >
+                R$ {formatarMoeda(relatorio.lucroVsPerdaMes)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Leads no mês</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">{relatorio.leads.totalLeads}</p>
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Convertidos (lançado)</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">{relatorio.leads.conversoesLancadas}</p>
+              <p className="text-[11px] text-nv-muted3 mt-1">
+                {relatorio.leads.taxaConversaoLeads == null ? "sem leads lançados" : `${relatorio.leads.taxaConversaoLeads}% dos leads`}
+              </p>
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Clientes novos (sistema)</p>
+              <p className="font-sora font-bold text-[21px] text-nv-ink tabular-nums">{relatorio.clientesReais.novos}</p>
+              {!relatorio.clientesReais.conversoesBatemComHistorico && (
+                <p className="text-[11px] text-[#D6883B] mt-1">
+                  não bate com o lançado ({relatorio.leads.conversoesLancadas})
+                </p>
+              )}
+            </div>
+            <div className="nv-card">
+              <p className="text-xs font-semibold text-nv-muted mb-2">Renovação do mês</p>
+              <p className="font-sora font-bold text-[21px] text-nv-green tabular-nums">
+                {relatorio.clientesReais.taxaRenovacaoMes == null ? "—" : `${relatorio.clientesReais.taxaRenovacaoMes}%`}
+              </p>
+              <p className="text-[11px] text-nv-muted3 mt-1">
+                {relatorio.clientesReais.renovaram} renovaram · {relatorio.clientesReais.sairam} saíram
+              </p>
+            </div>
+          </div>
+
+          {relatorio.custos.funcionarios.length > 0 && (
+            <div className="nv-card-flat px-6 py-4">
+              <p className="font-sora font-semibold text-[14px] text-nv-navy mb-2">Quanto foi cada um</p>
+              <div className="divide-y divide-nv-borderLight">
+                {relatorio.custos.funcionarios.map((f) => (
+                  <div key={f.id} className="flex items-center justify-between py-2 text-[13px]">
+                    <span className="text-nv-ink2">
+                      {f.nome} <span className="text-nv-muted3">({CARGO_FUNCIONARIO_LABEL[f.cargo] || f.cargo})</span>
+                    </span>
+                    <span className="font-semibold text-nv-ink tabular-nums">R$ {formatarMoeda(f.valorMensal)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

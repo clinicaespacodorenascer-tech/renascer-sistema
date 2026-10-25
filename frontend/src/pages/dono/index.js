@@ -14,7 +14,7 @@ import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/p
 import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig, AbaNovosPacientes } from "../profissional/index";
 // Fase 51 — mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa,
 // reaproveitado aqui na aba "Financeiro" do Dono (as rotas /financeiro/* já liberavam DONO também).
-import { formatarMoeda, PainelFinanceiro, ClientesRenovarPorData, AnaliseRenovacoes } from "../financeiro/index";
+import { formatarMoeda, PainelFinanceiro, ClientesRenovarPorData, AnaliseRenovacoes, RelatorioMensalCAC } from "../financeiro/index";
 import PopupRenovacoes from "../../components/PopupRenovacoes";
 
 const TIPO_LABEL = {
@@ -2483,6 +2483,10 @@ function FinanceiroDono() {
       </div>
 
       <PainelFinanceiro />
+
+      {/* Fase 70 — "Fazendo as contas do Renascer": CAC, custo da equipe, leads/conversão e lucro
+          vs. perda, no mesmo lugar reaproveitado do Setor Financeiro. */}
+      <RelatorioMensalCAC />
 
       <div className="bg-white rounded-2xl p-5 md:p-[22px] shadow-[0_1px_2px_rgba(14,30,54,0.05)] flex flex-col gap-3">
         <div>

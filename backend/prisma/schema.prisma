@@ -1156,3 +1156,29 @@ model ConfiguracaoFinanceiraClinica {
 
   @@map("configuracao_financeira_clinica")
 }
+
+// Fase 70 — custo de cada funcionário que NÃO é profissional (atendente, financeiro, ou outro
+// cargo administrativo/operacional) — diferente de Profissional, que já tem seu ganho calculado
+// por repasse de sessão, não por "salário fixo". Alimenta o Relatório mensal (CAC = investimento
+// em anúncio + soma desses custos, dividido pelos clientes novos pagantes do mês). Guarda só o
+// valor ATUAL de cada um (não um histórico mês a mês) — de propósito, pra manter simples: o
+// relatório de um mês passado usa a configuração de hoje. "ativo=false" é como se desliga um
+// funcionário sem perder o registro (ex: alguém que saiu), sem contar no relatório dali pra frente.
+enum CargoFuncionario {
+  ATENDENTE
+  FINANCEIRO
+  OUTRO
+}
+
+model CustoFuncionario {
+  id           String           @id @default(cuid())
+  nome         String
+  cargo        CargoFuncionario
+  valorMensal  Float
+  ativo        Boolean          @default(true)
+  criadoPorId  String
+  criadoEm     DateTime         @default(now())
+  atualizadoEm DateTime         @updatedAt
+
+  @@map("custos_funcionarios")
+}
