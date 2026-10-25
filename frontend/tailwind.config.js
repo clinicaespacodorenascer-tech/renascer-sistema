@@ -53,6 +53,9 @@ module.exports = {
         // Fase 31 — novo sistema visual: títulos em Sora, corpo em Public Sans.
         sora: ["Sora", "system-ui", "sans-serif"],
         publicSans: ["Public Sans", "system-ui", "sans-serif"],
+        // Fase 69.2 — só usada na assinatura manuscrita do painel de marca da tela de login
+        // (computador) — ver globals.css pro import do Google Fonts.
+        caveat: ["Caveat", "cursive"],
       },
       boxShadow: {
         premium: "0 10px 30px -12px rgba(0, 80, 150, 0.25)",

@@ -11,6 +11,11 @@
    acima pra não afetar nenhuma tela ainda não redesenhada. */
 @import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap");
 
+/* Fase 69.2 — tela de login (computador): a assinatura manuscrita "Juntos por mais recomeços."
+   do print de referência do Elismael, embaixo do painel de marca. Carregada à parte, só usada
+   ali (ver login.js) — nenhuma outra tela do sistema usa fonte cursiva. */
+@import url("https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap");
+
 html,
 body {
   overflow-x: hidden;

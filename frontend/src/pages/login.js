@@ -18,6 +18,13 @@ import Logo from "../components/Logo";
 // "Lembrar de mim" (o login aqui já fica sempre salvo no aparelho até sair ou expirar — não existe
 // hoje um modo "não lembrar" pra esse checkbox realmente fazer algo). Se um dia fizer sentido ter
 // login por Google de verdade, dá pra integrar depois.
+//
+// Fase 69.2 — o Elismael aprovou dois prints definitivos (um de computador, um de celular) e pediu
+// pra aplicar os dois de verdade. Trocou o fundo (antes gradiente/CSS puro) por foto real do
+// ambiente — duas fotos diferentes, uma por formato (ver /public/login-hero-desktop.jpg e
+// login-hero-mobile.jpg), e o texto do painel de marca também muda por formato (título, parágrafo/
+// lista de benefícios e a assinatura do rodapé são diferentes entre os dois prints aprovados, não é
+// a mesma tela só redimensionada).
 export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -55,42 +62,80 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-publicSans">
       {/* ---------- Painel de marca ---------- */}
-      <div
-        className="relative overflow-hidden flex flex-col justify-between px-8 py-10 md:w-[44%] md:min-h-screen md:px-12 md:py-14"
-        style={{ background: "linear-gradient(160deg, #0D1B30 0%, #0B5FA8 100%)" }}
-      >
-        {/* manchas decorativas, mesmo gesto do print de referência, em CSS puro (sem foto) */}
+      {/* Fase 69.2 — ganhou foto de fundo (duas imagens diferentes, uma por formato: o Elismael
+          aprovou dois prints de referência, um "de computador" (paisagem) e um "de celular"
+          (retrato), com enquadramento, texto e até a assinatura do rodapé diferentes entre os
+          dois — não é a mesma tela só redimensionada). As fotos ficam em /public/login-hero-*.jpg
+          (recortadas dos próprios prints de referência, no trecho que não tinha nenhum texto por
+          cima, pra servir de fundo limpo). */}
+      <div className="relative overflow-hidden flex flex-col justify-between px-8 py-10 md:w-[44%] md:min-h-screen md:px-12 md:py-14">
         <div
-          className="pointer-events-none absolute -top-16 -left-16 w-64 h-64 rounded-full blur-3xl opacity-40"
-          style={{ background: "#9C6B2E" }}
+          className="pointer-events-none absolute inset-0 md:hidden bg-cover bg-right"
+          style={{ backgroundImage: "url(/login-hero-mobile.jpg)" }}
         />
         <div
-          className="pointer-events-none absolute -bottom-24 -right-20 w-80 h-80 rounded-full blur-3xl opacity-30"
-          style={{ background: "#1B9FE0" }}
+          className="pointer-events-none absolute inset-0 hidden md:block bg-cover bg-right"
+          style={{ backgroundImage: "url(/login-hero-desktop.jpg)" }}
         />
+        {/* véu escurecendo a esquerda (onde o texto fica) e clareando pra direita (onde a foto
+            aparece) — mesmo gesto dos dois prints de referência. */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.05]"
-          style={{ backgroundImage: "radial-gradient(circle, #ffffff 1px, transparent 1px)", backgroundSize: "24px 24px" }}
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(100deg, rgba(10,21,38,0.96) 0%, rgba(10,21,38,0.92) 32%, rgba(11,54,97,0.62) 65%, rgba(11,54,97,0.22) 100%)",
+          }}
         />
+        {/* anéis finos decorativos por cima da foto, mesmo gesto dos prints (em vez das manchas
+            borradas da versão anterior, que ficavam pesadas/embaçavam a foto por baixo). */}
+        <svg className="pointer-events-none absolute -left-24 -top-20 w-72 h-72 opacity-20" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="49" fill="none" stroke="#fff" strokeWidth="0.6" />
+        </svg>
+        <svg className="pointer-events-none absolute -left-10 bottom-16 w-48 h-48 opacity-15 hidden md:block" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="49" fill="none" stroke="#5EB6F0" strokeWidth="0.6" />
+        </svg>
 
         <div className="relative z-10">
           <Logo size={64} />
-          <h1 className="font-sora font-bold text-[26px] md:text-[30px] text-white leading-tight mt-6 max-w-xs">
-            Sua rotina de cuidado, organizada num só lugar.
+
+          {/* título — texto diferente por formato (igual os dois prints aprovados) */}
+          <h1 className="md:hidden font-sora font-bold text-[26px] text-white leading-tight mt-6 max-w-xs">
+            Sua rotina de cuidado, <span style={{ color: "#6CC3FF" }}>organizada num só lugar.</span>
+          </h1>
+          <h1 className="hidden md:block font-sora font-bold text-[30px] text-white leading-tight mt-6 max-w-sm">
+            Profissionais que cuidam de pessoas, <span style={{ color: "#6CC3FF" }}>transformam vidas.</span>
           </h1>
 
+          {/* parágrafo + lista de benefícios — só no computador (no celular empurraria o
+              formulário pra baixo da dobra) */}
+          <p className="hidden md:block text-white/80 text-[14.5px] leading-relaxed mt-5 max-w-sm">
+            Aqui, você encontra um ambiente seguro, organizado e completo para realizar atendimentos e gerenciar sua
+            jornada com mais tranquilidade.
+          </p>
           <div className="hidden md:flex flex-col gap-4 mt-8">
             <ItemBeneficio icone="agenda" texto="Agenda e sessões sempre à mão" />
             <ItemBeneficio icone="escudo" texto="Pagamentos e repasses com transparência" />
-            <ItemBeneficio icone="coracao" texto="Pensado pra quem cuida de pessoas" />
+            <ItemBeneficio icone="coracao" texto="Mais pessoas em busca de cuidado" />
           </div>
         </div>
 
         <div className="relative z-10 mt-10 md:mt-0">
-          <div className="h-px w-10 bg-white/30 mb-3" />
-          <p className="text-white/85 text-[15px] italic leading-snug" style={{ fontFamily: "Georgia, serif" }}>
-            &ldquo;Cuidar de quem cuida também importa.&rdquo;
-          </p>
+          {/* celular: citação em itálico (igual já era) */}
+          <div className="md:hidden">
+            <div className="h-px w-10 bg-white/30 mb-3" />
+            <p className="text-white/85 text-[15px] italic leading-snug" style={{ fontFamily: "Georgia, serif" }}>
+              &ldquo;Cuidar de quem cuida também importa.&rdquo;
+            </p>
+          </div>
+          {/* computador: assinatura manuscrita, igual o print de referência */}
+          <div className="hidden md:block">
+            <p className="font-caveat text-white text-[36px] leading-none" style={{ transform: "rotate(-2deg)" }}>
+              Juntos por mais recomeços.
+            </p>
+            <svg width="165" height="12" viewBox="0 0 165 12" className="mt-1.5 ml-1" fill="none">
+              <path d="M2 7 Q 82 -3 162 7" stroke="#6CC3FF" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </div>
         </div>
       </div>
 
