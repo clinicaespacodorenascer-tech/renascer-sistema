@@ -3,6 +3,8 @@
 // salvo se a profissional tiver um percentualRepasse customizado cadastrado.
 // Ex: recebeu R$170 -> R$85 pra profissional, R$85 pra Renascer.
 
+const { hojeBrasil } = require("./meuDia");
+
 function calcularRepasse(valorTotal, percentualRepasse = 50) {
   const valorProfissional = Number((valorTotal * (percentualRepasse / 100)).toFixed(2));
   const valorRenascer = Number((valorTotal - valorProfissional).toFixed(2));
@@ -66,8 +68,11 @@ function parseValorMonetario(valor) {
 // registrarem o mesmo comprovante sem perceber. Critério: mesmo cliente + mesmo valor + mesmo dia.
 async function transacaoDuplicada(prisma, clienteId, valorTotal) {
   if (!clienteId || !valorTotal) return null;
-  const inicioHoje = new Date();
-  inicioHoje.setHours(0, 0, 0, 0);
+  // Fase 69 — trocado de "new Date(); setHours(0,0,0,0)" (meia-noite no fuso do SERVIDOR, UTC no
+  // Railway) pra hojeBrasil() (meia-noite real em Brasília). Sem isso, um pagamento lançado entre
+  // 21h e meia-noite em Brasília comparava com o dia ERRADO e podia deixar passar um duplicado
+  // (ou, o oposto, barrar um lançamento legítimo achando que era repetido).
+  const inicioHoje = hojeBrasil();
   const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
 
   return prisma.transacaoFinanceira.findFirst({

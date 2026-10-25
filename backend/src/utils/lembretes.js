@@ -1,7 +1,8 @@
 const prisma = require("../lib/prisma");
 const { enviarEmail } = require("./email");
-const { notificar, notificarDonos, notificarAtendentes } = require("./notificar");
+const { notificar, notificarDonos, notificarAtendentes, notificarFinanceiro } = require("./notificar");
 const { horarioAgendamentoParaData } = require("./horarios");
+const { hojeBrasil } = require("./meuDia");
 
 // Lembrete de sessão: 1 dia antes e ~6h antes, por e-mail E por aviso dentro do app/notificação
 // push pro cliente (usa os mesmos campos de controle pra não mandar duas vezes).
@@ -114,13 +115,51 @@ async function verificarLembretesDeRenovacao() {
   }
 }
 
+// Fase 69 — "liga pra saber como ele está": lembrete SEPARADO do de cima (verificarLembretesDeRenovacao,
+// que é o aviso de "hora de renovar"/cobrança, ~3 dias antes). Esse aqui dispara ~7 dias antes de
+// renovarEm, pra atendente/dono ligarem pro cliente e perguntarem como estão indo as sessões —
+// ainda SEM falar de renovação ou cobrança, é um contato de relacionamento/retenção. Por isso a
+// janela é "até 7 dias, mas mais de 3" (diasAte <= 7 && diasAte > 3): assim que entra na janela do
+// aviso de renovação de verdade, esse check-in já não faz mais sentido (o outro aviso assume).
+// Não manda pro cliente nem pra profissional, só atendente+dono (quem de fato vai fazer a ligação).
+async function verificarLembretesDeCheckinPreRenovacao() {
+  const agora = Date.now();
+  const clientes = await prisma.cliente.findMany({
+    where: {
+      situacao: "ATIVO",
+      renovarEm: { not: null },
+      renovarCheckinSemanaEnviado: false,
+    },
+    include: { user: true, profissionalAtual: { include: { user: true } } },
+  });
+
+  for (const c of clientes) {
+    const diasAte = (new Date(c.renovarEm).getTime() - agora) / 1000 / 60 / 60 / 24;
+    if (diasAte <= 7 && diasAte > 3) {
+      const dataFormatada = new Date(c.renovarEm).toLocaleDateString("pt-BR");
+      // mesma ordem de prioridade do número de WhatsApp usada em renovacoes.js — pra ligação
+      // precisa ter o número à mão, por isso ele entra no corpo da notificação.
+      const whatsapp = c.user.telefone || c.whatsappCadastro || c.notifTelefone || null;
+      const trechoWhatsapp = whatsapp ? `WhatsApp: ${whatsapp}.` : "Sem WhatsApp cadastrado.";
+      const mensagem = `${c.user.nome} (profissional: ${c.profissionalAtual?.user?.nome || "sem profissional"}) renova em ${dataFormatada}. Hora de ligar e perguntar como estão indo as sessões — ainda sem falar de renovação. ${trechoWhatsapp}`;
+
+      await notificarAtendentes({ titulo: "Ligar pra saber como está indo", mensagem, tipo: "checkin_renovacao" });
+      await notificarDonos({ titulo: "Ligar pra saber como está indo", mensagem, tipo: "checkin_renovacao" });
+
+      await prisma.cliente.update({ where: { id: c.id }, data: { renovarCheckinSemanaEnviado: true } });
+    }
+  }
+}
+
 // Resumo diário da agenda pra cada profissional: lista os clientes e horários de hoje. Manda só
 // uma vez por dia (confere se já existe um aviso desse tipo criado hoje pra ela antes de mandar
 // de novo) — roda dentro do mesmo ciclo de 15 em 15 minutos dos outros lembretes, não precisa de
 // nenhum agendador novo.
 async function verificarResumoDiarioProfissionais() {
-  const inicioHoje = new Date();
-  inicioHoje.setHours(0, 0, 0, 0);
+  // Fase 69 — hojeBrasil() em vez de "new Date(); setHours(0,0,0,0)" (fuso do servidor/UTC no
+  // Railway): senão, entre 21h e meia-noite em Brasília esse resumo passava a procurar a agenda
+  // do dia SEGUINTE (que ainda está vazia) em vez da de hoje.
+  const inicioHoje = hojeBrasil();
   const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
 
   const profissionais = await prisma.profissional.findMany({ select: { id: true, userId: true } });
@@ -162,8 +201,8 @@ const GRACE_MINUTOS_SESSAO_NAO_INICIADA = 15;
 
 async function verificarSessoesNaoIniciadas() {
   const agora = new Date();
-  const inicioHoje = new Date();
-  inicioHoje.setHours(0, 0, 0, 0);
+  // Fase 69 — mesma correção: hojeBrasil() em vez de meia-noite no fuso do servidor.
+  const inicioHoje = hojeBrasil();
   const inicioAmanha = new Date(inicioHoje.getTime() + 24 * 60 * 60 * 1000);
 
   const candidatos = await prisma.agendamento.findMany({
@@ -244,6 +283,11 @@ async function verificarLembretes() {
     await verificarLembretesDeRenovacao();
   } catch (e) {
     console.error("Erro ao verificar lembretes de renovação:", e);
+  }
+  try {
+    await verificarLembretesDeCheckinPreRenovacao();
+  } catch (e) {
+    console.error("Erro ao verificar lembretes de check-in pré-renovação:", e);
   }
   try {
     await verificarResumoDiarioProfissionais();

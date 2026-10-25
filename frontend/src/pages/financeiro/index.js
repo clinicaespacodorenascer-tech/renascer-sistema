@@ -3,6 +3,7 @@ import LayoutNovo from "../../components/LayoutNovo";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/useAuth";
 import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
+import PopupRenovacoes from "../../components/PopupRenovacoes";
 
 // ---------- SETOR FINANCEIRO (Fase 31) ----------
 // Painel completo do novo papel "Setor Financeiro" (ex: Patrícia): CAC/ROI/receita/lucro de
@@ -10,9 +11,39 @@ import { statusSessao, CORES_STATUS_SESSAO } from "../../lib/presenca";
 // pró-labore, pagamento de anúncios — mais as 3 telas de apoio que o setor também usa no dia a
 // dia (clientes pra renovar, repasses das profissionais, agenda geral), reaproveitando os mesmos
 // dados que o Dono/Atendente já usam.
+// Fase 69 — mesmo corte de "essa semana" usado no pop-up da atendente (segunda a sábado, inclui
+// quem já está atrasado), aplicado em cima da lista cheia que /financeiro/clientes-renovar-por-
+// data já devolve, só pro pop-up que abre sozinho — a aba "Clientes pra renovar" continua mostrando
+// a lista inteira, sem esse corte.
+function filtrarRenovarEssaSemana(lista) {
+  const hoje = new Date();
+  const hojeUTC = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const diaSemana = hoje.getDay();
+  const diffSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const inicioSemanaUTC = hojeUTC + diffSegunda * 24 * 60 * 60 * 1000;
+  const fimSemanaUTC = inicioSemanaUTC + 7 * 24 * 60 * 60 * 1000;
+  return lista.filter((c) => {
+    if (!c.renovarEm) return false;
+    const alvo = new Date(c.renovarEm);
+    const alvoUTC = Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth(), alvo.getUTCDate());
+    return alvoUTC < fimSemanaUTC; // inclui atrasados (sem limite inferior), igual ao pop-up da atendente
+  });
+}
+
 export default function AreaFinanceiro() {
   const { user, carregando } = useAuth("FINANCEIRO");
   const [aba, setAba] = useState("painel");
+  const [renovarSemana, setRenovarSemana] = useState([]);
+  const [popupRenovacaoFechado, setPopupRenovacaoFechado] = useState(false);
+
+  useEffect(() => {
+    if (carregando) return;
+    api
+      .get("/financeiro/clientes-renovar-por-data")
+      .then((r) => setRenovarSemana(filtrarRenovarEssaSemana(r.data)))
+      .catch(() => {});
+  }, [carregando]);
+
   if (carregando) return null;
 
   const ABAS = [
@@ -28,8 +59,25 @@ export default function AreaFinanceiro() {
     { id: "agenda", label: "Agenda geral" },
   ];
 
+  const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
+
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {mostrarPopupRenovacao && (
+        <PopupRenovacoes
+          titulo="Clientes que precisam renovar essa semana"
+          subtitulo="Clínica inteira, segunda a sábado (inclui quem já está atrasado)."
+          clientes={renovarSemana}
+          mostrarProfissional
+          rotaMarcarContatado="/financeiro"
+          onFechar={() => setPopupRenovacaoFechado(true)}
+          onAtualizarCliente={(id) =>
+            setRenovarSemana((lista) =>
+              lista.map((c) => (c.id === id ? { ...c, renovarContatadoEm: c.renovarContatadoEm ? null : new Date().toISOString() } : c))
+            )
+          }
+        />
+      )}
       {aba === "painel" && <PainelFinanceiro />}
       {aba === "clientes" && <ClientesRenovarPorData />}
       {aba === "renovar" && <ClientesParaRenovar />}

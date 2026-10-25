@@ -34,6 +34,16 @@ async function notificarAtendentes({ titulo, mensagem, tipo = "sistema", url }, 
   );
 }
 
+// Fase 68 — manda o mesmo aviso pra todos os logins do Setor Financeiro de uma vez (mesmo padrão
+// de notificarDonos/notificarAtendentes acima) — usado no aviso de "pacote de cliente acabando",
+// que o financeiro também precisa ver (afeta a taxa de renovação e a receita prevista dele).
+async function notificarFinanceiro({ titulo, mensagem, tipo = "sistema", url }, excetoUserId = null) {
+  const financeiros = await prisma.financeiro.findMany({ select: { userId: true } });
+  await Promise.all(
+    financeiros.filter((f) => f.userId !== excetoUserId).map((f) => notificar(f.userId, { titulo, mensagem, tipo, url }))
+  );
+}
+
 // Verifica se um pacote precisa de aviso de renovação:
 // - pacotes com 4 sessões ou mais (4, 5, 6, 10, 12...) avisam quando faltarem 2 sessões pra
 //   acabar, e reforçam quando faltar só 1 — baseado em quantas RESTAM, não em quantas já foram
@@ -49,4 +59,4 @@ function precisaAvisoRenovacao(pacote) {
   return restantes === 1;
 }
 
-module.exports = { notificar, notificarDonos, notificarAtendentes, precisaAvisoRenovacao };
+module.exports = { notificar, notificarDonos, notificarAtendentes, notificarFinanceiro, precisaAvisoRenovacao };

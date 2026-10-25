@@ -81,7 +81,12 @@ function AvatarEditavelNovo({ user }) {
 // Sininho de notificações — mesma lógica do Layout.js antigo (componente SininhoNotificacoes:
 // contador de avisos não lidos + botão pra ativar notificação push no aparelho), só com as cores
 // adaptadas pro fundo escuro.
-function SininhoNotificacoesNovo() {
+// Fase 69 — abrirParaCima: o sino fica em dois lugares bem diferentes — no rodapé da barra lateral
+// (bem colado na borda de baixo da tela) e no cabeçalho do celular (bem no topo). O painel sempre
+// abriu "pra baixo" (top-full), o que funciona perfeito no celular, mas na barra lateral o painel
+// nascia fora da área visível da janela (embaixo da borda de baixo) — por isso parecia que "não
+// abria nada": o clique funcionava, só que o painel renderizava invisível, fora da tela.
+function SininhoNotificacoesNovo({ abrirParaCima = false }) {
   const [aberto, setAberto] = useState(false);
   const [lista, setLista] = useState([]);
   const [totalNaoLidas, setTotalNaoLidas] = useState(0);
@@ -161,7 +166,11 @@ function SininhoNotificacoesNovo() {
       </button>
 
       {aberto && (
-        <div className="absolute right-0 top-full mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-black/10 z-40 max-h-[70vh] overflow-y-auto text-[#121E33]">
+        <div
+          className={`absolute right-0 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-black/10 z-40 max-h-[70vh] overflow-y-auto text-[#121E33] ${
+            abrirParaCima ? "bottom-full mb-2" : "top-full mt-2"
+          }`}
+        >
           <div className="p-3 border-b border-black/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white">
             <span className="font-semibold text-sm">Notificações</span>
             {statusPush !== "granted" && (
@@ -235,7 +244,7 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
         <p className="text-[11.5px] text-[#8595AD] truncate">{cargoTexto}</p>
       </div>
       <span className="ml-auto flex items-center gap-2 shrink-0">
-        <SininhoNotificacoesNovo />
+        <SininhoNotificacoesNovo abrirParaCima />
         <button onClick={sair} className="text-[11px] text-[#8595AD] hover:text-white underline whitespace-nowrap">
           Sair
         </button>

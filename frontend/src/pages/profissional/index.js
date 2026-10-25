@@ -8,6 +8,7 @@ import StatusCliente from "../../components/StatusCliente";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import IndicadorPresenca from "../../components/IndicadorPresenca";
 import ChecklistMeuDia from "../../components/ChecklistMeuDia";
+import PopupRenovacoes from "../../components/PopupRenovacoes";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -74,6 +75,10 @@ export default function AreaProfissional() {
   // (CLIENTE ou TRANSACAO), guarda aqui pra passar pra aba certa abrir direto na ficha/comprovante
   // daquele registro específico, em vez de só trocar de aba.
   const [referencia, setReferencia] = useState({ tipo: null, id: null });
+  // Fase 69 — pop-up de "clientes pra renovar hoje" (só a carteira dela), que abre sozinho ao
+  // entrar no sistema — igual ao de sessão pendente de confirmação acima, mas pra renovação.
+  const [renovarHoje, setRenovarHoje] = useState([]);
+  const [popupRenovacaoFechado, setPopupRenovacaoFechado] = useState(false);
 
   function irPara(aba, referenciaTipo, referenciaId) {
     setReferencia({ tipo: referenciaTipo || null, id: referenciaId || null });
@@ -89,10 +94,20 @@ export default function AreaProfissional() {
     }
   }
 
+  async function carregarRenovarHoje() {
+    try {
+      const { data } = await api.get("/profissional/clientes-para-renovar-hoje");
+      setRenovarHoje(data);
+    } catch (e) {
+      // não é crítico — o aviso por notificação (sininho/push) já cobre o mesmo caso
+    }
+  }
+
   useEffect(() => {
     if (carregando) return;
     api.get("/profissional/novos-pacientes").then((r) => setQtdNovosPacientes(r.data.length)).catch(() => {});
     carregarPendentesConfirmar();
+    carregarRenovarHoje();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregando, aba]);
 
@@ -121,6 +136,9 @@ export default function AreaProfissional() {
   ];
 
   const pendenteParaPopup = pendentesConfirmar.find((p) => !popupDispensados.includes(p.id)) || null;
+  // Fase 69 — o pop-up de sessão pendente (acima) tem prioridade: só mostra o de renovação quando
+  // não tem nenhuma sessão pra confirmar na tela, pra não empilhar dois modais um em cima do outro.
+  const mostrarPopupRenovacao = !pendenteParaPopup && !popupRenovacaoFechado && renovarHoje.length > 0;
 
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
@@ -129,6 +147,20 @@ export default function AreaProfissional() {
           agendamento={pendenteParaPopup}
           onMarcar={(status) => marcarSessaoPendente(pendenteParaPopup.id, status)}
           onDispensar={() => setPopupDispensados((d) => [...d, pendenteParaPopup.id])}
+        />
+      )}
+      {mostrarPopupRenovacao && (
+        <PopupRenovacoes
+          titulo="Clientes que precisam renovar hoje"
+          subtitulo="Da sua carteira — chama antes que o pacote acabe."
+          clientes={renovarHoje}
+          rotaMarcarContatado="/profissional"
+          onFechar={() => setPopupRenovacaoFechado(true)}
+          onAtualizarCliente={(id) =>
+            setRenovarHoje((lista) =>
+              lista.map((c) => (c.id === id ? { ...c, renovarContatadoEm: c.renovarContatadoEm ? null : new Date().toISOString() } : c))
+            )
+          }
         />
       )}
       {aba === "agenda" && <AbaAgenda />}

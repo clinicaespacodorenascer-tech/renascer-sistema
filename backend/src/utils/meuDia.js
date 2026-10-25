@@ -33,17 +33,31 @@ function fimDoDia(dataStr) {
 }
 
 // Início/fim do mês de uma data (ou do mês atual) — mesmo padrão já usado em dono.js/financeiro.
+// Fase 69 — "mês atual" agora usa hojeBrasil() em vez de "new Date()" puro: sem isso, nas últimas
+// 3h do último dia do mês em Brasília (21h–24h), o servidor (UTC) já achava que era dia 1º do mês
+// seguinte, e relatórios/metas "deste mês" passavam a olhar pro mês errado bem na virada.
 function periodoDoMes(mes, ano) {
-  const hoje = new Date();
+  const hoje = hojeBrasil();
   const m = mes ? Number(mes) - 1 : hoje.getMonth();
   const a = ano ? Number(ano) : hoje.getFullYear();
   return { inicio: new Date(a, m, 1), fim: new Date(a, m + 1, 1), mes: m + 1, ano: a };
 }
 
-// Trimestre atual no formato "2026-T4", usado como valor padrão de MetaTrimestre.
-function trimestreAtual(data = new Date()) {
+// Trimestre atual no formato "2026-T4", usado como valor padrão de MetaTrimestre. Mesmo motivo do
+// comentário acima pro valor padrão: hojeBrasil(), não "new Date()".
+function trimestreAtual(data = hojeBrasil()) {
   const trimestre = Math.floor(data.getMonth() / 3) + 1;
   return `${data.getFullYear()}-T${trimestre}`;
+}
+
+// Fase 69 — segunda-feira da semana que contém `data` (ou hoje, se não vier nada): mesma função
+// que já existia só dentro de dono.js (Fase 35), promovida pra cá pra ser reaproveitada também
+// pelas listas "clientes pra renovar essa semana" da atendente/financeiro, em vez de reescrever a
+// mesma conta de novo (e arriscar uma versão ligeiramente diferente/com bug de novo).
+function inicioDaSemana(data = hojeBrasil()) {
+  const diaSemana = data.getDay(); // 0 = domingo
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  return new Date(data.getFullYear(), data.getMonth(), data.getDate() + diff);
 }
 
 // ---------- Configuração financeira da clínica (custo fixo / reserva de caixa) ----------
@@ -208,6 +222,7 @@ module.exports = {
   fimDoDia,
   periodoDoMes,
   trimestreAtual,
+  inicioDaSemana,
   obterConfiguracaoFinanceiraClinica,
   calcularTaxaFaltas,
   calcularTempoRespostaMedio,

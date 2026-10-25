@@ -15,6 +15,7 @@ import { AbaAgenda, AbaCadastrarCliente, AbaClientes, AbaFinanceiro, AbaConfig, 
 // Fase 51 — mesmo painel de CAC/ROI/investimento/imposto/retiradas que o Setor Financeiro usa,
 // reaproveitado aqui na aba "Financeiro" do Dono (as rotas /financeiro/* já liberavam DONO também).
 import { formatarMoeda, PainelFinanceiro, ClientesRenovarPorData, AnaliseRenovacoes } from "../financeiro/index";
+import PopupRenovacoes from "../../components/PopupRenovacoes";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -23,9 +24,38 @@ const TIPO_LABEL = {
   OUTRO: "Outro",
 };
 
+// Fase 69 — mesmo corte de "essa semana" usado no pop-up da atendente (segunda a sábado, inclui
+// quem já está atrasado), aplicado aqui em cima da lista cheia que /financeiro/clientes-renovar-
+// por-data já devolve (Dono já tem acesso a essa rota — não precisa de rota nova só pra isso).
+function filtrarRenovarEssaSemana(lista) {
+  const hoje = new Date();
+  const hojeUTC = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const diaSemana = hoje.getDay();
+  const diffSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const inicioSemanaUTC = hojeUTC + diffSegunda * 24 * 60 * 60 * 1000;
+  const fimSemanaUTC = inicioSemanaUTC + 7 * 24 * 60 * 60 * 1000;
+  return lista.filter((c) => {
+    if (!c.renovarEm) return false;
+    const alvo = new Date(c.renovarEm);
+    const alvoUTC = Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth(), alvo.getUTCDate());
+    return alvoUTC < fimSemanaUTC; // inclui atrasados (sem limite inferior), igual ao pop-up da atendente
+  });
+}
+
 export default function AreaDono() {
   const { user, carregando } = useAuth("DONO");
   const [aba, setAba] = useState("dashboard");
+  const [renovarSemana, setRenovarSemana] = useState([]);
+  const [popupRenovacaoFechado, setPopupRenovacaoFechado] = useState(false);
+
+  useEffect(() => {
+    if (carregando) return;
+    api
+      .get("/financeiro/clientes-renovar-por-data")
+      .then((r) => setRenovarSemana(filtrarRenovarEssaSemana(r.data)))
+      .catch(() => {});
+  }, [carregando]);
+
   if (carregando) return null;
 
   const ABAS = [
@@ -48,8 +78,25 @@ export default function AreaDono() {
     { id: "secretaria", label: "Secretaria" }, // Fase 47
   ];
 
+  const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
+
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {mostrarPopupRenovacao && (
+        <PopupRenovacoes
+          titulo="Clientes que precisam renovar essa semana"
+          subtitulo="Clínica inteira, segunda a sábado (inclui quem já está atrasado)."
+          clientes={renovarSemana}
+          mostrarProfissional
+          rotaMarcarContatado="/financeiro"
+          onFechar={() => setPopupRenovacaoFechado(true)}
+          onAtualizarCliente={(id) =>
+            setRenovarSemana((lista) =>
+              lista.map((c) => (c.id === id ? { ...c, renovarContatadoEm: c.renovarContatadoEm ? null : new Date().toISOString() } : c))
+            )
+          }
+        />
+      )}
       {aba === "meudia" && <AbaMeuDia />}
       {aba === "dashboard" && <Dashboard />}
       {aba === "mapas" && <MapasMentais />}
@@ -613,6 +660,14 @@ function Dashboard() {
           <p className="nv-num font-sora font-bold text-[28px] text-nv-ink">
             {d.taxaRenovacao != null ? <NumeroAnimado valor={d.taxaRenovacao} sufixo="%" /> : "—"}
           </p>
+          {/* Fase 68 — "de quantos" por trás do %, pra não ficar um número solto sem contexto */}
+          {d.renovacao90d && (d.renovacao90d.renovaram > 0 || d.renovacao90d.saíram > 0) ? (
+            <p className="text-[11px] text-nv-muted mt-0.5">
+              {d.renovacao90d.renovaram} de {d.renovacao90d.renovaram + d.renovacao90d.saíram} terminaram e renovaram (90 dias)
+            </p>
+          ) : (
+            <p className="text-[11px] text-nv-muted mt-0.5">Ainda sem pacote terminado nos últimos 90 dias</p>
+          )}
         </div>
       </div>
 

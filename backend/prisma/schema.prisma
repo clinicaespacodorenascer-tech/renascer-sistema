@@ -377,6 +377,11 @@ model Cliente {
   // Data prevista de renovação, cadastrada pela atendente/profissional — dispara aviso automático dias antes
   renovarEm             DateTime?
   renovarEmAvisoEnviado Boolean  @default(false)
+  // Fase 69 — "liga pra saber como ele está": aviso separado do de cima, dispara ~7 dias ANTES de
+  // renovarEm (antes do aviso de "hora de renovar", que continua disparando ~3 dias antes) — pra
+  // atendente/dono ligarem e perguntarem como estão indo as sessões, sem ainda falar de renovação/
+  // cobrança. Volta pra false sempre que uma nova data de renovarEm é definida, igual o de cima.
+  renovarCheckinSemanaEnviado Boolean @default(false)
   // Fase 57 — "Marcar como contatado": quando alguém do Financeiro/Dono já ligou/chamou esse
   // cliente sobre a renovação que está chegando (tela "Clientes pra renovar" novo layout). Fica
   // null de novo sempre que uma nova data de renovarEm é definida (novo ciclo).

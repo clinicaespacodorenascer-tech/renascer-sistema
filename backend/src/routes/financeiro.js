@@ -17,6 +17,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { parseValorMonetario } = require("../utils/financeiro");
 const { notificar } = require("../utils/notificar");
 const { inicioDoDia, fimDoDia, calcularSaldoCaixaDoDia } = require("../utils/meuDia");
+const { listarClientesParaRenovar } = require("../utils/renovacoes");
 
 const router = express.Router();
 router.use(autenticar, permitir("FINANCEIRO", "DONO"));
@@ -231,29 +232,11 @@ router.get("/clientes-renovar-por-data", async (req, res) => {
   // ?todos=1 -> "ver todos os clientes": lista a clínica inteira (ativos), não só quem já tem
   // data de renovação marcada. Sem o parâmetro, continua só a fila de renovação (comportamento
   // original, usado também pela Análise pra não inflar os números com quem não está na fila).
+  // Fase 69 — a consulta em si foi pra utils/renovacoes.js, reaproveitada também pelas listas
+  // "hoje"/"essa semana" da profissional e da atendente.
   const mostrarTodos = req.query.todos === "1" || req.query.todos === "true";
-  const clientes = await prisma.cliente.findMany({
-    where: mostrarTodos ? { situacao: "ATIVO" } : { situacao: "ATIVO", renovarEm: { not: null } },
-    include: {
-      user: { select: { nome: true, telefone: true } },
-      profissionalAtual: { include: { user: { select: { nome: true } } } },
-      pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
-    },
-    orderBy: [{ renovarEm: "asc" }, { user: { nome: "asc" } }],
-  });
-
-  res.json(
-    clientes.map((c) => ({
-      id: c.id,
-      nome: c.user.nome,
-      whatsapp: c.user.telefone || c.whatsappCadastro || null,
-      profissionalNome: c.profissionalAtual?.user?.nome || "Sem profissional",
-      valorPacote: c.pacotes[0]?.valorTotal ?? null,
-      duracao: c.pacotes[0]?.duracao ?? null,
-      renovarEm: c.renovarEm,
-      renovarContatadoEm: c.renovarContatadoEm,
-    }))
-  );
+  const lista = await listarClientesParaRenovar({ todos: mostrarTodos });
+  res.json(lista);
 });
 
 // Fase 57 — "Marcar como contatado" (novo layout): alterna o campo Cliente.renovarContatadoEm.
@@ -407,9 +390,10 @@ router.put("/repasses/:transacaoId/marcar", async (req, res) => {
 // precisa ver se as sessões recentes foram realizadas ou não, pra saber se é hora de chamar o
 // cliente pra renovar. Continua sendo só agenda/status — nenhum dado de evolução/prontuário.
 router.get("/agenda-geral", async (req, res) => {
-  const inicioOntem = new Date();
-  inicioOntem.setDate(inicioOntem.getDate() - 1);
-  inicioOntem.setHours(0, 0, 0, 0);
+  // Fase 69 — trocado de "new Date(); setHours(0,0,0,0)" (meia-noite no fuso do SERVIDOR, que no
+  // Railway roda em UTC) pra inicioDoDia() (meia-noite real em Brasília — ver Fase 59 em dono.js).
+  // Sem isso, entre 21h e meia-noite em Brasília o filtro de "ontem" ficava 3h adiantado.
+  const inicioOntem = new Date(inicioDoDia().getTime() - 24 * 60 * 60 * 1000);
 
   const agendamentos = await prisma.agendamento.findMany({
     where: { data: { gte: inicioOntem } },

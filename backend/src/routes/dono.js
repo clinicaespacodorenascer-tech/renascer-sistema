@@ -14,6 +14,7 @@ const {
   inicioDoDia,
   periodoDoMes,
   trimestreAtual,
+  inicioDaSemana,
   obterConfiguracaoFinanceiraClinica,
   calcularTaxaFaltas,
   calcularTempoRespostaMedio,
@@ -25,13 +26,9 @@ const router = express.Router();
 router.use(autenticar, permitir("DONO"));
 
 // ---------- Visão geral (Fase 35: resultado da semana, pacotes por status, clientes p/ renovar) ----------
-// Segunda-feira da semana que contém `data` (semana sempre começa na segunda, igual ao
-// calendário real de atendimento da clínica — sábado é o último dia útil considerado).
-function inicioDaSemana(data) {
-  const diaSemana = data.getDay(); // 0 = domingo
-  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
-  return new Date(data.getFullYear(), data.getMonth(), data.getDate() + diff);
-}
+// Fase 69 — inicioDaSemana() promovida pra utils/meuDia.js (reaproveitada agora também pela
+// atendente, na lista "clientes pra renovar essa semana") — segunda-feira da semana que contém
+// `data`, semana sempre começando na segunda, igual ao calendário real de atendimento da clínica.
 const DIAS_SEMANA_LABEL = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 function chaveDia(d) {
   const dt = new Date(d);
@@ -107,8 +104,21 @@ router.get("/dashboard", async (req, res) => {
   const inicioSemana = inicioDaSemana(hoje);
   const fimSemanaExclusivo = new Date(inicioSemana.getTime() + 6 * 24 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
 
-  const [agendamentosSemana, transacoesSemana, gastosAnuncioSemana, clientesNovosSemana, pacotesPorStatusRaw, clientesParaRenovarRaw] =
-    await Promise.all([
+  // Fase 68 — mesma janela de 90 dias usada em /financeiro/renovacoes-resumo, pra "Taxa de
+  // renovação" significar a MESMA coisa em todo o sistema: de cada cliente que terminou o pacote
+  // nos últimos 90 dias (RENOVOU ou foi EXCLUIDO por não renovar), quantos % renovaram.
+  const ha90Dias = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const [
+    agendamentosSemana,
+    transacoesSemana,
+    gastosAnuncioSemana,
+    clientesNovosSemana,
+    pacotesPorStatusRaw,
+    clientesParaRenovarRaw,
+    renovaram90d,
+    saíram90d,
+  ] = await Promise.all([
       prisma.agendamento.findMany({
         where: { data: { gte: inicioSemana, lt: fimSemanaExclusivo }, status: { not: "CANCELADO" } },
         select: { data: true },
@@ -140,6 +150,8 @@ router.get("/dashboard", async (req, res) => {
         orderBy: { renovarEm: "asc" },
         take: 8,
       }),
+      prisma.historicoCliente.count({ where: { tipo: "RENOVOU", criadoEm: { gte: ha90Dias } } }),
+      prisma.historicoCliente.count({ where: { tipo: "EXCLUIDO", criadoEm: { gte: ha90Dias } } }),
     ]);
 
   const resultadoSemana = DIAS_SEMANA_LABEL.map((label, i) => {
@@ -163,13 +175,14 @@ router.get("/dashboard", async (req, res) => {
   const contagemStatusPacote = { ATIVO: 0, AGUARDANDO_RENOVACAO: 0, ENCERRADO: 0, CANCELADO: 0 };
   for (const grupo of pacotesPorStatusRaw) contagemStatusPacote[grupo.status] = grupo._count.status;
   const totalPacotesConsiderados = contagemStatusPacote.ATIVO + contagemStatusPacote.AGUARDANDO_RENOVACAO + contagemStatusPacote.ENCERRADO;
-  // Taxa de renovação = % dos pacotes (fora os cancelados) que seguem ativos ou aguardando
-  // renovação, em vez de terem encerrado sem continuar — null se ainda não existe pacote
-  // nenhum nessas 3 situações (sistema zerado).
-  const taxaRenovacao =
-    totalPacotesConsiderados > 0
-      ? Number((((contagemStatusPacote.ATIVO + contagemStatusPacote.AGUARDANDO_RENOVACAO) / totalPacotesConsiderados) * 100).toFixed(1))
-      : null;
+  // Fase 68 — Taxa de renovação = de cada cliente que TERMINOU o pacote nos últimos 90 dias
+  // (marcado como RENOVOU ou EXCLUIDO/saiu por não renovar — ver utils/notificar.js e as rotas
+  // que criam HistoricoCliente), quantos % renovaram de fato. É a MESMA fórmula/janela da aba
+  // Financeiro ("Clientes pra renovar" > Taxa de renovação 90 dias), pra não ter dois números
+  // diferentes pra mesma pergunta em telas diferentes. null só quando ainda não teve nenhum
+  // desfecho (renovou ou saiu) nos últimos 90 dias — sistema novo, sem histórico ainda.
+  const baseRenovacao90d = renovaram90d + saíram90d;
+  const taxaRenovacao = baseRenovacao90d > 0 ? Number(((renovaram90d / baseRenovacao90d) * 100).toFixed(1)) : null;
 
   const clientesParaRenovar = clientesParaRenovarRaw.map((c) => ({
     nome: c.user.nome,
@@ -197,6 +210,8 @@ router.get("/dashboard", async (req, res) => {
     // Fase 35 — alimenta a Visão geral redesenhada:
     sessoesSemana: agendamentosSemana.length,
     taxaRenovacao,
+    // números por trás do percentual acima, pra quem quiser o "de quantos" (últimos 90 dias)
+    renovacao90d: { renovaram: renovaram90d, saíram: saíram90d },
     resultadoSemana,
     pacotesPorStatus: {
       ativos: contagemStatusPacote.ATIVO,
@@ -620,6 +635,9 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
     dados.renovarContatadoEm = null;
+    // Fase 69: toda vez que a data de renovação muda, o lembrete de "ligar pra saber como ele
+    // está" (que dispara ~7 dias antes) tem que poder disparar de novo pra essa nova data.
+    dados.renovarCheckinSemanaEnviado = false;
   }
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
   res.json(cliente);

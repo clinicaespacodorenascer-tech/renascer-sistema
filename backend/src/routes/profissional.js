@@ -4,14 +4,15 @@ const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
 const { calcularRepasse, valorDoPlano, transacaoDuplicada, parseValorMonetario } = require("../utils/financeiro");
 const { reconhecerComprovante } = require("../utils/ia");
-const { notificar, notificarDonos, notificarAtendentes, precisaAvisoRenovacao } = require("../utils/notificar");
+const { notificar, notificarDonos, notificarAtendentes, notificarFinanceiro, precisaAvisoRenovacao } = require("../utils/notificar");
 const { contemTelefone, MENSAGEM_BLOQUEIO } = require("../utils/moderarTexto");
 const { haConflito, diaSemanaDeData, horariosLivres, horarioAgendamentoParaData } = require("../utils/horarios");
 const { calcularStatusCliente } = require("../utils/statusCliente");
-const { inicioDoDia, fimDoDia, periodoDoMes, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
+const { inicioDoDia, fimDoDia, periodoDoMes, hojeBrasil, calcularTaxaFaltas, calcularTempoRespostaMedio } = require("../utils/meuDia");
 const { gerarEmailAutomatico } = require("../utils/gerarLogin");
 const { excluirCliente } = require("../utils/excluirUsuario");
 const { gerarAgendamentosRecorrentes, aceitarSolicitacaoNovoPaciente } = require("../utils/cadastrarCliente");
+const { listarClientesParaRenovar } = require("../utils/renovacoes");
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -170,6 +171,17 @@ router.get("/agenda/pendentes-confirmacao", async (req, res) => {
   res.json(pendentes);
 });
 
+// Fase 69 — lista "clientes pra renovar hoje" (só os DELA — nunca mostra carteira de outra
+// profissional), pro pop-up que abre sozinho ao entrar no sistema. Inclui quem já está atrasado
+// (sem limite inferior de data), porque atrasado é ainda mais urgente de ligar do que "hoje".
+router.get("/clientes-para-renovar-hoje", async (req, res) => {
+  const profissionalId = await getProfissionalId(req);
+  const hoje = hojeBrasil();
+  const amanha = new Date(hoje.getTime() + 24 * 60 * 60 * 1000);
+  const lista = await listarClientesParaRenovar({ profissionalId, ateExclusivo: amanha });
+  res.json(lista);
+});
+
 router.put("/agenda/:id/status", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
   const { status, motivoCancelamento } = req.body;
@@ -190,6 +202,9 @@ router.put("/agenda/:id/status", async (req, res) => {
     const cliente = await prisma.cliente.findUnique({ where: { id: pacote.clienteId }, include: { user: true } });
 
     if (precisaAvisoRenovacao(pacote)) {
+      // Fase 68 — esse aviso agora chega pros 5 perfis que lidam com a renovação de algum jeito:
+      // o próprio paciente, a profissional que atende, o dono, a atendente (quem normalmente faz
+      // o contato/cobrança) e o financeiro (que acompanha receita prevista e taxa de renovação).
       await notificar(cliente.userId, {
         titulo: "Seu pacote está terminando",
         mensagem: `Você já usou ${pacote.sessoesUsadas} de ${pacote.totalSessoes} sessões. Que tal renovar pra não perder seu horário fixo?`,
@@ -200,11 +215,11 @@ router.put("/agenda/:id/status", async (req, res) => {
         mensagem: `Avise seu cliente sobre a renovação do pacote (sessão ${pacote.sessoesUsadas}/${pacote.totalSessoes}).`,
         tipo: "renovacao",
       });
-      await notificarDonos({
-        titulo: "Cliente perto de renovar",
-        mensagem: `${cliente.user?.nome || "Um cliente"} está perto de terminar o pacote (sessão ${pacote.sessoesUsadas}/${pacote.totalSessoes}) com ${req.user.nome || "a profissional"}.`,
-        tipo: "renovacao",
-      });
+      const tituloEquipe = "Cliente perto de renovar";
+      const mensagemEquipe = `${cliente.user?.nome || "Um cliente"} está perto de terminar o pacote (sessão ${pacote.sessoesUsadas}/${pacote.totalSessoes}) com ${req.user.nome || "a profissional"}.`;
+      await notificarDonos({ titulo: tituloEquipe, mensagem: mensagemEquipe, tipo: "renovacao" });
+      await notificarAtendentes({ titulo: tituloEquipe, mensagem: mensagemEquipe, tipo: "renovacao" });
+      await notificarFinanceiro({ titulo: tituloEquipe, mensagem: mensagemEquipe, tipo: "renovacao" });
     }
 
     // Semáforo automático do cliente + pop-up premium de renovação pro cliente ver no painel
@@ -1157,6 +1172,8 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
     dados.renovarContatadoEm = null;
+    // Fase 69: idem — nova data de renovação reabre a janela do lembrete de check-in de ~7 dias.
+    dados.renovarCheckinSemanaEnviado = false;
   }
   const atualizado = await prisma.cliente.update({ where: { id: cliente.id }, data: dados });
   res.json(atualizado);

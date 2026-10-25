@@ -8,9 +8,10 @@ const { notificar, notificarDonos, notificarAtendentes } = require("../utils/not
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirCliente } = require("../utils/excluirUsuario");
-const { inicioDoDia, fimDoDia, periodoDoMes } = require("../utils/meuDia");
+const { inicioDoDia, fimDoDia, periodoDoMes, inicioDaSemana } = require("../utils/meuDia");
 const { gerarEmailAutomatico } = require("../utils/gerarLogin");
 const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
+const { listarClientesParaRenovar } = require("../utils/renovacoes");
 
 const router = express.Router();
 router.use(autenticar, permitir("ATENDENTE"));
@@ -264,6 +265,8 @@ router.put("/clientes/:id/notificacao", async (req, res) => {
     dados.renovarEm = renovarEm ? new Date(renovarEm) : null;
     dados.renovarEmAvisoEnviado = false;
     dados.renovarContatadoEm = null;
+    // Fase 69: idem — nova data de renovação reabre a janela do lembrete de check-in de ~7 dias.
+    dados.renovarCheckinSemanaEnviado = false;
   }
   const cliente = await prisma.cliente.update({ where: { id: req.params.id }, data: dados });
   res.json(cliente);
@@ -569,9 +572,10 @@ router.get("/clientes/:id/transacoes", async (req, res) => {
 // Fase 56 — passou a trazer também "ontem" (não só daqui pra frente): a atendente precisa ver se
 // as sessões recentes das profissionais foram realizadas, pra acompanhar o uso do sistema.
 router.get("/agenda-geral", async (req, res) => {
-  const inicioOntem = new Date();
-  inicioOntem.setDate(inicioOntem.getDate() - 1);
-  inicioOntem.setHours(0, 0, 0, 0);
+  // Fase 69 — trocado de "new Date(); setHours(0,0,0,0)" (meia-noite no fuso do SERVIDOR, que no
+  // Railway roda em UTC) pra inicioDoDia() (meia-noite real em Brasília — ver Fase 59 em dono.js).
+  // Sem isso, entre 21h e meia-noite em Brasília o filtro de "ontem" ficava 3h adiantado.
+  const inicioOntem = new Date(inicioDoDia().getTime() - 24 * 60 * 60 * 1000);
 
   const agendamentos = await prisma.agendamento.findMany({
     where: { data: { gte: inicioOntem } },
@@ -587,6 +591,31 @@ router.get("/agenda-geral", async (req, res) => {
     take: 150,
   });
   res.json(agendamentos);
+});
+
+// Fase 69 — lista "clientes pra renovar essa semana" (segunda a sábado, inclui quem já está
+// atrasado), pro pop-up que abre sozinho ao entrar no sistema — a atendente não tinha acesso às
+// rotas de /financeiro/* (de propósito, não deveria ver CAC/retiradas/imposto), então essa lista
+// tem rota própria aqui, mas reaproveita a MESMA consulta (utils/renovacoes.js) usada na aba
+// "Clientes pra renovar" do Financeiro/Dono.
+router.get("/clientes-para-renovar-semana", async (req, res) => {
+  const inicioSemana = inicioDaSemana();
+  const fimSemanaExclusivo = new Date(inicioSemana.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const lista = await listarClientesParaRenovar({ ateExclusivo: fimSemanaExclusivo });
+  res.json(lista);
+});
+
+// Fase 69 — "Marcar como contatado" pro pop-up da atendente (mesmo toggle que já existia em
+// financeiro.js/profissional.js, só que ela não tinha acesso a nenhuma das duas rotas).
+router.put("/clientes/:id/marcar-contatado", async (req, res) => {
+  const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id }, select: { renovarContatadoEm: true } });
+  if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado." });
+
+  const atualizado = await prisma.cliente.update({
+    where: { id: req.params.id },
+    data: { renovarContatadoEm: cliente.renovarContatadoEm ? null : new Date() },
+  });
+  res.json({ renovarContatadoEm: atualizado.renovarContatadoEm });
 });
 
 // ---------- Suporte escalado à gerência (só visualização, item 19) ----------

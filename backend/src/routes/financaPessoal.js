@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { autenticar, permitir } = require("../middleware/auth");
+const { hojeBrasil } = require("../utils/meuDia");
 
 const router = express.Router();
 
@@ -15,8 +16,11 @@ function calcularStatusDespesa(lancamento) {
   if (lancamento.dataPagamento) return { status: "PAGO", dias: null };
   if (!lancamento.dataVencimento) return { status: "PENDENTE", dias: null };
 
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  // Fase 69 — "hoje" trocado pra hojeBrasil() (meia-noite real em Brasília, não no fuso do
+  // servidor): com "new Date(); setHours(0,0,0,0)" simples, entre 21h e meia-noite em Brasília o
+  // servidor (UTC) já considerava "hoje" o dia seguinte, e uma despesa que vence amanhã passava a
+  // contar como vencendo "hoje" (ou até como atrasada) 3h mais cedo do que devia.
+  const hoje = hojeBrasil();
   const vencimento = new Date(lancamento.dataVencimento);
   vencimento.setHours(0, 0, 0, 0);
 

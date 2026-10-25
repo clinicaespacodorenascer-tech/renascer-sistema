@@ -7,6 +7,7 @@ import DisponibilidadeSemanal from "../../components/DisponibilidadeSemanal";
 import SituacaoCliente from "../../components/SituacaoCliente";
 import TrocarProfissionalCliente from "../../components/TrocarProfissionalCliente";
 import { statusSessao, CORES_STATUS_SESSAO, formatarPresenca } from "../../lib/presenca";
+import PopupRenovacoes from "../../components/PopupRenovacoes";
 
 const TIPO_LABEL = {
   PACOTE_NOVO: "Contratação nova",
@@ -18,6 +19,16 @@ const TIPO_LABEL = {
 export default function AreaAtendente() {
   const { user, carregando } = useAuth("ATENDENTE");
   const [aba, setAba] = useState("clientes");
+  // Fase 69 — pop-up de "clientes pra renovar essa semana" (clínica inteira), que abre sozinho ao
+  // entrar no sistema.
+  const [renovarSemana, setRenovarSemana] = useState([]);
+  const [popupRenovacaoFechado, setPopupRenovacaoFechado] = useState(false);
+
+  useEffect(() => {
+    if (carregando) return;
+    api.get("/atendente/clientes-para-renovar-semana").then((r) => setRenovarSemana(r.data)).catch(() => {});
+  }, [carregando]);
+
   if (carregando) return null;
 
   const ABAS = [
@@ -28,8 +39,25 @@ export default function AreaAtendente() {
     { id: "suporte", label: "Suporte escalado" },
   ];
 
+  const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
+
   return (
     <LayoutNovo user={user} abas={ABAS} abaAtiva={aba} onTrocarAba={setAba}>
+      {mostrarPopupRenovacao && (
+        <PopupRenovacoes
+          titulo="Clientes que precisam renovar essa semana"
+          subtitulo="Clínica inteira, segunda a sábado (inclui quem já está atrasado)."
+          clientes={renovarSemana}
+          mostrarProfissional
+          rotaMarcarContatado="/atendente"
+          onFechar={() => setPopupRenovacaoFechado(true)}
+          onAtualizarCliente={(id) =>
+            setRenovarSemana((lista) =>
+              lista.map((c) => (c.id === id ? { ...c, renovarContatadoEm: c.renovarContatadoEm ? null : new Date().toISOString() } : c))
+            )
+          }
+        />
+      )}
       {aba === "clientes" && <Clientes />}
       {aba === "profissionais" && <ProfissionaisEAgendar />}
       {aba === "reativar" && <ClientesParaReativar rotaBase="/atendente" />}
