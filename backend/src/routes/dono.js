@@ -265,6 +265,27 @@ router.put("/profissionais/:id/percentual-repasse", async (req, res) => {
   }
 });
 
+// Fase 62 — vincula (ou desvincula, mandando slugSitePublico vazio) esta conta ao card dela no
+// site institucional (espacodorenascer.com/site), pra o popup de agendamento do site buscar a
+// agenda real dela em vez de perguntar turno genérico. O slug precisa bater exatamente com a
+// chave usada em frontend/public/site-assets/app.js (objeto PROFISSIONAIS), ex: "andrea-santos".
+router.put("/profissionais/:id/slug-site-publico", async (req, res) => {
+  const slug = (req.body.slugSitePublico || "").trim();
+  try {
+    const atualizado = await prisma.profissional.update({
+      where: { id: req.params.id },
+      data: { slugSitePublico: slug || null },
+      select: { id: true, slugSitePublico: true },
+    });
+    res.json(atualizado);
+  } catch (e) {
+    if (e.code === "P2002") {
+      return res.status(400).json({ erro: "Esse endereço já está sendo usado por outra profissional." });
+    }
+    res.status(404).json({ erro: "Profissional não encontrada." });
+  }
+});
+
 // Fase 54 — antes essa lista vinha sem filtro de situação, então misturava clientes ativos com
 // clientes já excluídos (soft-delete), o que deixava a contagem do Dono maior que a da
 // Atendente/Profissional (que só contam ATIVO). Clientes excluídos continuam acessíveis pela aba

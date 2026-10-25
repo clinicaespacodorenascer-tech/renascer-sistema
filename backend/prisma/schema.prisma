@@ -312,6 +312,13 @@ model Profissional {
   percentualRepasse Float @default(50) // % que fica com a profissional (padrão 50/50)
   linkMeet     String?  // link fixo do Google Meet da profissional, usado em todas as sessões dela
 
+  // Fase 62 — site público: liga esta conta ao "card" dela no site institucional
+  // (espacodorenascer.com/site), ex: "andrea-santos". Quando preenchido, o popup de agendamento
+  // do site busca os horários realmente livres dela (mesma agenda/disponibilidade usada aqui
+  // dentro) em vez de perguntar turno genérico. Em branco = esse card do site ainda não está
+  // ligado a nenhuma conta real (o popup cai no modo "combinar pelo WhatsApp").
+  slugSitePublico String? @unique
+
   disponibilidades Disponibilidade[]
   clientes         Cliente[]           @relation("ClienteDoProfissional")
   agendamentos     Agendamento[]

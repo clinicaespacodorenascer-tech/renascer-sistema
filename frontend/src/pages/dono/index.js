@@ -831,6 +831,65 @@ function Dashboard() {
 
 const NV_CORES_AVATAR = ["#0B5FA8", "#1C7C54", "#8A4FA3", "#B4622E"];
 
+// Fase 62 — liga a conta real da profissional ao card dela no site público
+// (espacodorenascer.com/site), pra o popup de agendamento do site buscar a agenda real dela em
+// vez de perguntar turno genérico. O slug precisa bater com a chave usada em
+// frontend/public/site-assets/app.js (objeto PROFISSIONAIS), ex: "andrea-santos" — por enquanto
+// é digitado à mão (lista de profissionais do site ainda é fixa no arquivo do site).
+function VincularSitePublico({ profissionalId, valorAtual }) {
+  const [valor, setValor] = useState(valorAtual || "");
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const mudou = valor.trim() !== (valorAtual || "");
+
+  async function salvar() {
+    setSalvando(true);
+    setMsg(null);
+    try {
+      await api.put(`/dono/profissionais/${profissionalId}/slug-site-publico`, { slugSitePublico: valor.trim() });
+      setMsg({ tipo: "ok", texto: valor.trim() ? "Vinculada ao site público." : "Desvinculada do site público." });
+    } catch (e) {
+      setMsg({ tipo: "erro", texto: e.response?.data?.erro || "Não deu pra salvar." });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-nv-borderLight pt-3.5">
+      <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide mb-1.5">Card no site público</p>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          placeholder="ex: andrea-santos (em branco = sem vínculo)"
+          className="flex-1 border border-nv-border rounded-lg px-2.5 py-1.5 text-xs text-nv-ink2 outline-none focus:border-nv-blue"
+        />
+        {mudou && (
+          <button
+            type="button"
+            onClick={salvar}
+            disabled={salvando}
+            className="text-xs font-semibold text-white bg-nv-blue rounded-lg px-3 py-1.5 disabled:opacity-60"
+          >
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+        )}
+      </div>
+      {msg && (
+        <p className={`text-[11px] mt-1 ${msg.tipo === "ok" ? "text-nv-green" : "text-red-600"}`}>{msg.texto}</p>
+      )}
+      {!msg && (
+        <p className="text-[11px] text-nv-muted3 mt-1">
+          {valorAtual ? "Vinculada — o popup do site busca a agenda real dela." : "Sem vínculo — o popup do site pede pra combinar o horário pelo WhatsApp."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Profissionais() {
   const [lista, setLista] = useState([]);
   const [busca, setBusca] = useState("");
@@ -962,6 +1021,8 @@ function Profissionais() {
                   {presencaSel.online ? "Ativa agora" : `Offline · ${presencaSel.texto}`}
                 </span>
               </div>
+
+              <VincularSitePublico key={selecionada.id} profissionalId={selecionada.id} valorAtual={selecionada.slugSitePublico} />
 
               {selecionada.bio && <p className="text-[13px] leading-relaxed text-nv-ink2">{selecionada.bio}</p>}
 
