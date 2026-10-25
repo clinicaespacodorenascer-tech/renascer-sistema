@@ -33,7 +33,24 @@ app.use(helmet());
 // CORS: antes caía para "*" (qualquer site) se a variável FRONTEND_URL não estivesse configurada
 // no Railway — agora, sem a variável, usa o endereço oficial de produção como padrão seguro, em
 // vez de liberar geral.
-app.use(cors({ origin: process.env.FRONTEND_URL || "https://renascer-sistema.vercel.app" }));
+// Fase 61 — domínio próprio: FRONTEND_URL agora aceita uma lista separada por vírgula (ex:
+// "https://espacodorenascer.com,https://renascer-sistema.vercel.app"), pra dar pra migrar pro
+// domínio novo sem derrubar o endereço antigo da Vercel enquanto o DNS não propaga em todo lugar.
+// Se só tiver um endereço configurado (ou nenhum, caindo no padrão), continua funcionando
+// exatamente igual a antes.
+const origensPermitidas = (process.env.FRONTEND_URL || "https://renascer-sistema.vercel.app")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Sem "origin" = chamada que não veio de navegador (ex: health check) — libera.
+      if (!origin || origensPermitidas.includes(origin)) return callback(null, true);
+      callback(new Error("Não permitido pelo CORS"));
+    },
+  })
+);
 app.use(express.json({ limit: "15mb" })); // limite maior por causa das fotos/comprovantes em base64
 
 // Freio contra tentativa de adivinhar senha ou criar conta em massa (Fase 27): conta as
