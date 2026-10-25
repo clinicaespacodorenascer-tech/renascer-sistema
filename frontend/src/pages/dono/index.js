@@ -6218,6 +6218,9 @@ function MeuDiaMetas() {
 const LARGURA_NO_MAPA = 170;
 const LARGURA_RAIZ_MAPA = 190;
 const ALTURA_NO_MAPA = 54;
+// Fase 65 — limites de quanto dá pra esticar/encolher um tópico arrastando a bordinha dele.
+const LARGURA_MIN_MAPA = 130;
+const LARGURA_MAX_MAPA = 440;
 // Fase 56 — mapa mental virou "radial" (cresce em qualquer direção a partir de qualquer nó, não só
 // pra baixo/direita). PAD_X/PAD_Y deslocam só o DESENHO na tela — a posição real salva no banco
 // (n.x, n.y) continua podendo ficar negativa (um ramo "esquerda"/"cima" bem perto da raiz), e o PAD
@@ -6247,6 +6250,7 @@ function MapasMentais() {
 
   const arrasteRef = useRef(null); // { nodeId, startX, startY, origX, origY, moveu }
   const panRef = useRef(null); // { startX, startY, scrollLeft, scrollTop }
+  const resizeRef = useRef(null); // { nodeId, startX, startLargura } — Fase 65, esticar/encolher
   const containerRef = useRef(null);
   const textoTimeoutRef = useRef(null);
   const descricaoTimeoutRef = useRef(null);
@@ -6413,6 +6417,47 @@ function MapasMentais() {
     if (mapaAtivoId) api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${nodeId}`, { colapsado: novoValor }).catch(() => {});
   }
 
+  // Fase 65 — "minimizar" é diferente de colapsar: colapsar esconde os FILHOS (só existe quando o nó
+  // tem ramo embaixo); minimizar encolhe a CAIXA DELE MESMO pra uma linha só, funciona em qualquer
+  // nó (até um sem filho nenhum, como o texto grandão que não cabia antes), e cada um liga/desliga
+  // independente dos outros.
+  function alternarMinimizado(nodeId) {
+    const no = (mapaAtual?.nodes || []).find((n) => n.id === nodeId);
+    const novoValor = !no?.minimizado;
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== nodeId ? n : { ...n, minimizado: novoValor })) } : m));
+    if (mapaAtivoId) api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${nodeId}`, { minimizado: novoValor }).catch(() => {});
+  }
+
+  // Fase 65 — arrasta a bordinha direita do tópico pra esticar/encolher a largura dele. O texto
+  // reflui sozinho (é só o CSS normal de quebra de linha reagindo à largura nova). Só grava no
+  // servidor quando solta o mouse, como já acontece ao mover um nó de lugar.
+  function iniciarResize(nodeId, larguraAtual, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { nodeId, startX: e.clientX, startLargura: larguraAtual };
+  }
+
+  function moverResize(e) {
+    const r = resizeRef.current;
+    if (!r) return;
+    const dx = e.clientX - r.startX;
+    const novaLargura = Math.max(LARGURA_MIN_MAPA, Math.min(LARGURA_MAX_MAPA, r.startLargura + dx));
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== r.nodeId ? n : { ...n, largura: novaLargura })) } : m));
+  }
+
+  async function soltarResize() {
+    const r = resizeRef.current;
+    resizeRef.current = null;
+    if (!r) return;
+    setMapaAtual((atual) => {
+      const no = atual?.nodes.find((n) => n.id === r.nodeId);
+      if (no && mapaAtivoId) {
+        api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${no.id}`, { largura: no.largura }).catch(() => {});
+      }
+      return atual;
+    });
+  }
+
   async function adicionarNoFilho() {
     if (!noSelecionadoId || !mapaAtual) return;
     const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: noSelecionadoId });
@@ -6469,12 +6514,13 @@ function MapasMentais() {
       if (!n.parentId || !idsVisiveis.has(n.id)) return;
       const pai = mapaAtual.nodes.find((p) => p.id === n.parentId);
       if (!pai) return;
-      const larguraPai = pai.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA;
+      const larguraPai = pai.largura || (pai.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA);
+      const larguraFilho = n.largura || LARGURA_NO_MAPA;
       linhas.push({
         key: n.id,
         x1: pai.x + PAD_X_MAPA + larguraPai / 2,
         y1: pai.y + PAD_Y_MAPA + ALTURA_NO_MAPA / 2,
-        x2: n.x + PAD_X_MAPA + LARGURA_NO_MAPA / 2,
+        x2: n.x + PAD_X_MAPA + larguraFilho / 2,
         y2: n.y + PAD_Y_MAPA + ALTURA_NO_MAPA / 2,
       });
     });
@@ -6585,9 +6631,10 @@ function MapasMentais() {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="font-sora font-semibold text-nv-ink">{mapaAtual.nome}</p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs text-nv-muted2">
-                      Clique e arraste em qualquer lugar vazio pra mover a tela · clique num nó pra selecionar e arrastar · duplo
-                      clique pra editar o texto
+                    <p className="text-xs text-nv-muted2 max-w-xs">
+                      Clique e arraste em qualquer lugar vazio pra mover a tela · clique num nó pra selecionar e arrastar ·
+                      duplo clique pra editar o texto · passe o mouse num tópico pra esticar a bordinha dele ou minimizar
+                      (▴ no canto)
                     </p>
                     <button
                       type="button"
@@ -6617,14 +6664,17 @@ function MapasMentais() {
                   onMouseMove={(e) => {
                     moverArraste(e);
                     moverPanTela(e);
+                    moverResize(e);
                   }}
                   onMouseUp={() => {
                     soltarArraste();
                     soltarPanTela();
+                    soltarResize();
                   }}
                   onMouseLeave={() => {
                     soltarArraste();
                     soltarPanTela();
+                    soltarResize();
                   }}
                   onClick={(e) => {
                     if (e.target === e.currentTarget) setNoSelecionadoId(null);
@@ -6655,7 +6705,9 @@ function MapasMentais() {
                       const ehRaiz = !n.parentId;
                       const selecionado = n.id === noSelecionadoId;
                       const editando = n.id === editandoId;
-                      const largura = ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA;
+                      // Fase 65 — n.largura é a largura que a pessoa escolheu arrastando a bordinha; sem
+                      // isso, cai no padrão de sempre (raiz um pouco mais larga que o resto).
+                      const largura = n.largura || (ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA);
                       const temFilhos = mapaAtual.nodes.some((f) => f.parentId === n.id);
                       return (
                         <div
@@ -6696,8 +6748,10 @@ function MapasMentais() {
                                 setNoSelecionadoId(n.id);
                                 setEditandoId(n.id);
                               }}
-                              title="Duplo clique pra editar o texto"
-                              className="rounded-lg px-3 py-2 text-xs leading-tight select-none cursor-grab active:cursor-grabbing"
+                              title={n.minimizado ? n.texto : "Duplo clique pra editar o texto"}
+                              className={`rounded-lg px-3 py-2 text-xs leading-tight select-none cursor-grab active:cursor-grabbing ${
+                                n.minimizado ? "truncate whitespace-nowrap" : ""
+                              }`}
                               style={{
                                 background: ehRaiz ? mapaAtual.cor : "#fff",
                                 color: ehRaiz ? "#fff" : "#1A2740",
@@ -6719,6 +6773,27 @@ function MapasMentais() {
                             </div>
                           )}
 
+                          {/* Fase 65 — minimiza só a CAIXA deste tópico (vira uma linha só, com "..."),
+                              independente de ter filho ou não — cada tópico liga/desliga o dele sozinho.
+                              Diferente do botão de colapsar (que esconde os FILHOS); fica no canto oposto
+                              pra não confundir os dois. Fica sempre visível quando já está minimizado
+                              (senão a pessoa não acharia como reabrir). */}
+                          {!editando && (
+                            <button
+                              type="button"
+                              title={n.minimizado ? "Mostrar o texto completo deste tópico" : "Minimizar este tópico (encolher pra uma linha)"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alternarMinimizado(n.id);
+                              }}
+                              className={`absolute -right-2 -top-2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm transition-opacity hover:bg-nv-blue hover:text-white hover:border-nv-blue ${
+                                n.minimizado ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                              }`}
+                            >
+                              {n.minimizado ? "▾" : "▴"}
+                            </button>
+                          )}
+
                           {/* Fase 63 — colapsa/expande os ramos deste nó (só aparece quando ele tem filhos) */}
                           {temFilhos && !editando && (
                             <button
@@ -6732,6 +6807,19 @@ function MapasMentais() {
                             >
                               {n.colapsado ? "+" : "–"}
                             </button>
+                          )}
+
+                          {/* Fase 65 — bordinha direita pra arrastar e esticar/encolher a largura do
+                              tópico; o texto reflui sozinho (quebra de linha normal reagindo à largura
+                              nova). Só aparece ao passar o mouse, pra não poluir o mapa. */}
+                          {!editando && (
+                            <div
+                              onMouseDown={(e) => iniciarResize(n.id, largura, e)}
+                              title="Arraste pra esticar ou encolher este tópico"
+                              className="absolute inset-y-0 -right-1 w-3 cursor-ew-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <span className="w-[3px] h-5 rounded-full bg-nv-border" />
+                            </div>
                           )}
 
                           {/* Fase 56 — "+" em volta do nó pra abrir ramo em qualquer direção, sem precisar

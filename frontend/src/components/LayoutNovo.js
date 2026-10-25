@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import Logo from "./Logo";
+import LogoMark from "./LogoMark";
 import api, { sair, atualizarUsuarioLocal } from "../lib/api";
 import { inscreverPush, statusPermissao, tentarReinscreverSilenciosamente } from "../lib/push";
 
@@ -252,9 +252,9 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
           style={{ borderTop: "3px solid transparent", borderImage: "linear-gradient(90deg, #9C6B2E, #0B5FA8) 1" }}
         >
           <div className="flex items-center gap-2.5 px-2">
-            <div className="w-[38px] h-[38px] rounded-[10px] bg-white flex items-center justify-center shrink-0 overflow-hidden shadow-[0_4px_10px_rgba(11,95,168,0.35)]">
-              <Logo size={26} />
-            </div>
+            <span className="shrink-0 rounded-[10px] overflow-hidden shadow-[0_4px_10px_rgba(11,95,168,0.35)]">
+              <LogoMark size={38} />
+            </span>
             <div className="font-sora font-semibold text-[14.5px] text-[#F2F6FC] leading-tight">
               Espaço do
               <br />
@@ -281,6 +281,9 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
                 </svg>
               </button>
             )}
+            <span className="shrink-0 rounded-[8px] overflow-hidden">
+              <LogoMark size={28} />
+            </span>
             <div className="font-sora font-semibold text-[14.5px] text-[#F2F6FC]">Espaço do Renascer</div>
           </div>
           <div className="flex items-center gap-3">
@@ -298,7 +301,12 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
           <div className="absolute inset-0 bg-black/50" onClick={() => setMenuAberto(false)} />
           <div className="absolute top-0 left-0 h-full w-72 max-w-[80%] bg-nv-navy text-[#D9E3F2] flex flex-col px-[18px] py-7 gap-7">
             <div className="flex items-center justify-between">
-              <div className="font-sora font-semibold text-[14.5px] text-[#F2F6FC]">Espaço do Renascer</div>
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 rounded-[8px] overflow-hidden">
+                  <LogoMark size={28} />
+                </span>
+                <div className="font-sora font-semibold text-[14.5px] text-[#F2F6FC]">Espaço do Renascer</div>
+              </div>
               <button onClick={() => setMenuAberto(false)} className="p-2 rounded-lg hover:bg-white/10" aria-label="Fechar menu">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="4" y1="4" x2="20" y2="20" />
