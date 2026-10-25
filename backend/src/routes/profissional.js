@@ -117,7 +117,10 @@ router.get("/agenda", async (req, res) => {
     const agendamentos = await prisma.agendamento.findMany({
       where: { profissionalId, data: { gte: inicio, lt: fim } },
       include: { cliente: { include: { user: { select: { nome: true, telefone: true, fotoUrl: true } } } }, pacote: true },
-      orderBy: { data: "asc" },
+      // Fase 60 — todo agendamento do mesmo dia tem o mesmo "data" (meia-noite UTC daquele dia —
+      // a hora real é só horaInicio); sem o segundo critério, dois agendamentos no mesmo dia
+      // saíam em ordem arbitrária em vez de por horário.
+      orderBy: [{ data: "asc" }, { horaInicio: "asc" }],
     });
     const comStatus = agendamentos.map((ag) => ({
       ...ag,
@@ -129,7 +132,7 @@ router.get("/agenda", async (req, res) => {
   const agendamentos = await prisma.agendamento.findMany({
     where: { profissionalId, status: { not: "CANCELADO" } },
     include: { cliente: { include: { user: { select: { nome: true, telefone: true, fotoUrl: true } } } }, pacote: true },
-    orderBy: { data: "asc" },
+    orderBy: [{ data: "asc" }, { horaInicio: "asc" }],
   });
 
   // statusCliente vira a bolinha pulsante (verde/amarelo/vermelho) em cima do nome do

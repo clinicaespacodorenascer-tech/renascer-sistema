@@ -468,7 +468,7 @@ function AbaAgenda() {
             <div key={ag.id} className="border border-nv-borderLight rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
               <div>
                 <p className="text-sm font-medium text-nv-ink2">
-                  {new Date(ag.data).toLocaleDateString("pt-BR")} às {ag.horaInicio} · {ag.profissional?.user?.nome}
+                  {new Date(ag.data).toLocaleDateString("pt-BR", { timeZone: "UTC" })} às {ag.horaInicio} · {ag.profissional?.user?.nome}
                 </p>
                 <span className={`badge mt-1 ${STATUS_COR_CLIENTE[ag.status] || ""}`}>{ag.status}</span>
               </div>
@@ -566,7 +566,7 @@ function ReagendarSessao({ sessoes, onReagendado }) {
             <option value="">Escolha a sessão marcada</option>
             {elegiveis.map((s) => (
               <option key={s.id} value={s.id}>
-                {new Date(s.data).toLocaleDateString("pt-BR")} às {s.horaInicio} — {s.profissional?.user?.nome} · sessão de{" "}
+                {new Date(s.data).toLocaleDateString("pt-BR", { timeZone: "UTC" })} às {s.horaInicio} — {s.profissional?.user?.nome} · sessão de{" "}
                 {s.duracao === "MIN30" ? "30min" : "50min"}
               </option>
             ))}

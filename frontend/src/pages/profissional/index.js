@@ -146,7 +146,10 @@ export default function AreaProfissional() {
 // horário (1h+) e ainda está AGENDADO/CONFIRMADO. É o que garante que o sistema (e por tabela o
 // dono, a atendente e o financeiro) saiba de verdade se as sessões estão sendo realizadas.
 function PopupConfirmarSessao({ agendamento, onMarcar, onDispensar }) {
-  const dataFormatada = new Date(agendamento.data).toLocaleDateString("pt-BR");
+  // Fase 60 — correção de bug: agendamento.data é guardado como meia-noite UTC representando o
+  // dia certo (a hora real fica em horaInicio, à parte) — formatar sem timeZone:"UTC" deixa o
+  // navegador (Brasília, UTC-3) jogar a data 1 dia pra trás.
+  const dataFormatada = new Date(agendamento.data).toLocaleDateString("pt-BR", { timeZone: "UTC" });
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
@@ -661,7 +664,11 @@ export function AbaAgenda() {
 
   const porDia = {};
   for (const ag of lista) {
-    const dia = new Date(ag.data).getDate();
+    // Fase 60 — correção de bug: ag.data é meia-noite UTC representando o dia certo. getDate()
+    // lê no fuso LOCAL do navegador (Brasília, UTC-3), que joga pro dia anterior (meia-noite UTC
+    // = 21h de Brasília do dia de antes) — por isso um agendamento de dia 27 caía na célula do
+    // dia 26. getUTCDate() lê o dia certo, igual foi guardado.
+    const dia = new Date(ag.data).getUTCDate();
     (porDia[dia] = porDia[dia] || []).push(ag);
   }
   const primeiroDiaSemana = new Date(ano, mesIndex, 1).getDay();
@@ -671,7 +678,10 @@ export function AbaAgenda() {
   for (let d = 1; d <= diasNoMes; d++) celulas.push(d);
   while (celulas.length % 7 !== 0) celulas.push(null);
 
-  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
+  // Fase 60 — correção de bug: todo agendamento do mesmo dia tem o mesmo ag.data (meia-noite UTC
+  // daquele dia) — a hora de verdade é só horaInicio. Ordenar por ag.data não ordenava por
+  // horário nenhum (dava empate sempre); agora ordena pelo horário real.
+  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
 
   return (
     <div className="font-publicSans">
@@ -867,7 +877,7 @@ function ReagendarModal({ agendamento, onReagendado, onFechar }) {
           </button>
         </div>
         <p className="text-xs text-nv-muted">
-          Data e horário atuais: {new Date(agendamento.data).toLocaleDateString("pt-BR")} às {agendamento.horaInicio}.
+          Data e horário atuais: {new Date(agendamento.data).toLocaleDateString("pt-BR", { timeZone: "UTC" })} às {agendamento.horaInicio}.
         </p>
 
         <div className="grid grid-cols-2 gap-3">

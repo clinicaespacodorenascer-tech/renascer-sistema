@@ -1062,8 +1062,12 @@ function AgendaGeralDono() {
 
   const porDia = {};
   for (const a of lista) {
+    // Fase 60 — correção de bug: a.data é meia-noite UTC representando o dia certo (a hora real
+    // fica em a.horaInicio, à parte). getDate() lê no fuso LOCAL do navegador (Brasília, UTC-3),
+    // que joga pro dia anterior — por isso um agendamento de dia 27 caía na célula do dia 26, e
+    // pra aparecer na célula 27 ela tinha que marcar pro dia 28. getUTCDate() lê certo.
     const dt = new Date(a.data);
-    const dia = dt.getDate();
+    const dia = dt.getUTCDate();
     (porDia[dia] = porDia[dia] || []).push(a);
   }
 
@@ -1075,7 +1079,10 @@ function AgendaGeralDono() {
   while (celulas.length % 7 !== 0) celulas.push(null);
 
   const profissionaisDoMes = [...new Set(lista.map((a) => a.profissional.user.nome))].sort();
-  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
+  // Fase 60 — correção de bug: todo agendamento do mesmo dia tem o mesmo a.data (meia-noite UTC
+  // daquele dia) — a hora de verdade é só a.horaInicio. Ordenar por a.data não ordenava por
+  // horário nenhum (empate sempre); agora ordena pelo horário real.
+  const agendamentosDoDia = (porDia[diaSelecionado] || []).sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
 
   // Fase 56 — resumo do mês por profissional: quantas sessões ela já realizou, quantas o cliente
   // faltou e quantas ainda estão em aberto — pra ver de cara se o time tá usando o sistema certinho
@@ -1157,7 +1164,9 @@ function AgendaGeralDono() {
                       className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 truncate"
                       style={{ background: corPorNome(a.profissional.user.nome) }}
                     >
-                      {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} {a.cliente.user.nome}
+                      {/* Fase 60 — correção de bug: a.data não carrega a hora real (é sempre meia-noite UTC,
+                          só representa o dia) — a hora de verdade é a.horaInicio. */}
+                      {a.horaInicio} {a.cliente.user.nome}
                     </span>
                   ))}
                   {doDia.length > 2 && <span className="text-[10px] text-nv-muted3 font-semibold">+{doDia.length - 2} mais</span>}
@@ -1178,7 +1187,7 @@ function AgendaGeralDono() {
                 <span className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: corPorNome(a.profissional.user.nome) }} />
                 <div className="min-w-0">
                   <p className="text-[13px] font-bold text-nv-ink2">
-                    {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {a.cliente.user.nome}
+                    {a.horaInicio} · {a.cliente.user.nome}
                   </p>
                   <p className="text-xs text-nv-muted3 mt-0.5">com {a.profissional.user.nome}</p>
                   <span className={`inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${CORES_STATUS_SESSAO[sessao.cor]}`}>

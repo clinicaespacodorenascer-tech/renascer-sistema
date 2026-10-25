@@ -1400,7 +1400,10 @@ function AgendaGeral() {
 
   const porDia = {};
   for (const a of lista) {
-    const chave = new Date(a.data).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+    // Fase 60 — correção de bug: a.data é meia-noite UTC representando o dia certo — sem fixar
+    // timeZone:"UTC", o navegador (Brasília, UTC-3) jogava pro dia anterior (meia-noite UTC = 21h
+    // de Brasília do dia de antes), agrupando o agendamento sob o cabeçalho de dia errado.
+    const chave = new Date(a.data).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", timeZone: "UTC" });
     (porDia[chave] = porDia[chave] || []).push(a);
   }
 
@@ -1452,7 +1455,9 @@ function AgendaGeral() {
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: corPorNomeAtendente(a.profissional.user.nome) }} />
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-semibold text-nv-ink2">
-                        {new Date(a.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {a.cliente.user.nome}
+                        {/* Fase 60 — correção de bug: a.data não carrega a hora real (é sempre meia-noite UTC,
+                            só representa o dia) — a hora de verdade é a.horaInicio. */}
+                        {a.horaInicio} · {a.cliente.user.nome}
                       </p>
                       <p className="text-xs text-nv-muted3">com {a.profissional.user.nome}</p>
                     </div>

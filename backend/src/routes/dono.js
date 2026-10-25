@@ -635,7 +635,10 @@ router.get("/agenda-geral", async (req, res) => {
       cliente: { include: { user: { select: { nome: true } } } },
       chamadaVideo: true,
     },
-    orderBy: { data: "asc" },
+    // Fase 60 — todo agendamento do mesmo dia tem o mesmo "data" (meia-noite UTC daquele dia — a
+    // hora real é só horaInicio); sem o segundo critério, dois agendamentos no mesmo dia saíam em
+    // ordem arbitrária em vez de por horário.
+    orderBy: [{ data: "asc" }, { horaInicio: "asc" }],
     take: mes && ano ? undefined : 100,
   });
   res.json(agendamentos);
