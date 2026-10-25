@@ -6237,20 +6237,34 @@ function MapasMentais() {
   const [mostrarNovoMapa, setMostrarNovoMapa] = useState(false);
   const [novoMapaNome, setNovoMapaNome] = useState("");
   const [noSelecionadoId, setNoSelecionadoId] = useState(null);
-  // Fase 56 — ferramenta de "mão" pra arrastar a tela inteira (igual Miro/XMind), separada do
-  // arrastar-nó de sempre: enquanto ativa, clicar e arrastar move a VISÃO, não o nó.
-  const [modoMao, setModoMao] = useState(false);
+  // Fase 63 — mover a tela agora é automático: arrastar em cima de um nó move o nó (como sempre),
+  // arrastar em qualquer outro ponto do mapa move a tela, sem precisar ativar nenhum modo antes
+  // (como no Miro/XMind). arrastandoTela só controla o cursor (mão fechada) durante o arraste.
   const [arrastandoTela, setArrastandoTela] = useState(false);
+  const [editandoId, setEditandoId] = useState(null); // nó em edição de texto inline (duplo clique)
+  const [sidebarRecolhida, setSidebarRecolhida] = useState(false);
+  const [telaCheia, setTelaCheia] = useState(false);
 
   const arrasteRef = useRef(null); // { nodeId, startX, startY, origX, origY, moveu }
   const panRef = useRef(null); // { startX, startY, scrollLeft, scrollTop }
   const containerRef = useRef(null);
   const textoTimeoutRef = useRef(null);
+  const descricaoTimeoutRef = useRef(null);
 
   useEffect(() => {
     carregarLista();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fase 63 — Esc também sai da tela cheia, além do botão "✕ Sair da tela cheia".
+  useEffect(() => {
+    if (!telaCheia) return;
+    function onKeyDown(e) {
+      if (e.key === "Escape") setTelaCheia(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [telaCheia]);
 
   // Fase 56 — sempre que troca de mapa, centraliza a tela na raiz (ela pode estar em qualquer
   // posição lógica, inclusive negativa, por causa do PAD) em vez de abrir no canto vazio.
@@ -6285,6 +6299,7 @@ function MapasMentais() {
 
   async function selecionarMapa(id) {
     setNoSelecionadoId(null);
+    setEditandoId(null);
     const { data } = await api.get(`/mapas-mentais/${id}`);
     setMapaAtivoId(id);
     setMapaAtual(data);
@@ -6311,14 +6326,10 @@ function MapasMentais() {
   }
 
   function iniciarArraste(nodeId, origX, origY, e) {
-    // No modo "mão", clicar num nó não arrasta ele — arrasta a TELA inteira (como no botão abaixo).
-    // Só seleciona o nó; quem move a visão é iniciarPanTela, disparado pelo mesmo mousedown.
-    if (modoMao) {
-      e.preventDefault();
-      setNoSelecionadoId(nodeId);
-      return; // deixa o mousedown "vazar" pro container, que inicia o pan da tela (iniciarPanTela)
-    }
     e.preventDefault();
+    // Impede que esse mousedown "vaze" pro container e comece também um pan da tela — arrastar um
+    // nó e arrastar a tela nunca podem disparar juntos no mesmo gesto.
+    e.stopPropagation();
     arrasteRef.current = { nodeId, startX: e.clientX, startY: e.clientY, origX, origY, moveu: false };
     setNoSelecionadoId(nodeId);
   }
@@ -6349,11 +6360,11 @@ function MapasMentais() {
     });
   }
 
-  // Fase 56 — ferramenta de "mão": arrasta a TELA (scroll do container), não os nós. Funciona com
-  // o mousedown tanto no fundo do mapa quanto em cima de um nó (nesse caso o iniciarArraste acima
-  // já tratou de não começar um arraste de nó, só selecionar).
+  // Fase 63 — arrasta a TELA (scroll do container) sempre que o gesto começa fora de um nó — não
+  // precisa mais ativar nenhum modo antes. Um mousedown que começou EM CIMA de um nó nunca chega
+  // aqui, porque iniciarArraste já chamou stopPropagation nesse caso.
   function iniciarPanTela(e) {
-    if (!modoMao || !containerRef.current) return;
+    if (!containerRef.current) return;
     e.preventDefault();
     setArrastandoTela(true);
     panRef.current = {
@@ -6384,11 +6395,30 @@ function MapasMentais() {
     }, 500);
   }
 
+  // Fase 63 — descrição livre do nó (ex: explicar a etapa), editada no painel abaixo do mapa.
+  function atualizarDescricaoNo(nodeId, descricao) {
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== nodeId ? n : { ...n, descricao })) } : m));
+    clearTimeout(descricaoTimeoutRef.current);
+    descricaoTimeoutRef.current = setTimeout(() => {
+      if (mapaAtivoId) api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${nodeId}`, { descricao }).catch(() => {});
+    }, 500);
+  }
+
+  // Fase 63 — colapsa/expande um nó: esconde (ou volta a mostrar) os filhos dele no desenho, sem
+  // apagar nada. Salva na hora (não precisa de debounce, é só um clique).
+  function alternarColapso(nodeId) {
+    const no = (mapaAtual?.nodes || []).find((n) => n.id === nodeId);
+    const novoValor = !no?.colapsado;
+    setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== nodeId ? n : { ...n, colapsado: novoValor })) } : m));
+    if (mapaAtivoId) api.patch(`/mapas-mentais/${mapaAtivoId}/nos/${nodeId}`, { colapsado: novoValor }).catch(() => {});
+  }
+
   async function adicionarNoFilho() {
     if (!noSelecionadoId || !mapaAtual) return;
     const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: noSelecionadoId });
     setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
     setNoSelecionadoId(data.novoId);
+    setEditandoId(data.novoId); // já abre pra renomear, em vez de ficar com "Novo tópico"
     setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
   }
 
@@ -6400,6 +6430,7 @@ function MapasMentais() {
     const { data } = await api.post(`/mapas-mentais/${mapaAtual.id}/nos`, { parentId: nodeId, direcao });
     setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
     setNoSelecionadoId(data.novoId);
+    setEditandoId(data.novoId); // já abre pra renomear, em vez de ficar com "Novo tópico"
     setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
   }
 
@@ -6408,6 +6439,7 @@ function MapasMentais() {
     const { data } = await api.delete(`/mapas-mentais/${mapaAtual.id}/nos/${noSelecionadoId}`);
     setMapaAtual((m) => ({ ...m, nodes: data.nodes }));
     setNoSelecionadoId(null);
+    setEditandoId(null);
     setMapas((lista) => lista.map((mm) => (mm.id === mapaAtual.id ? { ...mm, totalNos: data.nodes.length } : mm)));
   }
 
@@ -6415,10 +6447,26 @@ function MapasMentais() {
 
   const noSelecionado = (mapaAtual?.nodes || []).find((n) => n.id === noSelecionadoId) || null;
 
+  // Fase 63 — um nó fica escondido se QUALQUER ancestral dele estiver colapsado (não precisa ser
+  // o pai direto: colapsar um nó esconde o ramo inteiro embaixo dele).
+  function noVisivel(no, todosNodes) {
+    let atual = no;
+    while (atual.parentId) {
+      const pai = todosNodes.find((p) => p.id === atual.parentId);
+      if (!pai) break;
+      if (pai.colapsado) return false;
+      atual = pai;
+    }
+    return true;
+  }
+
+  const nosVisiveis = mapaAtual ? mapaAtual.nodes.filter((n) => noVisivel(n, mapaAtual.nodes)) : [];
+  const idsVisiveis = new Set(nosVisiveis.map((n) => n.id));
+
   const linhas = [];
   if (mapaAtual) {
     mapaAtual.nodes.forEach((n) => {
-      if (!n.parentId) return;
+      if (!n.parentId || !idsVisiveis.has(n.id)) return;
       const pai = mapaAtual.nodes.find((p) => p.id === n.parentId);
       if (!pai) return;
       const larguraPai = pai.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA;
@@ -6445,10 +6493,33 @@ function MapasMentais() {
       {erro && <p className="text-sm text-red-600">{erro}</p>}
 
       <div className="flex gap-4 flex-wrap items-start">
-        <div className="nv-card w-full md:w-56 flex flex-col gap-2 shrink-0">
-          <p className="font-sora font-semibold text-sm text-nv-ink">Meus mapas</p>
-          <div className="flex flex-col gap-1">
-            {mapas.map((m) => (
+        {/* Fase 63 — barra "Meus mapas" recolhível (e some sozinha em tela cheia), pra sobrar mais
+            espaço horizontal pro mapa quando ele cresce. */}
+        {!telaCheia && sidebarRecolhida ? (
+          <button
+            type="button"
+            onClick={() => setSidebarRecolhida(false)}
+            title="Mostrar a lista de mapas"
+            className="nv-card w-9 h-9 shrink-0 flex items-center justify-center text-nv-ink2 hover:text-nv-blue"
+          >
+            »
+          </button>
+        ) : (
+          !telaCheia && (
+            <div className="nv-card w-full md:w-56 flex flex-col gap-2 shrink-0">
+              <div className="flex items-center justify-between">
+                <p className="font-sora font-semibold text-sm text-nv-ink">Meus mapas</p>
+                <button
+                  type="button"
+                  onClick={() => setSidebarRecolhida(true)}
+                  title="Recolher a lista de mapas"
+                  className="text-nv-muted3 hover:text-nv-ink text-sm leading-none px-1"
+                >
+                  «
+                </button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {mapas.map((m) => (
               <button
                 key={m.id}
                 type="button"
@@ -6499,9 +6570,11 @@ function MapasMentais() {
               + Novo mapa mental
             </button>
           )}
-        </div>
+            </div>
+          )
+        )}
 
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <div className={telaCheia ? "fixed inset-0 z-50 bg-white p-4 overflow-auto flex flex-col gap-3" : "flex-1 min-w-0 flex flex-col gap-3"}>
           {!mapaAtual ? (
             <div className="nv-card text-sm text-nv-muted">
               Crie seu primeiro mapa mental pra começar a organizar estratégias, tarefas ou ideias.
@@ -6512,22 +6585,19 @@ function MapasMentais() {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="font-sora font-semibold text-nv-ink">{mapaAtual.nome}</p>
                   <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs text-nv-muted2">
+                      Clique e arraste em qualquer lugar vazio pra mover a tela · clique num nó pra selecionar e arrastar · duplo
+                      clique pra editar o texto
+                    </p>
                     <button
                       type="button"
-                      onClick={() => setModoMao((v) => !v)}
-                      title='Ative pra arrastar a tela inteira com o mouse, igual a ferramenta de "mão" de outros mapas mentais'
-                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-md border transition-colors ${
-                        modoMao ? "bg-nv-blue text-white border-nv-blue" : "text-nv-ink2 border-nv-border hover:bg-nv-bg"
-                      }`}
+                      onClick={() => setTelaCheia((v) => !v)}
+                      title={telaCheia ? "Sair da tela cheia" : "Abrir o mapa em tela cheia"}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-md border text-nv-ink2 border-nv-border hover:bg-nv-bg ml-auto"
                     >
-                      ✋ Mover tela
+                      {telaCheia ? "✕ Sair da tela cheia" : "⛶ Tela cheia"}
                     </button>
-                    <p className="text-xs text-nv-muted2">
-                      {modoMao
-                        ? "Clique e arraste em qualquer lugar pra mover a tela"
-                        : "Clique num nó pra selecionar · arraste o nó pra reorganizar · use os + pra abrir ramos"}
-                    </p>
-                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-semibold text-red-600 hover:text-red-700 ml-auto">
+                    <button type="button" onClick={excluirMapaAtual} className="text-xs font-semibold text-red-600 hover:text-red-700">
                       Excluir mapa
                     </button>
                   </div>
@@ -6535,10 +6605,10 @@ function MapasMentais() {
                 <div
                   ref={containerRef}
                   className={`relative rounded-xl border border-nv-border overflow-auto ${
-                    modoMao ? (arrastandoTela ? "cursor-grabbing" : "cursor-grab") : ""
+                    arrastandoTela ? "cursor-grabbing" : "cursor-grab"
                   }`}
                   style={{
-                    height: 500,
+                    height: telaCheia ? "calc(100vh - 210px)" : 500,
                     backgroundColor: "#FAFBFD",
                     backgroundImage: "radial-gradient(circle, #E1E8F2 1.4px, transparent 1.4px)",
                     backgroundSize: "22px 22px",
@@ -6581,41 +6651,92 @@ function MapasMentais() {
                         />
                       ))}
                     </svg>
-                    {mapaAtual.nodes.map((n) => {
+                    {nosVisiveis.map((n) => {
                       const ehRaiz = !n.parentId;
                       const selecionado = n.id === noSelecionadoId;
+                      const editando = n.id === editandoId;
                       const largura = ehRaiz ? LARGURA_RAIZ_MAPA : LARGURA_NO_MAPA;
+                      const temFilhos = mapaAtual.nodes.some((f) => f.parentId === n.id);
                       return (
                         <div
                           key={n.id}
                           className="absolute group"
                           style={{ left: n.x + PAD_X_MAPA, top: n.y + PAD_Y_MAPA, width: largura, zIndex: selecionado ? 10 : 1 }}
+                          // Fase 63 — pára aqui qualquer mousedown que começou neste nó (bolha, botão de
+                          // colapsar ou "+"), pra nunca disparar também o pan da tela inteira.
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
-                          <div
-                            onMouseDown={(e) => iniciarArraste(n.id, n.x, n.y, e)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!modoMao) setNoSelecionadoId(n.id);
-                            }}
-                            className={`rounded-lg px-3 py-2 text-xs leading-tight select-none ${
-                              modoMao ? "" : "cursor-grab active:cursor-grabbing"
-                            }`}
-                            style={{
-                              background: ehRaiz ? mapaAtual.cor : "#fff",
-                              color: ehRaiz ? "#fff" : "#1A2740",
-                              borderLeft: ehRaiz ? "4px solid transparent" : `4px solid ${mapaAtual.cor}`,
-                              fontWeight: ehRaiz ? 700 : 600,
-                              boxShadow: selecionado
-                                ? "0 0 0 2px #0D1B30, 0 3px 8px rgba(14,30,54,0.18)"
-                                : "0 2px 6px rgba(14,30,54,0.12)",
-                            }}
-                          >
-                            {n.texto}
-                          </div>
+                          {editando ? (
+                            <input
+                              autoFocus
+                              value={n.texto}
+                              onChange={(e) => atualizarTextoNo(n.id, e.target.value)}
+                              onBlur={() => setEditandoId(null)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full rounded-lg px-3 py-2 text-xs leading-tight outline-none"
+                              style={{
+                                background: ehRaiz ? mapaAtual.cor : "#fff",
+                                color: ehRaiz ? "#fff" : "#1A2740",
+                                border: "2px solid #0D1B30",
+                                fontWeight: ehRaiz ? 700 : 600,
+                              }}
+                            />
+                          ) : (
+                            <div
+                              onMouseDown={(e) => iniciarArraste(n.id, n.x, n.y, e)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNoSelecionadoId(n.id);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setNoSelecionadoId(n.id);
+                                setEditandoId(n.id);
+                              }}
+                              title="Duplo clique pra editar o texto"
+                              className="rounded-lg px-3 py-2 text-xs leading-tight select-none cursor-grab active:cursor-grabbing"
+                              style={{
+                                background: ehRaiz ? mapaAtual.cor : "#fff",
+                                color: ehRaiz ? "#fff" : "#1A2740",
+                                borderLeft: ehRaiz ? "4px solid transparent" : `4px solid ${mapaAtual.cor}`,
+                                fontWeight: ehRaiz ? 700 : 600,
+                                boxShadow: selecionado
+                                  ? "0 0 0 2px #0D1B30, 0 3px 8px rgba(14,30,54,0.18)"
+                                  : "0 2px 6px rgba(14,30,54,0.12)",
+                              }}
+                            >
+                              {n.texto}
+                              {n.descricao && (
+                                <span
+                                  title="Este nó tem uma descrição"
+                                  className="inline-block w-1.5 h-1.5 rounded-full ml-1.5 align-middle"
+                                  style={{ background: ehRaiz ? "#fff" : mapaAtual.cor, opacity: 0.85 }}
+                                />
+                              )}
+                            </div>
+                          )}
+
+                          {/* Fase 63 — colapsa/expande os ramos deste nó (só aparece quando ele tem filhos) */}
+                          {temFilhos && !editando && (
+                            <button
+                              type="button"
+                              title={n.colapsado ? "Mostrar os ramos escondidos" : "Esconder os ramos deste nó"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alternarColapso(n.id);
+                              }}
+                              className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                            >
+                              {n.colapsado ? "+" : "–"}
+                            </button>
+                          )}
+
                           {/* Fase 56 — "+" em volta do nó pra abrir ramo em qualquer direção, sem precisar
-                              descer até o painel debaixo do mapa. Somem no modo "mão" pra não criar nó
-                              sem querer enquanto arrasta a tela. */}
-                          {!modoMao && (
+                              descer até o painel debaixo do mapa. */}
+                          {!editando && (
                             <>
                               <button
                                 type="button"
@@ -6673,13 +6794,33 @@ function MapasMentais() {
               <div className="nv-card flex flex-col gap-3">
                 {noSelecionado ? (
                   <div className="flex flex-col gap-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-nv-muted2">Nó selecionado</p>
-                    <input
-                      className="input"
-                      value={noSelecionado.texto}
-                      onChange={(e) => atualizarTextoNo(noSelecionado.id, e.target.value)}
-                    />
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold uppercase tracking-wide text-nv-muted2">Nó selecionado</p>
+                      <button
+                        type="button"
+                        onClick={() => setEditandoId(noSelecionado.id)}
+                        className="text-xs font-semibold text-nv-blue hover:underline"
+                      >
+                        Editar texto
+                      </button>
+                    </div>
+                    <p className="font-sora font-semibold text-sm text-nv-ink">{noSelecionado.texto}</p>
+
+                    {/* Fase 63 — descrição livre do tópico (ex: explicar a etapa) */}
+                    <label className="flex flex-col gap-1 mt-1">
+                      <span className="text-[11px] font-bold text-nv-muted2 uppercase tracking-wide">
+                        Descrição (opcional)
+                      </span>
+                      <textarea
+                        className="input"
+                        rows={3}
+                        placeholder="Explique o que esse tópico significa, se quiser"
+                        value={noSelecionado.descricao || ""}
+                        onChange={(e) => atualizarDescricaoNo(noSelecionado.id, e.target.value)}
+                      />
+                    </label>
+
+                    <div className="flex gap-2 flex-wrap mt-1">
                       <button type="button" className="btn-primary !py-2 text-sm" onClick={adicionarNoFilho}>
                         + Nó filho
                       </button>
@@ -6696,7 +6837,8 @@ function MapasMentais() {
                   </div>
                 ) : (
                   <p className="text-sm text-nv-muted">
-                    Clique em um nó no mapa acima pra editar o texto, adicionar um nó filho ou excluir.
+                    Clique em um nó no mapa acima pra selecionar (duplo clique edita o texto direto nele), adicionar um nó
+                    filho ou excluir.
                   </p>
                 )}
               </div>

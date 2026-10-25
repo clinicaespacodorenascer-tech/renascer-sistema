@@ -152,7 +152,7 @@ router.patch("/:id/nos/:nodeId", async (req, res) => {
   const idx = nodes.findIndex((n) => n.id === req.params.nodeId);
   if (idx === -1) return res.status(404).json({ erro: "Nó não encontrado." });
 
-  const { texto, x, y } = req.body || {};
+  const { texto, x, y, descricao, colapsado } = req.body || {};
   const novoNode = { ...nodes[idx] };
   if (typeof texto === "string") novoNode.texto = texto;
   // Fase 56 — não trava mais em 0: um ramo "esquerda"/"cima" perto da raiz é posição lógica
@@ -160,6 +160,10 @@ router.patch("/:id/nos/:nodeId", async (req, res) => {
   // mostrar na tela, então isso nunca aparece "fora" da área visível).
   if (typeof x === "number" && Number.isFinite(x)) novoNode.x = x;
   if (typeof y === "number" && Number.isFinite(y)) novoNode.y = y;
+  // Fase 63 — descrição livre do tópico (ex: explicar a etapa) e colapso (esconde os filhos dele
+  // no desenho, sem apagar nada — útil pra mapa não ficar poluído quando cresce muito).
+  if (typeof descricao === "string") novoNode.descricao = descricao;
+  if (typeof colapsado === "boolean") novoNode.colapsado = colapsado;
 
   const novosNodes = [...nodes];
   novosNodes[idx] = novoNode;
