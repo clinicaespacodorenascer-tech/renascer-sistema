@@ -6221,6 +6221,9 @@ const ALTURA_NO_MAPA = 54;
 // Fase 65 — limites de quanto dá pra esticar/encolher um tópico arrastando a bordinha dele.
 const LARGURA_MIN_MAPA = 130;
 const LARGURA_MAX_MAPA = 440;
+// Fase 66 — "réguas" de alinhamento: quando o nó arrastado chega perto (poucos pixels) de ficar na
+// mesma borda/centro de outro nó, gruda certinho nessa posição — essa é a margem de tolerância.
+const SNAP_LIMIAR_MAPA = 8;
 // Fase 56 — mapa mental virou "radial" (cresce em qualquer direção a partir de qualquer nó, não só
 // pra baixo/direita). PAD_X/PAD_Y deslocam só o DESENHO na tela — a posição real salva no banco
 // (n.x, n.y) continua podendo ficar negativa (um ramo "esquerda"/"cima" bem perto da raiz), e o PAD
@@ -6247,6 +6250,9 @@ function MapasMentais() {
   const [editandoId, setEditandoId] = useState(null); // nó em edição de texto inline (duplo clique)
   const [sidebarRecolhida, setSidebarRecolhida] = useState(false);
   const [telaCheia, setTelaCheia] = useState(false);
+  // Fase 66 — linhas-guia de alinhamento (réguas) que aparecem enquanto arrasta um nó perto de ficar
+  // alinhado com outro — null quando não tem nenhuma pra mostrar.
+  const [guiasAlinhamento, setGuiasAlinhamento] = useState(null); // { vertical: {x,y1,y2}|null, horizontal: {y,x1,x2}|null }
 
   const arrasteRef = useRef(null); // { nodeId, startX, startY, origX, origY, moveu }
   const panRef = useRef(null); // { startX, startY, scrollLeft, scrollTop }
@@ -6346,14 +6352,67 @@ function MapasMentais() {
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) a.moveu = true;
     // Sem travar em 0: um ramo pra esquerda/cima perto da raiz é posição lógica negativa (o PAD na
     // hora de desenhar é quem garante que isso sempre apareça dentro da tela).
-    const novoX = a.origX + dx;
-    const novoY = a.origY + dy;
+    const brutoX = a.origX + dx;
+    const brutoY = a.origY + dy;
+
+    // Fase 66 — "réguas": compara as bordas e o centro do nó arrastado com as bordas e o centro de
+    // cada outro nó visível. Se alguma ficar a poucos pixels de distância (SNAP_LIMIAR_MAPA), gruda
+    // exatamente nessa posição e guarda a linha-guia pra desenhar (uma reta ligando os dois nós).
+    const todosNodes = mapaAtual?.nodes || [];
+    const noArrastado = todosNodes.find((n) => n.id === a.nodeId);
+    const larguraArrastado = noArrastado ? noArrastado.largura || (noArrastado.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA) : LARGURA_NO_MAPA;
+    const outros = noArrastado ? todosNodes.filter((n) => n.id !== a.nodeId && noVisivel(n, todosNodes)) : [];
+
+    let novoX = brutoX;
+    let novoY = brutoY;
+    let guiaV = null;
+    let guiaH = null;
+    let melhorDistV = SNAP_LIMIAR_MAPA;
+    let melhorDistH = SNAP_LIMIAR_MAPA;
+
+    // offsets dentro do próprio nó arrastado: borda esquerda, centro, borda direita (eixo X) / cima,
+    // centro, baixo (eixo Y) — cada um deles pode ser o ponto que se alinha com o outro nó.
+    const offsetsX = [0, larguraArrastado / 2, larguraArrastado];
+    const offsetsY = [0, ALTURA_NO_MAPA / 2, ALTURA_NO_MAPA];
+
+    outros.forEach((outro) => {
+      const larguraOutro = outro.largura || (outro.parentId ? LARGURA_NO_MAPA : LARGURA_RAIZ_MAPA);
+      const bordasV = [outro.x, outro.x + larguraOutro / 2, outro.x + larguraOutro];
+      const bordasH = [outro.y, outro.y + ALTURA_NO_MAPA / 2, outro.y + ALTURA_NO_MAPA];
+
+      offsetsX.forEach((offset) => {
+        const ponto = brutoX + offset;
+        bordasV.forEach((borda) => {
+          const dist = Math.abs(ponto - borda);
+          if (dist <= melhorDistV) {
+            melhorDistV = dist;
+            novoX = borda - offset;
+            guiaV = { x: borda, y1: Math.min(brutoY, outro.y), y2: Math.max(brutoY + ALTURA_NO_MAPA, outro.y + ALTURA_NO_MAPA) };
+          }
+        });
+      });
+
+      offsetsY.forEach((offset) => {
+        const ponto = brutoY + offset;
+        bordasH.forEach((borda) => {
+          const dist = Math.abs(ponto - borda);
+          if (dist <= melhorDistH) {
+            melhorDistH = dist;
+            novoY = borda - offset;
+            guiaH = { y: borda, x1: Math.min(brutoX, outro.x), x2: Math.max(brutoX + larguraArrastado, outro.x + larguraOutro) };
+          }
+        });
+      });
+    });
+
+    setGuiasAlinhamento({ vertical: guiaV, horizontal: guiaH });
     setMapaAtual((m) => (m ? { ...m, nodes: m.nodes.map((n) => (n.id !== a.nodeId ? n : { ...n, x: novoX, y: novoY })) } : m));
   }
 
   async function soltarArraste() {
     const a = arrasteRef.current;
     arrasteRef.current = null;
+    setGuiasAlinhamento(null);
     if (!a || !a.moveu) return;
     setMapaAtual((atual) => {
       const no = atual?.nodes.find((n) => n.id === a.nodeId);
@@ -6634,7 +6693,7 @@ function MapasMentais() {
                     <p className="text-xs text-nv-muted2 max-w-xs">
                       Clique e arraste em qualquer lugar vazio pra mover a tela · clique num nó pra selecionar e arrastar ·
                       duplo clique pra editar o texto · passe o mouse num tópico pra esticar a bordinha dele ou minimizar
-                      (▴ no canto)
+                      (▴ no canto) · arrastando, linhas rosa mostram quando alinha com outro nó
                     </p>
                     <button
                       type="button"
@@ -6700,6 +6759,31 @@ function MapasMentais() {
                           strokeLinecap="round"
                         />
                       ))}
+                      {/* Fase 66 — réguas de alinhamento: só aparecem enquanto arrasta um nó perto de
+                          ficar alinhado com outro (borda ou centro), em rosa pra destacar das linhas
+                          verdes dos ramos. */}
+                      {guiasAlinhamento?.vertical && (
+                        <line
+                          x1={guiasAlinhamento.vertical.x + PAD_X_MAPA}
+                          y1={guiasAlinhamento.vertical.y1 + PAD_Y_MAPA - 20}
+                          x2={guiasAlinhamento.vertical.x + PAD_X_MAPA}
+                          y2={guiasAlinhamento.vertical.y2 + PAD_Y_MAPA + 20}
+                          stroke="#E8458F"
+                          strokeWidth={1.5}
+                          strokeDasharray="5 4"
+                        />
+                      )}
+                      {guiasAlinhamento?.horizontal && (
+                        <line
+                          x1={guiasAlinhamento.horizontal.x1 + PAD_X_MAPA - 20}
+                          y1={guiasAlinhamento.horizontal.y + PAD_Y_MAPA}
+                          x2={guiasAlinhamento.horizontal.x2 + PAD_X_MAPA + 20}
+                          y2={guiasAlinhamento.horizontal.y + PAD_Y_MAPA}
+                          stroke="#E8458F"
+                          strokeWidth={1.5}
+                          strokeDasharray="5 4"
+                        />
+                      )}
                     </svg>
                     {nosVisiveis.map((n) => {
                       const ehRaiz = !n.parentId;
@@ -6773,11 +6857,12 @@ function MapasMentais() {
                             </div>
                           )}
 
-                          {/* Fase 65 — minimiza só a CAIXA deste tópico (vira uma linha só, com "..."),
-                              independente de ter filho ou não — cada tópico liga/desliga o dele sozinho.
-                              Diferente do botão de colapsar (que esconde os FILHOS); fica no canto oposto
-                              pra não confundir os dois. Fica sempre visível quando já está minimizado
-                              (senão a pessoa não acharia como reabrir). */}
+                          {/* Fase 65/67 — minimiza só a CAIXA deste tópico (vira uma linha só, com "..."),
+                              independente de ter filho ou não — TODO tópico tem esse botão, mãe ou filho,
+                              com ramo ou sem ramo. Diferente do botão de colapsar (que esconde os FILHOS,
+                              só aparece em quem tem); fica no canto oposto pra não confundir os dois.
+                              Sempre visível (não só no hover), pra ficar claro que todo tópico tem essa
+                              opção, igual o usuário pediu. */}
                           {!editando && (
                             <button
                               type="button"
@@ -6786,9 +6871,7 @@ function MapasMentais() {
                                 e.stopPropagation();
                                 alternarMinimizado(n.id);
                               }}
-                              className={`absolute -right-2 -top-2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm transition-opacity hover:bg-nv-blue hover:text-white hover:border-nv-blue ${
-                                n.minimizado ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                              }`}
+                              className="absolute -right-2 -top-2 z-10 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
                             >
                               {n.minimizado ? "▾" : "▴"}
                             </button>
@@ -6803,7 +6886,7 @@ function MapasMentais() {
                                 e.stopPropagation();
                                 alternarColapso(n.id);
                               }}
-                              className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
+                              className="absolute -right-2 -bottom-2 z-10 w-5 h-5 rounded-full bg-white border border-nv-border text-nv-ink2 text-[11px] font-bold leading-none flex items-center justify-center shadow-sm hover:bg-nv-blue hover:text-white hover:border-nv-blue"
                             >
                               {n.colapsado ? "+" : "–"}
                             </button>
@@ -6811,12 +6894,14 @@ function MapasMentais() {
 
                           {/* Fase 65 — bordinha direita pra arrastar e esticar/encolher a largura do
                               tópico; o texto reflui sozinho (quebra de linha normal reagindo à largura
-                              nova). Só aparece ao passar o mouse, pra não poluir o mapa. */}
+                              nova). Só aparece ao passar o mouse, pra não poluir o mapa. Fica um pouco
+                              recuada de cima/baixo (top-3/bottom-3, não a altura inteira) pra não tampar
+                              os botões de minimizar/colapsar que ficam bem nos cantos. */}
                           {!editando && (
                             <div
                               onMouseDown={(e) => iniciarResize(n.id, largura, e)}
                               title="Arraste pra esticar ou encolher este tópico"
-                              className="absolute inset-y-0 -right-1 w-3 cursor-ew-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute top-3 bottom-3 -right-1 w-3 cursor-ew-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                             >
                               <span className="w-[3px] h-5 rounded-full bg-nv-border" />
                             </div>
