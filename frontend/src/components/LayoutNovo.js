@@ -86,6 +86,17 @@ function AvatarEditavelNovo({ user }) {
 // abriu "pra baixo" (top-full), o que funciona perfeito no celular, mas na barra lateral o painel
 // nascia fora da área visível da janela (embaixo da borda de baixo) — por isso parecia que "não
 // abria nada": o clique funcionava, só que o painel renderizava invisível, fora da tela.
+//
+// Fase 69.1 — correção de bug: resolver a altura (abrir pra cima) não resolveu a LARGURA. O painel
+// tem 320px (w-80) de largura fixa, mas a barra lateral só tem 264px no total — e o sino, dentro
+// dela, fica perto do canto direito (depois do nome/avatar, antes de "Sair"). Com `right-0`
+// (alinhando a borda DIREITA do painel com a borda direita do sino), o painel nascia esticado 320px
+// pra ESQUERDA a partir dali, estourando a borda esquerda da própria janela (x negativo) — por isso
+// o texto aparecia cortado do lado esquerdo. `left-0` resolve: alinha a borda ESQUERDA do painel
+// com a esquerda do sino, que já está dentro da área visível (x ≥ 0) — o painel passa a crescer pra
+// DIREITA, "flutuando" por cima do conteúdo principal (comportamento normal de menu suspenso de
+// barra lateral estreita), sempre inteiro na tela. No cabeçalho do celular o sino já fica perto da
+// borda direita da tela, então ali `right-0` continua certo (abrir pra esquerda cabe certinho).
 function SininhoNotificacoesNovo({ abrirParaCima = false }) {
   const [aberto, setAberto] = useState(false);
   const [lista, setLista] = useState([]);
@@ -167,8 +178,8 @@ function SininhoNotificacoesNovo({ abrirParaCima = false }) {
 
       {aberto && (
         <div
-          className={`absolute right-0 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-black/10 z-40 max-h-[70vh] overflow-y-auto text-[#121E33] ${
-            abrirParaCima ? "bottom-full mb-2" : "top-full mt-2"
+          className={`absolute w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-black/10 z-40 max-h-[70vh] overflow-y-auto text-[#121E33] ${
+            abrirParaCima ? "left-0 bottom-full mb-2" : "right-0 top-full mt-2"
           }`}
         >
           <div className="p-3 border-b border-black/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white">
