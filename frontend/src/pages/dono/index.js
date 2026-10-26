@@ -1440,8 +1440,11 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
     }
   }
 
+  // Fase 73 — o link não fica mais "chumbado" no código: lê de NEXT_PUBLIC_APP_URL (configurável
+  // direto no painel do Vercel, sem precisar mexer em código de novo) e cai no domínio novo
+  // (espacodorenascer.com, já apontando pro sistema) se essa variável não estiver definida.
   const mensagemAcesso = resultado
-    ? `Olá, ${nomeCadastrado}! Seu acesso ao app do Espaço do Renascer:\nE-mail: ${resultado.email}\nSenha: ${resultado.senhaProvisoria}\nAcesse: https://renascer-sistema.vercel.app\nLá você encontra suas atividades, pode acompanhar sua evolução e pedir um relatório pro seu profissional.`
+    ? `Olá, ${nomeCadastrado}! Seu acesso ao app do Espaço do Renascer:\nE-mail: ${resultado.email}\nSenha: ${resultado.senhaProvisoria}\nAcesse: ${process.env.NEXT_PUBLIC_APP_URL || "https://espacodorenascer.com"}\nLá você encontra suas atividades, pode acompanhar sua evolução e pedir um relatório pro seu profissional.`
     : "";
 
   async function copiarAcesso() {
