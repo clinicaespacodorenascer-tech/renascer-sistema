@@ -1755,11 +1755,16 @@ function Clientes() {
   const [lista, setLista] = useState([]);
   const [profissionais, setProfissionais] = useState([]);
   const [expandido, setExpandido] = useState(null);
-  const [modo, setModo] = useState("todos"); // "todos" | "porProfissional"
+  const [modo, setModo] = useState("todos"); // "todos" | "porProfissional" | "naoAceitos"
   const [excluindoId, setExcluindoId] = useState(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [recentes, setRecentes] = useState([]);
   const [excluindoRecenteId, setExcluindoRecenteId] = useState(null);
+  // Fase 72 — busca por nome e filtro por data de cadastro (dia específico ou período/semana),
+  // pedido do Dono pra achar cliente numa lista de centenas sem precisar rolar tudo.
+  const [busca, setBusca] = useState("");
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
 
   async function carregar() {
     const [c, p, r] = await Promise.all([
@@ -1803,7 +1808,60 @@ function Clientes() {
     }
   }
 
-  const ordenados = [...lista].sort((a, b) => a.user.nome.localeCompare(b.user.nome));
+  // Fase 72 — data de cadastro do cliente (c.criadoEm) comparada por ano-mês-dia no fuso do
+  // próprio navegador (mesma lógica simples que o resto da tela já usa pra formatar datas) —
+  // não precisa do cuidado de fuso do backend porque é um filtro feito só aqui no front, sobre
+  // uma lista que já veio inteira da API.
+  function dataDentroDoFiltro(c) {
+    if (!dataDe && !dataAte) return true;
+    if (!c.criadoEm) return false;
+    const d = new Date(c.criadoEm);
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (dataDe && ymd < dataDe) return false;
+    if (dataAte && ymd > dataAte) return false;
+    return true;
+  }
+
+  const buscaLower = busca.trim().toLowerCase();
+
+  const filtrados = [...lista]
+    .filter((c) => (buscaLower ? c.user.nome.toLowerCase().includes(buscaLower) : true))
+    .filter(dataDentroDoFiltro)
+    .sort((a, b) => a.user.nome.localeCompare(b.user.nome));
+
+  // Fase 72 — "Não aceitos": quem ainda não foi aceito pela profissional (pedido do Dono, incluindo
+  // explicitamente quem ainda está pendente, não só quem foi recusado — hoje o sistema só tem os
+  // status PENDENTE/ACEITA, não existe "recusa" separada).
+  const naoAceitosTotal = lista.filter((c) => c.aceite?.status === "PENDENTE").length;
+  const ordenados = modo === "naoAceitos" ? filtrados.filter((c) => c.aceite?.status === "PENDENTE") : filtrados;
+
+  function hojeYMD() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function aplicarFiltroHoje() {
+    const h = hojeYMD();
+    setDataDe(h);
+    setDataAte(h);
+  }
+
+  function aplicarFiltroEssaSemana() {
+    const d = new Date();
+    const diaSemana = d.getDay(); // 0 = domingo
+    const diffSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+    const segunda = new Date(d);
+    segunda.setDate(d.getDate() + diffSegunda);
+    const ymd = (data) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+    setDataDe(ymd(segunda));
+    setDataAte(hojeYMD());
+  }
+
+  function limparFiltros() {
+    setBusca("");
+    setDataDe("");
+    setDataAte("");
+  }
 
   function nomeProfissional(c) {
     if (!c.profissionalAtual?.user?.nome) return "Sem profissional";
@@ -1816,6 +1874,10 @@ function Clientes() {
     const contratadoEm = formatarDataCurta(pacote?.iniciadoEm);
     const encerraEm = formatarDataCurta(c.renovarEm || pacote?.encerradoEm);
     const aguardandoRenovacao = pacote?.status === "AGUARDANDO_RENOVACAO";
+    // Fase 72 — data em que a profissional aceitou esse paciente (só existe quando o cadastro
+    // passou pelo fluxo de solicitação, ver GET /dono/clientes). Null quando a profissional
+    // cadastrou direto pra si mesma — aí não existe "aceite" pra mostrar.
+    const aceitoEm = c.aceite?.status === "ACEITA" ? formatarDataCurta(c.aceite.aceitoEm) : null;
     return (
       <div>
         <div
@@ -1834,6 +1896,7 @@ function Clientes() {
                 )}
                 {contratadoEm && ` · contratado em ${contratadoEm}`}
                 {encerraEm && ` · encerra em ${encerraEm}`}
+                {aceitoEm && ` · aceito em ${aceitoEm}`}
               </span>
             </span>
           </span>
@@ -1896,7 +1959,11 @@ function Clientes() {
         <div>
           <p className="nv-eyebrow mb-1">Painel do Dono</p>
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Clientes</h1>
-          <p className="text-nv-muted text-sm mt-0.5">{lista.length} clientes, em ordem alfabética</p>
+          <p className="text-nv-muted text-sm mt-0.5">
+            {ordenados.length === lista.length
+              ? `${lista.length} clientes, em ordem alfabética`
+              : `${ordenados.length} de ${lista.length} clientes (com filtro aplicado)`}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button type="button" className={`nv-seg ${modo === "todos" ? "nv-seg-ativo" : ""}`} onClick={() => setModo("todos")}>
@@ -1909,10 +1976,52 @@ function Clientes() {
           >
             Por profissional
           </button>
+          {/* Fase 72 — "quero saber se a profissional aceitou o paciente [...] e os que não foi
+              aceito fica em aba de não aceitos" (inclui quem ainda está pendente de aceite). */}
+          <button
+            type="button"
+            className={`nv-seg ${modo === "naoAceitos" ? "nv-seg-ativo" : ""}`}
+            onClick={() => setModo("naoAceitos")}
+          >
+            Não aceitos{naoAceitosTotal > 0 ? ` (${naoAceitosTotal})` : ""}
+          </button>
           <button type="button" className="btn-primary text-sm" onClick={() => setMostrarForm((v) => !v)}>
             {mostrarForm ? "Fechar" : "+ Novo cliente"}
           </button>
         </div>
+      </div>
+
+      {/* Fase 72 — busca por nome + filtro por data de cadastro (dia específico, "essa semana" ou
+          um período livre), pedido do Dono pra achar cliente numa lista de centenas. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <label className="flex items-center gap-2 bg-white border border-nv-border rounded-lg px-3.5 py-2 min-w-[220px] flex-1 max-w-xs">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8392A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Buscar por nome"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="border-none outline-none text-sm text-nv-ink2 w-full"
+          />
+        </label>
+        <span className="text-xs text-nv-muted3">Adicionado de</span>
+        <input type="date" className="input !w-auto" value={dataDe} onChange={(e) => setDataDe(e.target.value)} />
+        <span className="text-xs text-nv-muted3">até</span>
+        <input type="date" className="input !w-auto" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
+        <button type="button" className="nv-seg" onClick={aplicarFiltroHoje}>
+          Hoje
+        </button>
+        <button type="button" className="nv-seg" onClick={aplicarFiltroEssaSemana}>
+          Essa semana
+        </button>
+        {(busca || dataDe || dataAte) && (
+          <button type="button" className="text-xs font-semibold text-nv-blue underline" onClick={limparFiltros}>
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       {/* Fase 59 — correção de bug: antes esse onCadastrado fechava o formulário (setMostrarForm(false))
@@ -1948,7 +2057,7 @@ function Clientes() {
       )}
 
       <div className="nv-card-flat px-5">
-        {modo === "todos" &&
+        {(modo === "todos" || modo === "naoAceitos") &&
           ordenados.map((c) => <LinhaCliente key={c.id} c={c} />)}
         {modo === "porProfissional" &&
           grupos.map((g) => (
@@ -1960,6 +2069,12 @@ function Clientes() {
             </div>
           ))}
         {lista.length === 0 && <p className="text-sm text-nv-muted py-4">Nenhum cliente cadastrado ainda.</p>}
+        {lista.length > 0 && ordenados.length === 0 && modo === "naoAceitos" && (
+          <p className="text-sm text-nv-muted py-4">Nenhum cliente aguardando aceite agora — tudo certo.</p>
+        )}
+        {lista.length > 0 && ordenados.length === 0 && modo !== "naoAceitos" && (
+          <p className="text-sm text-nv-muted py-4">Nenhum cliente encontrado com esse filtro.</p>
+        )}
       </div>
     </div>
   );

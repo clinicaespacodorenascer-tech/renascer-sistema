@@ -314,19 +314,38 @@ router.get("/clientes", async (req, res) => {
       pacotes: { orderBy: { iniciadoEm: "desc" }, take: 1 },
       // Fase 55 — enquanto não é aceito pela profissional, ainda não tem profissionalAtual; isso
       // é o que deixa a tela dizer "aguardando aceite" em vez de "sem profissional".
+      // Fase 72 — antes só vinha a solicitação PENDENTE (pra saber "quem falta aceitar"). Agora
+      // vem a mais recente de qualquer status (PENDENTE ou ACEITA), pra também saber SE E QUANDO
+      // a profissional aceitou quem já foi aceito (pedido do Dono: data do aceite na ficha, e uma
+      // aba separada juntando quem ainda está "não aceito").
       solicitacoesNovoPaciente: {
-        where: { status: "PENDENTE" },
+        orderBy: { criadoEm: "desc" },
         include: { profissional: { include: { user: { select: { nome: true } } } } },
         take: 1,
       },
     },
   });
   res.json(
-    clientes.map((c) => ({
-      ...c,
-      statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }),
-      aguardandoAceiteDe: c.solicitacoesNovoPaciente[0]?.profissional?.user?.nome || null,
-    }))
+    clientes.map((c) => {
+      const solicitacao = c.solicitacoesNovoPaciente[0] || null;
+      return {
+        ...c,
+        statusCliente: calcularStatusCliente({ pacote: c.pacotes[0], renovarEm: c.renovarEm }),
+        aguardandoAceiteDe: solicitacao?.status === "PENDENTE" ? solicitacao.profissional?.user?.nome || null : null,
+        // Fase 72 — resumo do aceite, pronto pra tela não precisar reconstruir essa lógica:
+        // "ACEITA" quando a profissional já aceitou (com a data), "PENDENTE" quando ainda não
+        // (vai pra aba "Não aceitos"), e null quando o cliente nem passou por esse fluxo (ex:
+        // cadastrado direto pela própria profissional, que não precisa aceitar o próprio cadastro).
+        aceite: solicitacao
+          ? {
+              status: solicitacao.status, // "PENDENTE" | "ACEITA"
+              profissionalNome: solicitacao.profissional?.user?.nome || null,
+              solicitadoEm: solicitacao.criadoEm,
+              aceitoEm: solicitacao.respondidoEm,
+            }
+          : null,
+      };
+    })
   );
 });
 
