@@ -1182,3 +1182,85 @@ model CustoFuncionario {
 
   @@map("custos_funcionarios")
 }
+
+// ---------- Fase 71 — "Banco de Oportunidades": só o Dono vê (ver backend/src/routes/dono.js,
+// que já é 100% exclusivo de DONO desde o topo do arquivo) — captura ideias/oportunidades de
+// negócio (reclamação de cliente, mudança de lei, cruzamento de habilidades etc.), com um filtro
+// de avaliação por nota (1 a 5 em 5 critérios, soma automática) pra decidir o que vale testar.
+// Pensado pra alimentar a rotina de "Meu dia": o atalho "Registrar ideia" no Fechamento cria um
+// registro rápido (só título + empresa), e a segunda-feira (dia de "Estratégia e visão" no
+// rodízio do Dono) mostra as que ainda não foram avaliadas, pra ele dar as notas.
+
+enum EmpresaOportunidade {
+  ESPACO_RENASCER
+  GESTOR_TRAFEGO_PAGO
+  GERAL
+}
+
+enum TipoOportunidade {
+  INTERNA // melhorar o que já existe
+  EXTERNA // produto, mercado ou parceria novos
+}
+
+enum FonteOportunidade {
+  RECLAMACAO
+  INESPERADO
+  MUDANCA_LEI_TECNOLOGIA
+  MUDANCA_COMPORTAMENTO
+  BURACO_INTERNO
+  CRUZAMENTO_HABILIDADES
+}
+
+enum StatusOportunidade {
+  IDEIA
+  AVALIADA
+  EM_TESTE
+  APROVADA
+  IMPLEMENTADA
+  ARQUIVADA
+}
+
+model Oportunidade {
+  id        String               @id @default(cuid())
+  titulo    String
+  descricao String?              @db.Text
+  empresa   EmpresaOportunidade
+  tipo      TipoOportunidade?
+  fonte     FonteOportunidade?
+
+  // Filtro de avaliação (1 a 5 cada) — ficam nulos até o Dono avaliar. pontuacaoTotal é a soma
+  // das 5, recalculada no servidor toda vez que alguma nota muda (nunca confiar em soma vinda do
+  // front) — guardada já pronta pra poder ordenar a listagem direto por ela, sem calcular na hora.
+  notaTamanhoProblema    Int?
+  notaDisposicaoPagar    Int?
+  notaCapacidadeExecutar Int?
+  notaCustoTestar        Int?
+  notaAlinhamento        Int?
+  pontuacaoTotal         Int?
+
+  status              StatusOportunidade @default(IDEIA)
+  motivoArquivamento  String?            @db.Text // só preenchido quando status = ARQUIVADA
+
+  criadoPorId  String
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([status])
+  @@index([empresa])
+  @@map("oportunidades")
+}
+
+// ---------- Fase 71 — bloco de notas de aula (pedido à parte do Banco de Oportunidades): o Dono
+// assiste uma aula/curso em outra aba e quer um bloco de notas numa JANELA pequena separada do
+// navegador (ver frontend/src/pages/dono/notas-popup.js, aberta via window.open), uma anotação por
+// aula, identificada pelo tema. Também só o Dono (mesmo arquivo dono.js).
+model AnotacaoEstudo {
+  id           String   @id @default(cuid())
+  tema         String
+  conteudo     String   @db.Text
+  criadoPorId  String
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("anotacoes_estudo")
+}

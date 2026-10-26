@@ -1471,6 +1471,208 @@ router.delete("/meu-dia/decisoes/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ======================================================================================
+// ---------- Fase 71 — Banco de Oportunidades ----------
+// ======================================================================================
+// Todo este arquivo já é exclusivo de DONO (ver `router.use(autenticar, permitir("DONO"))` no
+// topo), então "só o dono acessa" não precisa de nenhuma regra extra aqui.
+
+router.get("/oportunidades", async (req, res) => {
+  const { empresa, tipo, status } = req.query;
+  const lista = await prisma.oportunidade.findMany({
+    where: {
+      ...(empresa && { empresa }),
+      ...(tipo && { tipo }),
+      ...(status && { status }),
+    },
+    orderBy: [{ pontuacaoTotal: "desc" }, { criadoEm: "desc" }],
+  });
+  res.json(lista);
+});
+
+// As 3 melhores pontuadas que ainda não entraram em teste (status Ideia ou Avaliada, já com nota)
+// — destaque pedido pelo Elismael pra ver rápido no que vale a pena focar.
+router.get("/oportunidades/destaques", async (req, res) => {
+  const lista = await prisma.oportunidade.findMany({
+    where: { status: { in: ["IDEIA", "AVALIADA"] }, pontuacaoTotal: { not: null } },
+    orderBy: { pontuacaoTotal: "desc" },
+    take: 3,
+  });
+  res.json(lista);
+});
+
+// Ainda sem NENHUMA nota — alimenta o cartão de segunda-feira ("dia de Estratégia") no Meu dia.
+router.get("/oportunidades/nao-avaliadas", async (req, res) => {
+  const lista = await prisma.oportunidade.findMany({
+    where: { status: "IDEIA", pontuacaoTotal: null },
+    orderBy: { criadoEm: "asc" },
+  });
+  res.json(lista);
+});
+
+// Soma as 5 notas do filtro de avaliação — null se QUALQUER uma ainda não foi preenchida (nunca
+// soma parcial, pra não confundir "3 pontos porque só uma nota foi dada" com "3 pontos de verdade
+// numa avaliação completa"). Sempre recalculado aqui no servidor, nunca confia num total vindo do
+// front.
+function calcularPontuacaoOportunidade(notas) {
+  const valores = [
+    notas.notaTamanhoProblema,
+    notas.notaDisposicaoPagar,
+    notas.notaCapacidadeExecutar,
+    notas.notaCustoTestar,
+    notas.notaAlinhamento,
+  ];
+  if (valores.some((n) => n === null || n === undefined)) return null;
+  return valores.reduce((soma, n) => soma + n, 0);
+}
+
+// Cadastro — serve tanto o formulário completo quanto o atalho rápido "Registrar ideia" do
+// Fechamento do Meu dia (que manda só título + empresa, o resto fica undefined/vazio pra
+// preencher depois).
+router.post("/oportunidades", async (req, res) => {
+  const {
+    titulo,
+    empresa,
+    descricao,
+    tipo,
+    fonte,
+    notaTamanhoProblema,
+    notaDisposicaoPagar,
+    notaCapacidadeExecutar,
+    notaCustoTestar,
+    notaAlinhamento,
+  } = req.body;
+  if (!titulo || !titulo.trim() || !empresa) {
+    return res.status(400).json({ erro: "Título e empresa são obrigatórios." });
+  }
+
+  const notas = { notaTamanhoProblema, notaDisposicaoPagar, notaCapacidadeExecutar, notaCustoTestar, notaAlinhamento };
+  const pontuacaoTotal = calcularPontuacaoOportunidade(notas);
+
+  const criada = await prisma.oportunidade.create({
+    data: {
+      titulo: titulo.trim(),
+      empresa,
+      descricao: descricao || null,
+      tipo: tipo || null,
+      fonte: fonte || null,
+      notaTamanhoProblema: notaTamanhoProblema ?? null,
+      notaDisposicaoPagar: notaDisposicaoPagar ?? null,
+      notaCapacidadeExecutar: notaCapacidadeExecutar ?? null,
+      notaCustoTestar: notaCustoTestar ?? null,
+      notaAlinhamento: notaAlinhamento ?? null,
+      pontuacaoTotal,
+      // se já veio com as 5 notas preenchidas (cadastro completo direto), já nasce "Avaliada" —
+      // senão fica "Ideia" até alguém dar as notas depois.
+      status: pontuacaoTotal != null ? "AVALIADA" : "IDEIA",
+      criadoPorId: req.user.id,
+    },
+  });
+  res.json(criada);
+});
+
+router.put("/oportunidades/:id", async (req, res) => {
+  const atual = await prisma.oportunidade.findUnique({ where: { id: req.params.id } });
+  if (!atual) return res.status(404).json({ erro: "Oportunidade não encontrada." });
+
+  const {
+    titulo,
+    descricao,
+    empresa,
+    tipo,
+    fonte,
+    notaTamanhoProblema,
+    notaDisposicaoPagar,
+    notaCapacidadeExecutar,
+    notaCustoTestar,
+    notaAlinhamento,
+    status,
+    motivoArquivamento,
+  } = req.body;
+
+  const dados = {
+    ...(titulo !== undefined && { titulo: titulo.trim() }),
+    ...(descricao !== undefined && { descricao: descricao || null }),
+    ...(empresa !== undefined && { empresa }),
+    ...(tipo !== undefined && { tipo: tipo || null }),
+    ...(fonte !== undefined && { fonte: fonte || null }),
+  };
+
+  // Só recalcula a pontuação se alguma nota veio nesse PUT — senão ela fica como já estava
+  // (editar só o título, por exemplo, não deve mexer na nota).
+  const notasRecebidas = { notaTamanhoProblema, notaDisposicaoPagar, notaCapacidadeExecutar, notaCustoTestar, notaAlinhamento };
+  if (Object.values(notasRecebidas).some((n) => n !== undefined)) {
+    const notasFinais = {
+      notaTamanhoProblema: notaTamanhoProblema !== undefined ? notaTamanhoProblema : atual.notaTamanhoProblema,
+      notaDisposicaoPagar: notaDisposicaoPagar !== undefined ? notaDisposicaoPagar : atual.notaDisposicaoPagar,
+      notaCapacidadeExecutar: notaCapacidadeExecutar !== undefined ? notaCapacidadeExecutar : atual.notaCapacidadeExecutar,
+      notaCustoTestar: notaCustoTestar !== undefined ? notaCustoTestar : atual.notaCustoTestar,
+      notaAlinhamento: notaAlinhamento !== undefined ? notaAlinhamento : atual.notaAlinhamento,
+    };
+    Object.assign(dados, notasFinais);
+    const novaPontuacao = calcularPontuacaoOportunidade(notasFinais);
+    dados.pontuacaoTotal = novaPontuacao;
+    // acabou de completar a avaliação (5ª nota) e ainda estava em "Ideia", sem pedido explícito de
+    // mudar o status nesse mesmo PUT → promove sozinho pra "Avaliada".
+    if (novaPontuacao != null && atual.status === "IDEIA" && status === undefined) {
+      dados.status = "AVALIADA";
+    }
+  }
+
+  if (status !== undefined) {
+    if (status === "ARQUIVADA" && !motivoArquivamento && !atual.motivoArquivamento) {
+      return res.status(400).json({ erro: "Informe o motivo do arquivamento antes de arquivar." });
+    }
+    dados.status = status;
+  }
+  if (motivoArquivamento !== undefined) dados.motivoArquivamento = motivoArquivamento || null;
+
+  const atualizada = await prisma.oportunidade.update({ where: { id: req.params.id }, data: dados });
+  res.json(atualizada);
+});
+
+router.delete("/oportunidades/:id", async (req, res) => {
+  await prisma.oportunidade.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
+// ======================================================================================
+// ---------- Fase 71 — Bloco de notas de aula (pop-up separado, ver notas-popup.js) ----------
+// ======================================================================================
+router.get("/anotacoes-estudo", async (req, res) => {
+  const lista = await prisma.anotacaoEstudo.findMany({
+    where: { criadoPorId: req.user.id },
+    orderBy: { atualizadoEm: "desc" },
+  });
+  res.json(lista);
+});
+
+router.post("/anotacoes-estudo", async (req, res) => {
+  const { tema } = req.body;
+  if (!tema || !tema.trim()) return res.status(400).json({ erro: "Dê um tema pra aula antes de criar." });
+  const criada = await prisma.anotacaoEstudo.create({
+    data: { tema: tema.trim(), conteudo: "", criadoPorId: req.user.id },
+  });
+  res.json(criada);
+});
+
+router.put("/anotacoes-estudo/:id", async (req, res) => {
+  const { tema, conteudo } = req.body;
+  const dados = {
+    ...(tema !== undefined && { tema: tema.trim() }),
+    ...(conteudo !== undefined && { conteudo }),
+  };
+  const resultado = await prisma.anotacaoEstudo.updateMany({ where: { id: req.params.id, criadoPorId: req.user.id }, data: dados });
+  if (resultado.count === 0) return res.status(404).json({ erro: "Anotação não encontrada." });
+  const atualizada = await prisma.anotacaoEstudo.findUnique({ where: { id: req.params.id } });
+  res.json(atualizada);
+});
+
+router.delete("/anotacoes-estudo/:id", async (req, res) => {
+  await prisma.anotacaoEstudo.deleteMany({ where: { id: req.params.id, criadoPorId: req.user.id } });
+  res.json({ ok: true });
+});
+
 // ---------- Fechamento de caixa ----------
 // Dia a dia: lançamentos soltos (entrada/saída que não é pagamento de cliente) + conferência
 // contra o saldo informado do banco/Pix.

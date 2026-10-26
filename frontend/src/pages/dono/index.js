@@ -76,6 +76,7 @@ export default function AreaDono() {
     { id: "renascerIA", label: "Renascer IA" },
     { id: "formularios", label: "Formulários" },
     { id: "secretaria", label: "Secretaria" }, // Fase 47
+    { id: "oportunidades", label: "Banco de Oportunidades" }, // Fase 71
   ];
 
   const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
@@ -114,6 +115,7 @@ export default function AreaDono() {
       {aba === "renascerIA" && <AbaRenascerIA />}
       {aba === "formularios" && <AbaFormularios />}
       {aba === "secretaria" && <AbaSecretaria />}
+      {aba === "oportunidades" && <AbaOportunidades />}
     </LayoutNovo>
   );
 }
@@ -5217,6 +5219,10 @@ function MeuDiaHoje() {
   const [marketingHoje, setMarketingHoje] = useState([]);
   const [decisaoHojeRegistrada, setDecisaoHojeRegistrada] = useState(false);
   const [blocoAberto, setBlocoAberto] = useState(null);
+  // Fase 71 — Banco de Oportunidades: lista de ideias ainda sem nenhuma nota (pro cartão de
+  // segunda-feira, dia de "Estratégia e visão") e o atalho rápido do Fechamento.
+  const [oportunidadesNaoAvaliadas, setOportunidadesNaoAvaliadas] = useState([]);
+  const [modalIdeiaAberto, setModalIdeiaAberto] = useState(false);
 
   const agora = new Date();
   const diaSemanaNum = agora.getDay();
@@ -5228,18 +5234,20 @@ function MeuDiaHoje() {
     setCarregando(true);
     setErro("");
     try {
-      const [chkHoje, chkPerm, caixa, marketing, decisoes] = await Promise.all([
+      const [chkHoje, chkPerm, caixa, marketing, decisoes, oportunidades] = await Promise.all([
         api.get("/comum/meu-dia/checklist", { params: { data: hojeISO() } }),
         api.get("/comum/meu-dia/checklist"),
         api.get("/dono/meu-dia/caixa", { params: { data: hojeISO() } }),
         api.get("/dono/meu-dia/marketing"),
         api.get("/dono/meu-dia/decisoes"),
+        api.get("/dono/oportunidades/nao-avaliadas"),
       ]);
       setConcluidosHoje(chkHoje.data.itensConcluidos);
       setConcluidosPermanentes(chkPerm.data.itensConcluidos);
       setCaixaHoje(caixa.data);
       setMarketingHoje(marketing.data.filter((m) => new Date(m.data).toISOString().slice(0, 10) === hojeISO()));
       setDecisaoHojeRegistrada(decisoes.data.some((d) => new Date(d.data).toISOString().slice(0, 10) === hojeISO()));
+      setOportunidadesNaoAvaliadas(oportunidades.data);
     } catch (e) {
       setErro("Não consegui carregar a trilha de hoje agora. Tente de novo em alguns segundos.");
     } finally {
@@ -5439,6 +5447,23 @@ function MeuDiaHoje() {
               {itensTemaHoje.map((item) => (
                 <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
               ))}
+              {/* Fase 71 — segunda-feira é o dia de "Estratégia e visão": mostra aqui as
+                  oportunidades do Banco de Oportunidades que ainda não receberam nenhuma nota,
+                  pro Dono avaliar junto com o resto da rotina de estratégia do dia. */}
+              {diaSemanaNum === 1 && oportunidadesNaoAvaliadas.length > 0 && (
+                <div className="bg-nv-bg rounded-xl p-3 mt-2 space-y-2">
+                  <p className="text-xs text-nv-muted2 font-semibold uppercase tracking-wide">
+                    Banco de Oportunidades — ainda sem avaliação ({oportunidadesNaoAvaliadas.length})
+                  </p>
+                  {oportunidadesNaoAvaliadas.map((o) => (
+                    <div key={o.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2">
+                      <p className="text-[13px] text-nv-ink2 truncate">{o.titulo}</p>
+                      <span className="text-[11px] text-nv-muted3 shrink-0">{EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}</span>
+                    </div>
+                  ))}
+                  <p className="text-[11.5px] text-nv-muted3">Abra "Banco de Oportunidades" no menu pra dar as notas de cada uma.</p>
+                </div>
+              )}
               {diaSemanaNum >= 1 && diaSemanaNum <= 4 && (
                 <div className="bg-nv-bg rounded-xl p-3 mt-2 space-y-1">
                   <p className="text-xs text-nv-muted2 font-semibold">Rodízio desta semana (semana {semanaAtual} do mês)</p>
@@ -5473,8 +5498,27 @@ function MeuDiaHoje() {
           {itensFechamentoComExplicacao.map((item) => (
             <ItemChecklistDia key={item.chave} item={item} feito={concluidosHoje.includes(item.chave)} onToggle={() => alternarDiario(item.chave)} />
           ))}
+          {/* Fase 71 — atalho pro cadastro rápido do Banco de Oportunidades (só título + empresa),
+              pra não deixar passar nenhuma ideia que surgiu durante o dia. */}
+          <button
+            type="button"
+            onClick={() => setModalIdeiaAberto(true)}
+            className="text-[12.5px] font-semibold text-nv-blue underline mt-1"
+          >
+            + Registrar ideia no Banco de Oportunidades
+          </button>
         </BlocoDoDia>
       </div>
+
+      {modalIdeiaAberto && (
+        <ModalRegistrarIdeiaRapido
+          onFechar={() => setModalIdeiaAberto(false)}
+          onSalvar={() => {
+            setModalIdeiaAberto(false);
+            carregar();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -7076,6 +7120,498 @@ function MapasMentais() {
               </div>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- BANCO DE OPORTUNIDADES (Fase 71) — só o Dono. Cadastro de ideias/oportunidades
+// de negócio, com um filtro de avaliação por nota (1 a 5 em 5 critérios, soma automática de 5 a
+// 25) e um fluxo de status (Ideia → Avaliada → Em teste → Aprovada → Implementada → Arquivada).
+// Integrado no Meu dia: atalho "Registrar ideia" no Fechamento (ModalRegistrarIdeiaRapido, exportado
+// pra ser usado por AbaMeuDia acima — só título + empresa) e o cartão de segunda-feira com as ainda
+// não avaliadas (rota /dono/oportunidades/nao-avaliadas, também consumida dentro de AbaMeuDia).
+// ================================================================================================
+
+const EMPRESA_OPORTUNIDADE_LABEL = {
+  ESPACO_RENASCER: "Espaço do Renascer",
+  GESTOR_TRAFEGO_PAGO: "Gestor de tráfego pago",
+  GERAL: "Geral",
+};
+const TIPO_OPORTUNIDADE_LABEL = {
+  INTERNA: "Interna — melhorar o que já existe",
+  EXTERNA: "Externa — produto, mercado ou parceria novos",
+};
+const FONTE_OPORTUNIDADE_LABEL = {
+  RECLAMACAO: "Reclamação",
+  INESPERADO: "Inesperado",
+  MUDANCA_LEI_TECNOLOGIA: "Mudança de lei ou tecnologia",
+  MUDANCA_COMPORTAMENTO: "Mudança de comportamento",
+  BURACO_INTERNO: "Buraco interno",
+  CRUZAMENTO_HABILIDADES: "Cruzamento de habilidades",
+};
+const STATUS_OPORTUNIDADE_LABEL = {
+  IDEIA: "Ideia",
+  AVALIADA: "Avaliada",
+  EM_TESTE: "Em teste",
+  APROVADA: "Aprovada",
+  IMPLEMENTADA: "Implementada",
+  ARQUIVADA: "Arquivada",
+};
+const STATUS_OPORTUNIDADE_COR = {
+  IDEIA: "bg-gray-100 text-gray-700",
+  AVALIADA: "bg-blue-100 text-blue-700",
+  EM_TESTE: "bg-amber-100 text-amber-700",
+  APROVADA: "bg-emerald-100 text-emerald-700",
+  IMPLEMENTADA: "bg-nv-green/10 text-nv-green",
+  ARQUIVADA: "bg-gray-200 text-gray-500",
+};
+const CRITERIOS_AVALIACAO_OPORTUNIDADE = [
+  { chave: "notaTamanhoProblema", label: "Tamanho do problema" },
+  { chave: "notaDisposicaoPagar", label: "Disposição de pagar" },
+  { chave: "notaCapacidadeExecutar", label: "Capacidade de executar com o que já temos" },
+  { chave: "notaCustoTestar", label: "Custo de testar (5 = muito barato)" },
+  { chave: "notaAlinhamento", label: "Alinhamento com a missão e as empresas atuais" },
+];
+
+function AbaOportunidades() {
+  const [lista, setLista] = useState(null);
+  const [destaques, setDestaques] = useState([]);
+  const [filtros, setFiltros] = useState({ empresa: "", tipo: "", status: "" });
+  const [modalAberto, setModalAberto] = useState(null); // null | "nova" | objeto da oportunidade
+
+  async function carregarLista() {
+    const params = new URLSearchParams();
+    if (filtros.empresa) params.set("empresa", filtros.empresa);
+    if (filtros.tipo) params.set("tipo", filtros.tipo);
+    if (filtros.status) params.set("status", filtros.status);
+    const { data } = await api.get(`/dono/oportunidades?${params.toString()}`);
+    setLista(data);
+  }
+  async function carregarDestaques() {
+    const { data } = await api.get("/dono/oportunidades/destaques");
+    setDestaques(data);
+  }
+
+  useEffect(() => {
+    carregarLista();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtros]);
+  useEffect(() => {
+    carregarDestaques();
+  }, []);
+
+  function aoSalvar() {
+    setModalAberto(null);
+    carregarLista();
+    carregarDestaques();
+  }
+
+  return (
+    <div className="space-y-5 font-publicSans">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Banco de Oportunidades</h1>
+          <p className="text-nv-muted text-sm mt-0.5">
+            Ideias e oportunidades de negócio, avaliadas por nota — o que vale testar primeiro.
+          </p>
+        </div>
+        <button type="button" className="btn-primary !py-2.5 !px-4 text-sm" onClick={() => setModalAberto("nova")}>
+          + Nova oportunidade
+        </button>
+      </div>
+
+      {destaques.length > 0 && (
+        <div>
+          <h2 className="font-sora font-semibold text-[15px] text-nv-navy mb-2.5">
+            As melhores pontuadas que ainda não estão em teste
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {destaques.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setModalAberto(o)}
+                className="text-left nv-card-flat px-4 py-3.5 hover:border-nv-blue/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="font-sora font-bold text-[20px] text-nv-blue tabular-nums">{o.pontuacaoTotal}/25</span>
+                  <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
+                    {STATUS_OPORTUNIDADE_LABEL[o.status]}
+                  </span>
+                </div>
+                <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
+                <p className="text-[11.5px] text-nv-muted3 mt-0.5">{EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <select
+          value={filtros.empresa}
+          onChange={(e) => setFiltros((f) => ({ ...f, empresa: e.target.value }))}
+          className="rounded-[9px] border border-nv-border px-3 py-2 text-[13px] bg-white"
+        >
+          <option value="">Todas as empresas</option>
+          {Object.entries(EMPRESA_OPORTUNIDADE_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filtros.tipo}
+          onChange={(e) => setFiltros((f) => ({ ...f, tipo: e.target.value }))}
+          className="rounded-[9px] border border-nv-border px-3 py-2 text-[13px] bg-white"
+        >
+          <option value="">Todos os tipos</option>
+          {Object.entries(TIPO_OPORTUNIDADE_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filtros.status}
+          onChange={(e) => setFiltros((f) => ({ ...f, status: e.target.value }))}
+          className="rounded-[9px] border border-nv-border px-3 py-2 text-[13px] bg-white"
+        >
+          <option value="">Todos os status</option>
+          {Object.entries(STATUS_OPORTUNIDADE_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="nv-card-flat px-6 py-1">
+        {lista === null && <p className="text-sm text-nv-muted py-4">Carregando...</p>}
+        {lista && lista.length === 0 && (
+          <p className="text-[13px] text-nv-muted py-4">Nenhuma oportunidade com esses filtros ainda.</p>
+        )}
+        {lista &&
+          lista.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => setModalAberto(o)}
+              className="w-full text-left flex items-center justify-between gap-3 flex-wrap py-3 border-t border-nv-borderLight first:border-t-0"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="font-sora font-bold text-[16px] text-nv-ink tabular-nums w-[46px] shrink-0">
+                  {o.pontuacaoTotal != null ? `${o.pontuacaoTotal}/25` : "—"}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
+                  <p className="text-[11.5px] text-nv-muted3">
+                    {EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}
+                    {o.tipo ? ` · ${TIPO_OPORTUNIDADE_LABEL[o.tipo].split(" — ")[0]}` : ""}
+                    {o.fonte ? ` · ${FONTE_OPORTUNIDADE_LABEL[o.fonte]}` : ""}
+                  </p>
+                </div>
+              </div>
+              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
+                {STATUS_OPORTUNIDADE_LABEL[o.status]}
+              </span>
+            </button>
+          ))}
+      </div>
+
+      {modalAberto && (
+        <ModalOportunidade
+          oportunidade={modalAberto === "nova" ? null : modalAberto}
+          onFechar={() => setModalAberto(null)}
+          onSalvar={aoSalvar}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalOportunidade({ oportunidade, onFechar, onSalvar }) {
+  const editando = !!oportunidade;
+  const [titulo, setTitulo] = useState(oportunidade?.titulo || "");
+  const [descricao, setDescricao] = useState(oportunidade?.descricao || "");
+  const [empresa, setEmpresa] = useState(oportunidade?.empresa || "ESPACO_RENASCER");
+  const [tipo, setTipo] = useState(oportunidade?.tipo || "");
+  const [fonte, setFonte] = useState(oportunidade?.fonte || "");
+  const [notas, setNotas] = useState({
+    notaTamanhoProblema: oportunidade?.notaTamanhoProblema ?? "",
+    notaDisposicaoPagar: oportunidade?.notaDisposicaoPagar ?? "",
+    notaCapacidadeExecutar: oportunidade?.notaCapacidadeExecutar ?? "",
+    notaCustoTestar: oportunidade?.notaCustoTestar ?? "",
+    notaAlinhamento: oportunidade?.notaAlinhamento ?? "",
+  });
+  const [status, setStatus] = useState(oportunidade?.status || "IDEIA");
+  const [motivoArquivamento, setMotivoArquivamento] = useState(oportunidade?.motivoArquivamento || "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const somaNotas = Object.values(notas).every((n) => n !== "")
+    ? Object.values(notas).reduce((s, n) => s + Number(n), 0)
+    : null;
+
+  async function salvar() {
+    if (!titulo.trim()) {
+      setErro("Dê um título pra oportunidade.");
+      return;
+    }
+    if (status === "ARQUIVADA" && !motivoArquivamento.trim()) {
+      setErro("Informe o motivo do arquivamento.");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    const payload = {
+      titulo,
+      descricao,
+      empresa,
+      tipo: tipo || null,
+      fonte: fonte || null,
+      notaTamanhoProblema: notas.notaTamanhoProblema === "" ? null : Number(notas.notaTamanhoProblema),
+      notaDisposicaoPagar: notas.notaDisposicaoPagar === "" ? null : Number(notas.notaDisposicaoPagar),
+      notaCapacidadeExecutar: notas.notaCapacidadeExecutar === "" ? null : Number(notas.notaCapacidadeExecutar),
+      notaCustoTestar: notas.notaCustoTestar === "" ? null : Number(notas.notaCustoTestar),
+      notaAlinhamento: notas.notaAlinhamento === "" ? null : Number(notas.notaAlinhamento),
+      status,
+      motivoArquivamento: motivoArquivamento || null,
+    };
+    try {
+      if (editando) {
+        await api.put(`/dono/oportunidades/${oportunidade.id}`, payload);
+      } else {
+        await api.post("/dono/oportunidades", payload);
+      }
+      onSalvar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!confirm("Excluir essa oportunidade? Não dá pra desfazer.")) return;
+    setSalvando(true);
+    try {
+      await api.delete(`/dono/oportunidades/${oportunidade.id}`);
+      onSalvar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível excluir.");
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[88vh] overflow-y-auto">
+        <div>
+          <p className="nv-eyebrow mb-1">{editando ? "Editar oportunidade" : "Nova oportunidade"}</p>
+          <h3 className="font-sora font-semibold text-nv-ink text-lg">
+            {editando ? titulo || "Oportunidade" : "Cadastrar oportunidade"}
+          </h3>
+        </div>
+
+        <div className="space-y-3.5">
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Título</label>
+            <input
+              className="input"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex: Parceria com academia de bairro"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Descrição</label>
+            <textarea
+              className="input !h-20 resize-none"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Detalhe a ideia..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Empresa</label>
+              <select className="input bg-white" value={empresa} onChange={(e) => setEmpresa(e.target.value)}>
+                {Object.entries(EMPRESA_OPORTUNIDADE_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Tipo</label>
+              <select className="input bg-white" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                <option value="">Não definido</option>
+                {Object.entries(TIPO_OPORTUNIDADE_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Fonte</label>
+            <select className="input bg-white" value={fonte} onChange={(e) => setFonte(e.target.value)}>
+              <option value="">Não definida</option>
+              {Object.entries(FONTE_OPORTUNIDADE_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="border-t border-nv-borderLight pt-3.5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[12.5px] font-semibold text-nv-navy">Filtro de avaliação (1 a 5)</p>
+              <span className="font-sora font-bold text-[15px] text-nv-blue tabular-nums">
+                {somaNotas != null ? `${somaNotas}/25` : "— /25"}
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {CRITERIOS_AVALIACAO_OPORTUNIDADE.map((c) => (
+                <div key={c.chave} className="flex items-center justify-between gap-3">
+                  <p className="text-[12.5px] text-nv-ink2 flex-1">{c.label}</p>
+                  <select
+                    className="rounded-[8px] border border-nv-border px-2 py-1.5 text-[13px] bg-white w-[64px]"
+                    value={notas[c.chave]}
+                    onChange={(e) => setNotas((n) => ({ ...n, [c.chave]: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Status</label>
+            <select className="input bg-white" value={status} onChange={(e) => setStatus(e.target.value)}>
+              {Object.entries(STATUS_OPORTUNIDADE_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {status === "ARQUIVADA" && (
+            <div>
+              <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Motivo do arquivamento</label>
+              <textarea
+                className="input !h-16 resize-none"
+                value={motivoArquivamento}
+                onChange={(e) => setMotivoArquivamento(e.target.value)}
+                placeholder="Por que foi arquivada?"
+              />
+            </div>
+          )}
+        </div>
+
+        {erro && <p className="text-red-600 text-sm">{erro}</p>}
+
+        <div className="flex items-center gap-2.5 pt-2">
+          <button type="button" disabled={salvando} onClick={salvar} className="btn-primary flex-1 !py-2.5 text-sm">
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
+            Cancelar
+          </button>
+          {editando && (
+            <button
+              type="button"
+              onClick={excluir}
+              disabled={salvando}
+              className="text-[12.5px] text-nv-red underline whitespace-nowrap"
+            >
+              Excluir
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Fase 71 — atalho rápido "Registrar ideia", aberto a partir do Fechamento do Meu dia (ver
+// AbaMeuDia): só título + empresa, o resto fica pra depois (abrindo a oportunidade de novo aqui no
+// Banco de Oportunidades).
+function ModalRegistrarIdeiaRapido({ onFechar, onSalvar }) {
+  const [titulo, setTitulo] = useState("");
+  const [empresa, setEmpresa] = useState("ESPACO_RENASCER");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function salvar() {
+    if (!titulo.trim()) {
+      setErro("Dê um título pra ideia.");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    try {
+      await api.post("/dono/oportunidades", { titulo, empresa });
+      onSalvar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Não foi possível salvar.");
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Banco de Oportunidades</p>
+          <h3 className="font-sora font-semibold text-nv-ink text-lg">Registrar ideia</h3>
+          <p className="text-[12.5px] text-nv-muted2 mt-1">Só o essencial agora — a avaliação você faz depois, com calma.</p>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Título</label>
+          <input
+            className="input"
+            autoFocus
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            placeholder="Ex: Oferecer sessão em grupo"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Empresa</label>
+          <select className="input bg-white" value={empresa} onChange={(e) => setEmpresa(e.target.value)}>
+            {Object.entries(EMPRESA_OPORTUNIDADE_LABEL).map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </div>
+        {erro && <p className="text-red-600 text-sm">{erro}</p>}
+        <div className="flex items-center gap-2.5">
+          <button type="button" disabled={salvando} onClick={salvar} className="btn-primary flex-1 !py-2.5 text-sm">
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
+            Cancelar
+          </button>
         </div>
       </div>
     </div>

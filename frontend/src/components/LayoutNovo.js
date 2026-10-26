@@ -23,6 +23,29 @@ const ROTULO_CARGO = {
   FINANCEIRO: "Setor financeiro",
 };
 
+// Fase 71 — abre o "Bloco de notas" (anotações de aula, ver frontend/src/pages/dono/notas-popup.js)
+// numa JANELA POP-UP pequena e separada, não numa aba do próprio sistema: é pra ficar flutuando
+// do lado de uma aula/vídeo (ex: uma tela do Claude) enquanto o Dono assiste e vai anotando, sem
+// cobrir a tela inteira. `window.open` com `width`/`height` pequenos faz o navegador abrir essa
+// janela física nesse tamanho; como é o mesmo domínio, a sessão de login já vai autenticada.
+function abrirBlocoDeNotas() {
+  if (typeof window === "undefined") return;
+  window.open("/dono/notas-popup", "blocoNotasRenascer", "width=380,height=560,resizable=yes,alwaysRaised=yes");
+}
+
+// Ícone simples de bloco de notas (mesmo estilo de traço fino usado no resto dos ícones desta
+// barra, pra combinar com o sininho e o menu hambúrguer).
+function IconeBlocoNotas({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3h8l4 4v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+      <path d="M15 3v4h4" />
+      <line x1="8.5" y1="12" x2="15.5" y2="12" />
+      <line x1="8.5" y1="15.5" x2="13.5" y2="15.5" />
+    </svg>
+  );
+}
+
 // Avatar clicável pra trocar a própria foto — mesma lógica do Layout.js antigo (componente
 // AvatarEditavel), só com as cores adaptadas pro fundo escuro da barra lateral/cabeçalho novos.
 function AvatarEditavelNovo({ user }) {
@@ -255,6 +278,11 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
         <p className="text-[11.5px] text-[#8595AD] truncate">{cargoTexto}</p>
       </div>
       <span className="ml-auto flex items-center gap-2 shrink-0">
+        {user.role === "DONO" && (
+          <button onClick={abrirBlocoDeNotas} className="text-[#C3CFE2] hover:text-white p-1" title="Bloco de notas (janela pequena)">
+            <IconeBlocoNotas />
+          </button>
+        )}
         <SininhoNotificacoesNovo abrirParaCima />
         <button onClick={sair} className="text-[11px] text-[#8595AD] hover:text-white underline whitespace-nowrap">
           Sair
@@ -307,6 +335,11 @@ export default function LayoutNovo({ user, abas = [], abaAtiva, onTrocarAba, car
             <div className="font-sora font-semibold text-[14.5px] text-[#F2F6FC]">Espaço do Renascer</div>
           </div>
           <div className="flex items-center gap-3">
+            {user?.role === "DONO" && (
+              <button onClick={abrirBlocoDeNotas} className="text-[#C3CFE2] hover:text-white" title="Bloco de notas (janela pequena)">
+                <IconeBlocoNotas size={19} />
+              </button>
+            )}
             {user && <SininhoNotificacoesNovo />}
             <button onClick={sair} className="text-[12px] text-[#C3CFE2] underline">
               Sair
