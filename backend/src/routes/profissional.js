@@ -231,6 +231,18 @@ router.put("/agenda/:id/status", async (req, res) => {
         where: { id: pacote.id },
         data: { status: "AGUARDANDO_RENOVACAO", avisoPopupNivel: "VERMELHO", popupVisualizadoEm: null },
       });
+      // Fase 76 — acabou o pacote (ou era sessão única) e não tem próxima sessão pra gerar: o
+      // horário fixo dele libera NA HORA, mesmo sem ele ter renovado ainda. Antes isso só
+      // acontecia quando a profissional removia o cliente manualmente (clientes/:id/situacao,
+      // ação EXCLUIR) — na prática, o horário ficava "preso" pra sempre (bloqueando qualquer
+      // outro cliente nesse mesmo dia/hora, em qualquer semana futura) enquanto ele continuava
+      // simplesmente aparecendo em "Clientes" esperando renovar. O cliente continua em
+      // "Clientes" normalmente (só sai de lá quando removido de verdade) — só a Agenda/horário
+      // fixo é que fica livre de novo.
+      await prisma.disponibilidade.updateMany({
+        where: { profissionalId, ocupadoPorClienteId: pacote.clienteId },
+        data: { ocupadoPorClienteId: null, ocupadoEm: null },
+      });
     } else if (pacote.totalSessoes > 1 && restantes === 1) {
       await prisma.pacote.update({ where: { id: pacote.id }, data: { avisoPopupNivel: "AMARELO", popupVisualizadoEm: null } });
     }
@@ -751,16 +763,21 @@ router.post("/agenda", async (req, res) => {
     data: { profissionalId, clienteId, pacoteId: pacote.id, data: new Date(data), diaSemana, horaInicio, duracao: duracao || "MIN50" },
   });
 
-  const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
-  if (slotFixo) {
-    await prisma.disponibilidade.updateMany({
-      where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
-      data: { ocupadoPorClienteId: null, ocupadoEm: null },
-    });
-    await prisma.disponibilidade.update({
-      where: { id: slotFixo.id },
-      data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
-    });
+  // Fase 76: só trava como horário fixo recorrente quando o pacote dele tem mais de 1 sessão —
+  // sessão única não deve reservar o horário pras semanas seguintes (ver mesma lógica em
+  // atendente.js e utils/cadastrarCliente.js).
+  if (pacote.totalSessoes > 1) {
+    const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
+    if (slotFixo) {
+      await prisma.disponibilidade.updateMany({
+        where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+        data: { ocupadoPorClienteId: null, ocupadoEm: null },
+      });
+      await prisma.disponibilidade.update({
+        where: { id: slotFixo.id },
+        data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+      });
+    }
   }
 
   res.json(agendamento);

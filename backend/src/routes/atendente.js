@@ -415,17 +415,20 @@ router.post("/agendamentos", async (req, res) => {
   // Esse dia+horário passa a ser o horário FIXO desse cliente com essa profissional — toda
   // semana esse mesmo horário já é dele, e some da lista de livres pra qualquer outro cliente.
   // Se ele já tinha outro horário fixo com ela, libera o antigo (o fixo dele é sempre o mais
-  // recente que foi agendado).
-  const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
-  if (slotFixo) {
-    await prisma.disponibilidade.updateMany({
-      where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
-      data: { ocupadoPorClienteId: null, ocupadoEm: null },
-    });
-    await prisma.disponibilidade.update({
-      where: { id: slotFixo.id },
-      data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
-    });
+  // recente que foi agendado). Fase 76: só trava como recorrente quando o pacote dele tem mais
+  // de 1 sessão — sessão única não deve reservar o horário pras semanas seguintes.
+  if (pacote.totalSessoes > 1) {
+    const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
+    if (slotFixo) {
+      await prisma.disponibilidade.updateMany({
+        where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+        data: { ocupadoPorClienteId: null, ocupadoEm: null },
+      });
+      await prisma.disponibilidade.update({
+        where: { id: slotFixo.id },
+        data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+      });
+    }
   }
 
   // Avisa a profissional que uma nova sessão foi marcada pra ela

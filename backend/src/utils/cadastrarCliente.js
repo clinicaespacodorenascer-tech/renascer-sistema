@@ -3,6 +3,19 @@ const prisma = require("../lib/prisma");
 const { valorDoPlano, calcularRepasse, transacaoDuplicada, parseValorMonetario } = require("./financeiro");
 const { notificar, notificarDonos, notificarAtendentes } = require("./notificar");
 const { gerarEmailAutomatico } = require("./gerarLogin");
+const { enviarEmail } = require("./email");
+
+// Fase 74 — só pra escrever o dia da semana por extenso no e-mail de aviso de paciente novo
+// (o enum no banco guarda em maiúsculo sem acento, ex: "SEGUNDA").
+const DIA_SEMANA_EXTENSO = {
+  SEGUNDA: "segunda-feira",
+  TERCA: "terça-feira",
+  QUARTA: "quarta-feira",
+  QUINTA: "quinta-feira",
+  SEXTA: "sexta-feira",
+  SABADO: "sábado",
+  DOMINGO: "domingo",
+};
 
 const DIAS_SEMANA_JS = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
@@ -52,24 +65,29 @@ async function gerarAgendamentosRecorrentes({ profissionalId, clienteId, pacoteI
       : null;
 
   // Trava o horário fixo recorrente (além das sessões já lançadas, garante que esse dia+hora
-  // continua reservado pra ele toda semana daqui pra frente).
-  const slotFixo = await prisma.disponibilidade.findFirst({
-    where: { profissionalId, diaSemana: diaSemanaFixo, horaInicio: horaFixa, ativo: true },
-  });
-  if (slotFixo) {
-    if (slotFixo.ocupadoPorClienteId && slotFixo.ocupadoPorClienteId !== clienteId) {
-      avisoAgenda =
-        (avisoAgenda ? avisoAgenda + " " : "") +
-        "Atenção: esse horário já consta como fixo de outro cliente — confira se não vai bater com a sessão dele.";
-    } else {
-      await prisma.disponibilidade.updateMany({
-        where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
-        data: { ocupadoPorClienteId: null, ocupadoEm: null },
-      });
-      await prisma.disponibilidade.update({
-        where: { id: slotFixo.id },
-        data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
-      });
+  // continua reservado pra ele toda semana daqui pra frente) — SÓ quando é pacote de verdade
+  // (mais de 1 sessão). Fase 76: sessão única não é recorrente — ela ocupa só a UM agendamento,
+  // numa data específica, e não deve travar esse dia/horário nas semanas seguintes (antes
+  // travava do mesmo jeito que um pacote, e esse horário nunca mais liberava pra outro cliente).
+  if (quantidade > 1) {
+    const slotFixo = await prisma.disponibilidade.findFirst({
+      where: { profissionalId, diaSemana: diaSemanaFixo, horaInicio: horaFixa, ativo: true },
+    });
+    if (slotFixo) {
+      if (slotFixo.ocupadoPorClienteId && slotFixo.ocupadoPorClienteId !== clienteId) {
+        avisoAgenda =
+          (avisoAgenda ? avisoAgenda + " " : "") +
+          "Atenção: esse horário já consta como fixo de outro cliente — confira se não vai bater com a sessão dele.";
+      } else {
+        await prisma.disponibilidade.updateMany({
+          where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+          data: { ocupadoPorClienteId: null, ocupadoEm: null },
+        });
+        await prisma.disponibilidade.update({
+          where: { id: slotFixo.id },
+          data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+        });
+      }
     }
   }
 
@@ -145,7 +163,7 @@ async function cadastrarClienteComProfissional({
 
   const profissional = await prisma.profissional.findUnique({
     where: { id: profissionalAtualId },
-    include: { user: { select: { nome: true } } },
+    include: { user: { select: { nome: true, email: true } } }, // Fase 74 — email entra na seleção pra poder avisar por e-mail também, não só pelo sino/push
   });
   if (!profissional) {
     const erro = new Error("Profissional não encontrada.");
@@ -237,6 +255,25 @@ async function cadastrarClienteComProfissional({
     referenciaTipo: "CLIENTE",
     referenciaId: clienteId,
   });
+
+  // Fase 74 — além do sino e do push (que só avisam quem já está com o app aberto/instalado), manda
+  // também por e-mail: é o canal que chega em qualquer caixa de entrada, mesmo pra quem não entra
+  // no sistema todo dia — pedido do Dono, pra não deixar paciente esperando aceite sem ninguém
+  // perceber. Usa o mesmo enviarEmail (grátis via Gmail) que já manda lembrete de sessão/renovação.
+  const horarioTexto =
+    diaSemanaFixo && horaFixa ? `${DIA_SEMANA_EXTENSO[diaSemanaFixo] || diaSemanaFixo} às ${horaFixa}` : "a combinar com a clínica";
+  await enviarEmail(
+    profissional.user.email,
+    "Novo paciente aguardando seu aceite — Espaço do Renascer",
+    `Oba, novo paciente na área!\n\n` +
+      `Olá, ${profissional.user.nome}, tudo bem?\n\n` +
+      `Nome do paciente: ${nome}\n` +
+      `WhatsApp: ${telefone || "não informado"}\n` +
+      `Horário: ${horarioTexto}\n` +
+      `Quantidade de sessões: ${totalSessoes || "a combinar"}\n` +
+      `Profissional: ${profissional.user.nome}\n\n` +
+      `Já pode entrar no sistema e dar o aceite desse paciente novo, pra contar certinho no seu repasse!`
+  );
 
   return { user, cliente: user.cliente, senha, solicitacao };
 }
