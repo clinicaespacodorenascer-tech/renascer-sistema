@@ -34,6 +34,11 @@ enum DiaSemana {
   DOMINGO
 }
 
+enum TurnoSite {
+  MANHA
+  TARDE
+}
+
 enum StatusAgendamento {
   AGENDADO
   CONFIRMADO
@@ -328,6 +333,8 @@ model Profissional {
   tarefasCriadas   Tarefa[]             @relation("TarefasCriadasPeloProfissional")
   solicitacoesNovoPaciente SolicitacaoNovoPaciente[]
   perfilSite       PerfilSiteProfissional?
+  rodizioSite      RodizioSiteProfissional[]
+  excecoesRodizioSite RodizioSiteExcecao[]
 
   criadoEm     DateTime @default(now())
 
@@ -370,6 +377,40 @@ model PerfilSiteProfissional {
   atualizadoEm DateTime @updatedAt
 
   @@map("perfis_site_profissionais")
+}
+
+// Fase 75-B — rodízio do site: padrão semanal fixo de quem aparece em cada turno (manhã/tarde)
+// de cada dia da semana. Quem NUNCA foi colocado em nenhum rodízio continua aparecendo no site
+// sempre (comportamento antigo, preservado) — o filtro por dia/turno só vale pra quem o Dono de
+// fato colocou numa escala aqui. O site troca de manhã pra tarde sozinho ao meio-dia (horário de
+// Brasília) — ver GET /publico/site/profissionais.
+model RodizioSiteProfissional {
+  id             String       @id @default(cuid())
+  profissionalId String
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+  diaSemana      DiaSemana
+  turno          TurnoSite
+
+  criadoEm DateTime @default(now())
+
+  @@unique([profissionalId, diaSemana, turno])
+  @@map("rodizio_site_profissionais")
+}
+
+// Tira uma profissional do site só numa data específica (ex: ela avisou que não vai atender
+// hoje), sem tocar no padrão semanal de RodizioSiteProfissional — na data seguinte ela volta a
+// aparecer normalmente. Vale tanto pra quem está numa escala fixa quanto pra quem nunca foi
+// colocada em nenhuma (sempre aparece por padrão): a exceção sempre tira do site na data dela.
+model RodizioSiteExcecao {
+  id             String       @id @default(cuid())
+  profissionalId String
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+  data           DateTime     @db.Date
+
+  criadoEm DateTime @default(now())
+
+  @@unique([profissionalId, data])
+  @@map("rodizio_site_excecoes")
 }
 
 model Disponibilidade {

@@ -1802,6 +1802,101 @@ router.post("/site/profissionais/importar-dados-atuais", async (req, res) => {
   res.json(resultado);
 });
 
+// ======================================================================================
+// Fase 75-B — Rodízio do site: escala semanal fixa (quem atende de manhã/tarde em cada dia)
+// + exceções pontuais (tirar alguém do site só numa data específica, sem bagunçar a escala das
+// próximas semanas). Ver RodizioSiteProfissional/RodizioSiteExcecao em schema.prisma e o filtro
+// aplicado em GET /publico/site/profissionais.
+// ======================================================================================
+
+const DIAS_SEMANA_RODIZIO = ["SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO", "DOMINGO"];
+
+// Devolve a escala semanal inteira (agrupada por dia/turno, já com os nomes pra montar a grade
+// na tela) + as exceções de hoje em diante (passado não interessa mais pra quem tá organizando).
+router.get("/site/rodizio", async (req, res) => {
+  const [perfis, atribuicoes, excecoes] = await Promise.all([
+    prisma.perfilSiteProfissional.findMany({
+      where: { profissional: { slugSitePublico: { not: null } } },
+      select: { nomeExibicao: true, cargoExibicao: true, profissional: { select: { id: true } } },
+      orderBy: { ordem: "asc" },
+    }),
+    prisma.rodizioSiteProfissional.findMany(),
+    prisma.rodizioSiteExcecao.findMany({
+      // "Hoje" em horário de Brasília (mesmo cálculo usado em publico.js) — sem isso, entre 21h
+      // e meia-noite (Brasília) o relógio UTC do servidor já marca o dia seguinte, e a exceção
+      // de hoje sumiria da lista um pouco antes da hora.
+      where: { data: { gte: new Date(new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)) } },
+      include: { profissional: { select: { perfilSite: { select: { nomeExibicao: true } } } } },
+      orderBy: { data: "asc" },
+    }),
+  ]);
+
+  const profissionais = perfis.map((p) => ({ id: p.profissional.id, nome: p.nomeExibicao, cargo: p.cargoExibicao }));
+
+  const escala = {};
+  for (const dia of DIAS_SEMANA_RODIZIO) escala[dia] = { manha: [], tarde: [] };
+  for (const a of atribuicoes) {
+    if (!escala[a.diaSemana]) continue; // defensivo — enum sempre bate, mas não custa
+    escala[a.diaSemana][a.turno === "MANHA" ? "manha" : "tarde"].push(a.profissionalId);
+  }
+
+  res.json({
+    profissionais,
+    escala,
+    excecoes: excecoes.map((e) => ({
+      id: e.id,
+      profissionalId: e.profissionalId,
+      nome: e.profissional.perfilSite?.nomeExibicao || "(sem perfil de site)",
+      data: e.data.toISOString().slice(0, 10),
+    })),
+  });
+});
+
+// Substitui a escala de UM dia da semana inteiro (manhã + tarde), recebendo a lista final de
+// quem fica em cada turno naquele dia — mais simples e seguro do que ficar togglando célula por
+// célula, e o Dono salva um dia da vez na tela.
+router.put("/site/rodizio/:diaSemana", async (req, res) => {
+  const diaSemana = req.params.diaSemana;
+  if (!DIAS_SEMANA_RODIZIO.includes(diaSemana)) return res.status(400).json({ erro: "Dia da semana inválido." });
+
+  const { manha, tarde } = req.body;
+  if (!Array.isArray(manha) || !Array.isArray(tarde)) {
+    return res.status(400).json({ erro: "Envie as listas de profissionais de manhã e de tarde." });
+  }
+
+  await prisma.$transaction([
+    prisma.rodizioSiteProfissional.deleteMany({ where: { diaSemana } }),
+    prisma.rodizioSiteProfissional.createMany({
+      data: [
+        ...manha.map((profissionalId) => ({ profissionalId, diaSemana, turno: "MANHA" })),
+        ...tarde.map((profissionalId) => ({ profissionalId, diaSemana, turno: "TARDE" })),
+      ],
+    }),
+  ]);
+
+  res.json({ ok: true });
+});
+
+// Tira uma profissional do site só numa data (ex: ela avisou que não vai atender hoje). Se já
+// existir exceção pra essa profissional nessa data, não dá erro — já está removida, segue o jogo.
+router.post("/site/rodizio/excecoes", async (req, res) => {
+  const { profissionalId, data } = req.body;
+  if (!profissionalId || !data) return res.status(400).json({ erro: "Informe a profissional e a data." });
+
+  await prisma.rodizioSiteExcecao.upsert({
+    where: { profissionalId_data: { profissionalId, data: new Date(data) } },
+    update: {},
+    create: { profissionalId, data: new Date(data) },
+  });
+  res.json({ ok: true });
+});
+
+// Desfaz a remoção pontual (ela volta a aparecer no site normalmente a partir de agora).
+router.delete("/site/rodizio/excecoes/:id", async (req, res) => {
+  await prisma.rodizioSiteExcecao.deleteMany({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
 // ---------- Fechamento de caixa ----------
 // Dia a dia: lançamentos soltos (entrada/saída que não é pagamento de cliente) + conferência
 // contra o saldo informado do banco/Pix.

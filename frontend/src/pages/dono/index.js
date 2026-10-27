@@ -7750,6 +7750,7 @@ function ModalRegistrarIdeiaRapido({ onFechar, onSalvar }) {
 const GENERO_LABEL_SITE = { mulher: "Mulher", homem: "Homem" };
 
 function AbaSite() {
+  const [subAba, setSubAba] = useState("perfis"); // "perfis" | "rodizio" — Fase 75-B
   const [lista, setLista] = useState(null);
   const [editandoId, setEditandoId] = useState(null); // id do Profissional sendo editado no modal
   const [importando, setImportando] = useState(false);
@@ -7833,12 +7834,33 @@ function AbaSite() {
           <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Site</h1>
           <p className="text-nv-muted text-sm mt-0.5">Quem aparece no site público e com qual foto/descrição — sem precisar mexer em código.</p>
         </div>
-        <button type="button" className="btn-secondary text-sm" onClick={importarDadosAtuais} disabled={importando}>
-          {importando ? "Importando..." : "Importar dados atuais do site"}
+        {subAba === "perfis" && (
+          <button type="button" className="btn-secondary text-sm" onClick={importarDadosAtuais} disabled={importando}>
+            {importando ? "Importando..." : "Importar dados atuais do site"}
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-1.5 mb-4">
+        <button
+          type="button"
+          onClick={() => setSubAba("perfis")}
+          className={`text-xs font-semibold px-3.5 py-1.5 rounded-full ${subAba === "perfis" ? "bg-nv-ink text-white" : "bg-nv-bg text-nv-muted3"}`}
+        >
+          Perfis
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubAba("rodizio")}
+          className={`text-xs font-semibold px-3.5 py-1.5 rounded-full ${subAba === "rodizio" ? "bg-nv-ink text-white" : "bg-nv-bg text-nv-muted3"}`}
+        >
+          Rodízio
         </button>
       </div>
 
-      {resultadoImportacao && (
+      {subAba === "rodizio" && <RodizioSite />}
+
+      {subAba === "perfis" && resultadoImportacao && (
         <div className="nv-card mb-4 text-sm space-y-1">
           {resultadoImportacao.importados.length > 0 && (
             <p className="text-nv-green">Importados agora: {resultadoImportacao.importados.join(", ")}</p>
@@ -7855,6 +7877,7 @@ function AbaSite() {
         </div>
       )}
 
+      {subAba === "perfis" && (
       <div className="nv-card-flat px-5">
         <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-4 pb-1.5">No site, em ordem de exibição ({comPerfil.length})</p>
         {comPerfil.length === 0 && <p className="text-sm text-nv-muted py-3">Ninguém publicado ainda.</p>}
@@ -7919,6 +7942,7 @@ function AbaSite() {
           </div>
         ))}
       </div>
+      )}
 
       {editando && (
         <ModalPerfilSite
@@ -7930,6 +7954,182 @@ function AbaSite() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Fase 75-B — rodízio do site: escala semanal fixa (manhã/tarde por dia) + remoção pontual de um
+// dia específico. Ver rotas /dono/site/rodizio* em dono.js e o filtro aplicado em
+// GET /publico/site/profissionais.
+const DIAS_RODIZIO = [
+  { id: "SEGUNDA", label: "Seg" },
+  { id: "TERCA", label: "Ter" },
+  { id: "QUARTA", label: "Qua" },
+  { id: "QUINTA", label: "Qui" },
+  { id: "SEXTA", label: "Sex" },
+  { id: "SABADO", label: "Sáb" },
+  { id: "DOMINGO", label: "Dom" },
+];
+
+function diaDeHojeRodizio() {
+  const mapaJs = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+  return mapaJs[new Date().getDay()];
+}
+
+function RodizioSite() {
+  const [dados, setDados] = useState(null);
+  const [diaSelecionado, setDiaSelecionado] = useState(diaDeHojeRodizio());
+  const [manha, setManha] = useState([]);
+  const [tarde, setTarde] = useState([]);
+  const [salvando, setSalvando] = useState(false);
+  const [novaExcecao, setNovaExcecao] = useState({ profissionalId: "", data: new Date().toISOString().slice(0, 10) });
+
+  async function carregar() {
+    const { data } = await api.get("/dono/site/rodizio");
+    setDados(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  // Troca o rascunho de manhã/tarde pra refletir o dia escolhido — sempre a partir do que já
+  // está salvo, nunca mistura um dia com outro.
+  useEffect(() => {
+    if (!dados) return;
+    setManha(dados.escala[diaSelecionado]?.manha || []);
+    setTarde(dados.escala[diaSelecionado]?.tarde || []);
+  }, [dados, diaSelecionado]);
+
+  function alternar(idsAtuais, setLista, profissionalId) {
+    setLista(idsAtuais.includes(profissionalId) ? idsAtuais.filter((id) => id !== profissionalId) : [...idsAtuais, profissionalId]);
+  }
+
+  async function salvarDia() {
+    setSalvando(true);
+    try {
+      await api.put(`/dono/site/rodizio/${diaSelecionado}`, { manha, tarde });
+      await carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Não deu pra salvar a escala desse dia.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function adicionarExcecao() {
+    if (!novaExcecao.profissionalId) {
+      alert("Escolha a profissional que não vai atender nesse dia.");
+      return;
+    }
+    try {
+      await api.post("/dono/site/rodizio/excecoes", novaExcecao);
+      setNovaExcecao((atual) => ({ ...atual, profissionalId: "" }));
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Não deu pra marcar essa remoção.");
+    }
+  }
+
+  async function desfazerExcecao(id) {
+    await api.delete(`/dono/site/rodizio/excecoes/${id}`);
+    carregar();
+  }
+
+  if (!dados) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  const diaLabel = DIAS_RODIZIO.find((d) => d.id === diaSelecionado)?.label;
+
+  return (
+    <div className="space-y-5">
+      <p className="text-nv-muted text-sm">
+        Quem aparece de manhã e quem aparece de tarde, em cada dia da semana — a escala se repete toda semana sozinha, e o site troca de manhã
+        pra tarde automaticamente ao meio-dia. Quem ainda não foi colocada em nenhum dia aqui continua aparecendo no site sempre, nos dois
+        turnos, até você organizar a escala dela.
+      </p>
+
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {DIAS_RODIZIO.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            onClick={() => setDiaSelecionado(d.id)}
+            className={`text-xs font-semibold px-3.5 py-1.5 rounded-full whitespace-nowrap shrink-0 ${
+              diaSelecionado === d.id ? "bg-nv-ink text-white" : "bg-nv-bg text-nv-muted3"
+            }`}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="nv-card-flat px-4 pt-3 pb-1">
+          <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pb-1.5">Manhã</p>
+          {dados.profissionais.length === 0 && <p className="text-sm text-nv-muted py-2">Ninguém publicado no site ainda.</p>}
+          {dados.profissionais.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 py-1.5 text-sm text-nv-ink2 border-t border-nv-borderLight">
+              <input type="checkbox" checked={manha.includes(p.id)} onChange={() => alternar(manha, setManha, p.id)} />
+              {p.nome}
+            </label>
+          ))}
+        </div>
+        <div className="nv-card-flat px-4 pt-3 pb-1">
+          <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pb-1.5">Tarde</p>
+          {dados.profissionais.length === 0 && <p className="text-sm text-nv-muted py-2">Ninguém publicado no site ainda.</p>}
+          {dados.profissionais.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 py-1.5 text-sm text-nv-ink2 border-t border-nv-borderLight">
+              <input type="checkbox" checked={tarde.includes(p.id)} onChange={() => alternar(tarde, setTarde, p.id)} />
+              {p.nome}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button type="button" className="btn-primary text-sm" onClick={salvarDia} disabled={salvando}>
+        {salvando ? "Salvando..." : `Salvar escala de ${diaLabel}`}
+      </button>
+
+      <div className="nv-card-flat px-4 py-3">
+        <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide mb-2">Remover alguém só de um dia específico</p>
+        <p className="text-xs text-nv-muted3 mb-3">
+          Pra quando uma profissional avisa que não vai atender num dia — tira ela do site só nesse dia, sem mudar a escala semanal.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <select
+            className="input !w-auto"
+            value={novaExcecao.profissionalId}
+            onChange={(e) => setNovaExcecao((a) => ({ ...a, profissionalId: e.target.value }))}
+          >
+            <option value="">Escolha a profissional...</option>
+            {dados.profissionais.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nome}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            className="input !w-auto"
+            value={novaExcecao.data}
+            onChange={(e) => setNovaExcecao((a) => ({ ...a, data: e.target.value }))}
+          />
+          <button type="button" className="btn-secondary text-xs !py-1.5 !px-3" onClick={adicionarExcecao}>
+            Remover desse dia
+          </button>
+        </div>
+
+        {dados.excecoes.length === 0 && <p className="text-sm text-nv-muted">Nenhuma remoção pontual marcada.</p>}
+        {dados.excecoes.map((e) => (
+          <div key={e.id} className="flex items-center gap-3 py-1.5 border-t border-nv-borderLight text-sm">
+            <span className="flex-1 text-nv-ink2">
+              {e.nome} — {e.data.split("-").reverse().join("/")}
+            </span>
+            <button type="button" className="text-xs font-semibold text-nv-blue whitespace-nowrap" onClick={() => desfazerExcecao(e.id)}>
+              Desfazer
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

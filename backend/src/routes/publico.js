@@ -106,13 +106,50 @@ function formatarPerfilPublico(perfil) {
   };
 }
 
+// Fase 75-B — dia da semana e turno "agora", em horário de Brasília (mesmo cálculo de
+// agoraHHmm acima) — o site troca sozinho de manhã pra tarde ao meio-dia.
+const DIAS_SEMANA_JS_RODIZIO = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+function diaETurnoAtualBrasil() {
+  const agoraBrasil = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return {
+    diaSemana: DIAS_SEMANA_JS_RODIZIO[agoraBrasil.getUTCDay()],
+    turno: agoraBrasil.getUTCHours() < 12 ? "MANHA" : "TARDE",
+    dataHojeISO: agoraBrasil.toISOString().slice(0, 10),
+  };
+}
+
 router.get("/site/profissionais", async (req, res) => {
-  const perfis = await prisma.perfilSiteProfissional.findMany({
-    where: { ativo: true, profissional: { slugSitePublico: { not: null }, user: { ativo: true } } },
-    select: { ...CAMPOS_PUBLICOS_PERFIL_SITE, profissional: { select: { slugSitePublico: true } } },
-    orderBy: { ordem: "asc" },
+  const { diaSemana, turno, dataHojeISO } = diaETurnoAtualBrasil();
+
+  const [perfis, rodizioDeHoje, excecoesDeHoje] = await Promise.all([
+    prisma.perfilSiteProfissional.findMany({
+      where: { ativo: true, profissional: { slugSitePublico: { not: null }, user: { ativo: true } } },
+      select: { ...CAMPOS_PUBLICOS_PERFIL_SITE, profissional: { select: { id: true, slugSitePublico: true } } },
+      orderBy: { ordem: "asc" },
+    }),
+    // Todo mundo que já está configurado em ALGUM rodízio (de qualquer dia/turno) — usado só
+    // pra saber quem "participa" do sistema de rodízio (ver filtro abaixo).
+    prisma.rodizioSiteProfissional.findMany({ select: { profissionalId: true, diaSemana: true, turno: true } }),
+    prisma.rodizioSiteExcecao.findMany({ where: { data: new Date(dataHojeISO) }, select: { profissionalId: true } }),
+  ]);
+
+  const participaDoRodizio = new Set(rodizioDeHoje.map((r) => r.profissionalId));
+  const estaNoRodizioDeHoje = new Set(
+    rodizioDeHoje.filter((r) => r.diaSemana === diaSemana && r.turno === turno).map((r) => r.profissionalId)
+  );
+  const removidaHoje = new Set(excecoesDeHoje.map((e) => e.profissionalId));
+
+  const visiveis = perfis.filter((perfil) => {
+    const profissionalId = perfil.profissional.id;
+    if (removidaHoje.has(profissionalId)) return false; // exceção pontual sempre tira do site
+    // Quem nunca foi colocada em nenhum rodízio continua aparecendo sempre (comportamento de
+    // antes do rodízio existir) — o filtro por dia/turno só vale pra quem o Dono já organizou
+    // numa escala.
+    if (!participaDoRodizio.has(profissionalId)) return true;
+    return estaNoRodizioDeHoje.has(profissionalId);
   });
-  res.json(perfis.map(formatarPerfilPublico));
+
+  res.json(visiveis.map(formatarPerfilPublico));
 });
 
 router.get("/site/profissionais/:slug", async (req, res) => {
