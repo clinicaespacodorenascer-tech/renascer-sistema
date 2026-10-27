@@ -339,10 +339,16 @@
 
     var HOME_ANCHORS = ['sobre','missao','como-funciona','compromisso','faq'];
 
-    // Fase 78: botão flutuante (FAB) — muda de cara dependendo da tela atual.
+    // Fase 78: botões flutuantes (FAB) — mudam de cara dependendo da tela atual.
     function atualizarFabFlutuante(){
       var primaryBtn = document.getElementById('fabPrimaryBtn');
       var primaryLabel = document.getElementById('fabPrimaryLabel');
+      var whatsappBtn = document.getElementById('fabWhatsappBtn');
+
+      if (whatsappBtn) {
+        whatsappBtn.hidden = (activeViewKey !== 'lista');
+      }
+
       if (!primaryBtn || !primaryLabel) return;
       if (activeViewKey === 'lista') {
         primaryBtn.hidden = true;
@@ -693,7 +699,7 @@
        específica) por turno + prioridade. Implementação própria, independente da do
        #bookingModal, pra não disputar os mesmos ids/seletores globais (#modalDots,
        #modalBackBtn, #modalNextBtn, .modal-step) usados pelo agendamento normal. Só é aberto a
-       partir do botão da lista de profissionais (#listaWhatsappBtn). */
+       partir do botão flutuante de WhatsApp (#fabWhatsappBtn), que só aparece na lista. */
     var genericoModal = document.getElementById('genericoModal');
 
     if (genericoModal) {
@@ -805,9 +811,9 @@
         document.body.style.overflow = '';
       }
 
-      var listaWhatsappBtn = document.getElementById('listaWhatsappBtn');
-      if (listaWhatsappBtn) {
-        listaWhatsappBtn.addEventListener('click', abrirModalGenerico);
+      var fabWhatsappBtn = document.getElementById('fabWhatsappBtn');
+      if (fabWhatsappBtn) {
+        fabWhatsappBtn.addEventListener('click', abrirModalGenerico);
       }
 
       var genericoCloseBtn = document.getElementById('genericoCloseBtn');
