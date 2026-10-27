@@ -961,11 +961,13 @@ function Profissionais() {
   }, []);
 
   const buscaLower = busca.trim().toLowerCase();
-  const filtrada = lista.filter((p) => {
-    if (!buscaLower) return true;
-    const alvo = (p.user.nome + " " + (p.especialidades || []).join(" ")).toLowerCase();
-    return alvo.includes(buscaLower);
-  });
+  const filtrada = lista
+    .filter((p) => {
+      if (!buscaLower) return true;
+      const alvo = (p.user.nome + " " + (p.especialidades || []).join(" ")).toLowerCase();
+      return alvo.includes(buscaLower);
+    })
+    .sort((a, b) => a.user.nome.localeCompare(b.user.nome, "pt-BR")); // ordem alfabética
 
   const selecionada = filtrada.find((p) => p.id === selecionadaId) || filtrada[0];
   const presencaSel = selecionada ? formatarPresenca(selecionada.user.ultimoAcessoEm) : null;
@@ -1013,12 +1015,16 @@ function Profissionais() {
               >
                 <div className="flex items-center gap-2.5">
                   <div className="relative w-11 h-11 shrink-0">
-                    <div
-                      className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white"
-                      style={{ background: cor }}
-                    >
-                      {iniciais}
-                    </div>
+                    {p.user.fotoUrl ? (
+                      <img src={p.user.fotoUrl} alt="" className="w-11 h-11 rounded-full object-cover" />
+                    ) : (
+                      <div
+                        className="w-11 h-11 rounded-full flex items-center justify-center font-sora font-bold text-sm text-white"
+                        style={{ background: cor }}
+                      >
+                        {iniciais}
+                      </div>
+                    )}
                     <span
                       className={`nv-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-white ${presenca.online ? "nv-dot-ok" : ""}`}
                       style={!presenca.online ? { background: "#B7C1D1" } : undefined}
@@ -1057,17 +1063,21 @@ function Profissionais() {
           <div className="flex-[1_1_320px]">
             <div className="nv-card flex flex-col gap-4">
               <div className="flex items-center gap-3">
-                <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-lg text-white shrink-0"
-                  style={{ background: NV_CORES_AVATAR[filtrada.indexOf(selecionada) % NV_CORES_AVATAR.length] }}
-                >
-                  {selecionada.user.nome
-                    .split(" ")
-                    .slice(0, 2)
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase()}
-                </div>
+                {selecionada.user.fotoUrl ? (
+                  <img src={selecionada.user.fotoUrl} alt="" className="w-14 h-14 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div
+                    className="w-14 h-14 rounded-full flex items-center justify-center font-sora font-bold text-lg text-white shrink-0"
+                    style={{ background: NV_CORES_AVATAR[filtrada.indexOf(selecionada) % NV_CORES_AVATAR.length] }}
+                  >
+                    {selecionada.user.nome
+                      .split(" ")
+                      .slice(0, 2)
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <p className="font-sora font-bold text-base text-nv-ink">{selecionada.user.nome}</p>
                   <p className="text-xs text-nv-muted3 mt-0.5">{selecionada.titulo}</p>
