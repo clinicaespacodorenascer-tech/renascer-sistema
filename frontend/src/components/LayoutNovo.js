@@ -171,6 +171,26 @@ function SininhoNotificacoesNovo({ abrirParaCima = false }) {
     carregarTotal();
   }
 
+  // Fase 77 — antes só dava pra marcar uma por uma (clicando em cada aviso), e os avisos já
+  // lidos continuavam na lista do mesmo jeito que os novos — misturados, sem nenhuma diferença
+  // visual forte. Resultado: quem tinha várias notificações acumuladas achava que elas "ficavam
+  // se repetindo" porque reabria o sino e via a mesma pilha de novo. Agora: um botão marca tudo
+  // de uma vez (reaproveita a rota que já existia no backend, usada até aqui só no pop-up de
+  // entrada do Cliente) e os não lidos sempre aparecem primeiro, com destaque mais forte.
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
+  async function marcarTodasLidas() {
+    setMarcandoTodas(true);
+    try {
+      await api.put("/comum/notificacoes/marcar-todas-lidas");
+      setLista((prev) => prev.map((n) => ({ ...n, lida: true })));
+      setTotalNaoLidas(0);
+    } finally {
+      setMarcandoTodas(false);
+    }
+  }
+
+  const listaOrdenada = [...lista].sort((a, b) => Number(a.lida) - Number(b.lida));
+
   async function ativarNotificacoes() {
     setAtivando(true);
     setAvisoPush("");
@@ -205,32 +225,47 @@ function SininhoNotificacoesNovo({ abrirParaCima = false }) {
             abrirParaCima ? "left-0 bottom-full mb-2" : "right-0 top-full mt-2"
           }`}
         >
-          <div className="p-3 border-b border-black/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white">
+          <div className="p-3 border-b border-black/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white flex-wrap">
             <span className="font-semibold text-sm">Notificações</span>
-            {statusPush !== "granted" && (
-              <button
-                type="button"
-                onClick={ativarNotificacoes}
-                disabled={ativando}
-                className="text-xs text-nv-blue underline whitespace-nowrap disabled:opacity-50"
-              >
-                {ativando ? "Ativando..." : "Ativar no aparelho"}
-              </button>
-            )}
-            {statusPush === "granted" && <span className="text-[11px] text-green-700">Push ativado ✓</span>}
+            <div className="flex items-center gap-2.5">
+              {totalNaoLidas > 0 && (
+                <button
+                  type="button"
+                  onClick={marcarTodasLidas}
+                  disabled={marcandoTodas}
+                  className="text-xs text-nv-blue underline whitespace-nowrap disabled:opacity-50"
+                >
+                  {marcandoTodas ? "Marcando..." : "Marcar todas como lidas"}
+                </button>
+              )}
+              {statusPush !== "granted" && (
+                <button
+                  type="button"
+                  onClick={ativarNotificacoes}
+                  disabled={ativando}
+                  className="text-xs text-nv-blue underline whitespace-nowrap disabled:opacity-50"
+                >
+                  {ativando ? "Ativando..." : "Ativar no aparelho"}
+                </button>
+              )}
+              {statusPush === "granted" && <span className="text-[11px] text-green-700 whitespace-nowrap">Push ativado ✓</span>}
+            </div>
           </div>
           {avisoPush && <p className="px-3 py-2 text-xs text-red-600 border-b border-black/[0.06]">{avisoPush}</p>}
           <div className="p-2 space-y-1.5">
-            {lista.map((n) => (
+            {listaOrdenada.map((n) => (
               <button
                 key={n.id}
                 type="button"
                 onClick={() => marcarLida(n.id)}
                 className={`w-full text-left border rounded-lg p-2.5 transition-colors ${
-                  n.lida ? "border-black/10" : "border-nv-blue/40 bg-nv-blue/5"
+                  n.lida ? "border-black/10 opacity-55" : "border-nv-blue/40 bg-nv-blue/5"
                 }`}
               >
-                <p className="font-medium text-xs">{n.titulo}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-xs">{n.titulo}</p>
+                  {!n.lida && <span className="w-1.5 h-1.5 rounded-full bg-nv-blue shrink-0" />}
+                </div>
                 <p className="text-xs text-black/60 mt-0.5">{n.mensagem}</p>
               </button>
             ))}

@@ -115,6 +115,23 @@ function SininhoNotificacoes() {
     carregarTotal();
   }
 
+  // Fase 77 — mesmo ajuste do LayoutNovo.js: botão "marcar todas" (reaproveitando a rota que já
+  // existia no backend) + não lidas sempre primeiro, pra parar de parecer que os avisos "ficam se
+  // repetindo" quando na real é só o mesmo acúmulo antigo reaparecendo toda vez que abre o sino.
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
+  async function marcarTodasLidas() {
+    setMarcandoTodas(true);
+    try {
+      await api.put("/comum/notificacoes/marcar-todas-lidas");
+      setLista((prev) => prev.map((n) => ({ ...n, lida: true })));
+      setTotalNaoLidas(0);
+    } finally {
+      setMarcandoTodas(false);
+    }
+  }
+
+  const listaOrdenada = [...lista].sort((a, b) => Number(a.lida) - Number(b.lida));
+
   async function ativarNotificacoes() {
     setAtivando(true);
     setAvisoPush("");
@@ -145,32 +162,47 @@ function SininhoNotificacoes() {
 
       {aberto && (
         <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-renascer-ink/10 z-40 max-h-[70vh] overflow-y-auto">
-          <div className="p-3 border-b border-renascer-ink/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white">
+          <div className="p-3 border-b border-renascer-ink/[0.06] flex items-center justify-between gap-2 sticky top-0 bg-white flex-wrap">
             <span className="font-semibold text-sm">Notificações</span>
-            {statusPush !== "granted" && (
-              <button
-                type="button"
-                onClick={ativarNotificacoes}
-                disabled={ativando}
-                className="text-xs text-renascer underline whitespace-nowrap disabled:opacity-50"
-              >
-                {ativando ? "Ativando..." : "Ativar no aparelho"}
-              </button>
-            )}
-            {statusPush === "granted" && <span className="text-[11px] text-green-700">Push ativado ✓</span>}
+            <div className="flex items-center gap-2.5">
+              {totalNaoLidas > 0 && (
+                <button
+                  type="button"
+                  onClick={marcarTodasLidas}
+                  disabled={marcandoTodas}
+                  className="text-xs text-renascer underline whitespace-nowrap disabled:opacity-50"
+                >
+                  {marcandoTodas ? "Marcando..." : "Marcar todas como lidas"}
+                </button>
+              )}
+              {statusPush !== "granted" && (
+                <button
+                  type="button"
+                  onClick={ativarNotificacoes}
+                  disabled={ativando}
+                  className="text-xs text-renascer underline whitespace-nowrap disabled:opacity-50"
+                >
+                  {ativando ? "Ativando..." : "Ativar no aparelho"}
+                </button>
+              )}
+              {statusPush === "granted" && <span className="text-[11px] text-green-700 whitespace-nowrap">Push ativado ✓</span>}
+            </div>
           </div>
           {avisoPush && <p className="px-3 py-2 text-xs text-red-600 border-b border-renascer-ink/[0.06]">{avisoPush}</p>}
           <div className="p-2 space-y-1.5">
-            {lista.map((n) => (
+            {listaOrdenada.map((n) => (
               <button
                 key={n.id}
                 type="button"
                 onClick={() => marcarLida(n.id)}
                 className={`w-full text-left border rounded-lg p-2.5 transition-colors ${
-                  n.lida ? "border-renascer/10" : "border-renascer/40 bg-renascer-light/40"
+                  n.lida ? "border-renascer/10 opacity-55" : "border-renascer/40 bg-renascer-light/40"
                 }`}
               >
-                <p className="font-medium text-xs">{n.titulo}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-xs">{n.titulo}</p>
+                  {!n.lida && <span className="w-1.5 h-1.5 rounded-full bg-renascer shrink-0" />}
+                </div>
                 <p className="text-xs text-renascer-ink/60 mt-0.5">{n.mensagem}</p>
               </button>
             ))}
