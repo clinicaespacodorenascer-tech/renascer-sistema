@@ -1692,6 +1692,116 @@ router.delete("/anotacoes-estudo/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ======================================================================================
+// ---------- Fase 75 — Site institucional: perfis dos profissionais editáveis daqui ----------
+// Antes, toda troca de foto/bio/descrição de quem aparece no site público (espacodorenascer.com/
+// site) só podia ser feita editando o arquivo estático do site na mão. Agora isso vira um
+// cadastro no banco (PerfilSiteProfissional, 1:1 com Profissional), editável por aqui, e o site
+// público passa a buscar os dados dele por uma rota pública nova (ver backend/src/routes/
+// publico.js) em vez de ler um objeto fixo no código do front.
+// ======================================================================================
+
+// Lista TODOS os profissionais (não só quem já tem perfil de site), pra essa tela mostrar tanto
+// quem já está publicado quanto quem ainda pode ser adicionado. Ordenado pelos que já têm perfil
+// (por ordem de exibição) primeiro, depois os que ainda não têm perfil nenhum, por nome.
+router.get("/site/profissionais", async (req, res) => {
+  const profissionais = await prisma.profissional.findMany({
+    include: {
+      user: { select: { nome: true, ativo: true } },
+      perfilSite: true,
+    },
+  });
+  const comPerfil = profissionais
+    .filter((p) => p.perfilSite)
+    .sort((a, b) => a.perfilSite.ordem - b.perfilSite.ordem);
+  const semPerfil = profissionais
+    .filter((p) => !p.perfilSite)
+    .sort((a, b) => a.user.nome.localeCompare(b.user.nome));
+  res.json([...comPerfil, ...semPerfil]);
+});
+
+// Cria ou atualiza o perfil de site de uma profissional (upsert por profissionalId). O slug
+// público (Profissional.slugSitePublico) continua sendo editado pela rota que já existia
+// (PUT /profissionais/:id/slug-site-publico) — é o mesmo campo usado hoje pro popup de
+// agendamento achar os horários reais dela, não duplicado aqui.
+router.put("/site/profissionais/:profissionalId", async (req, res) => {
+  const profissional = await prisma.profissional.findUnique({ where: { id: req.params.profissionalId } });
+  if (!profissional) return res.status(404).json({ erro: "Profissional não encontrada." });
+
+  const { nomeExibicao, cargoExibicao, registro, genero, bioParagrafos, tags, quote, testemunhos, fotoBase64, ativo, ordem } = req.body;
+  if (!nomeExibicao || !nomeExibicao.trim()) return res.status(400).json({ erro: "Informe o nome como vai aparecer no site." });
+  if (!cargoExibicao || !cargoExibicao.trim()) return res.status(400).json({ erro: "Informe o cargo/categoria (ex: Psicóloga Clínica)." });
+
+  const dados = {
+    nomeExibicao: nomeExibicao.trim(),
+    cargoExibicao: cargoExibicao.trim(),
+    registro: registro?.trim() || null,
+    genero: genero || null,
+    bioParagrafos: Array.isArray(bioParagrafos) ? bioParagrafos.filter(Boolean) : [],
+    tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
+    quote: quote?.trim() || null,
+    testemunhos: Array.isArray(testemunhos) ? testemunhos.filter(Boolean) : [],
+    ...(fotoBase64 && { fotoBase64 }), // só troca a foto se vier uma nova — não apaga a existente mandando vazio
+    ...(ativo !== undefined && { ativo: !!ativo }),
+    ...(ordem !== undefined && { ordem: Number(ordem) || 0 }),
+  };
+
+  const perfil = await prisma.perfilSiteProfissional.upsert({
+    where: { profissionalId: req.params.profissionalId },
+    update: dados,
+    create: {
+      profissionalId: req.params.profissionalId,
+      ordem: 0,
+      ...dados,
+    },
+  });
+  res.json(perfil);
+});
+
+// Reordena a lista (arrastar/soltar na tela) — recebe os ids do PerfilSiteProfissional já na
+// ordem final e grava o índice de cada um.
+router.put("/site/profissionais/reordenar", async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ erro: "Lista de ids inválida." });
+  await Promise.all(ids.map((id, indice) => prisma.perfilSiteProfissional.update({ where: { id }, data: { ordem: indice } }).catch(() => null)));
+  res.json({ ok: true });
+});
+
+// "Deixou de fazer a parceria" — exclui o perfil de site de vez (não mexe no login/cadastro dela
+// dentro do sistema, só tira do site). Ela some do site automaticamente na próxima visita.
+router.delete("/site/profissionais/:profissionalId", async (req, res) => {
+  await prisma.perfilSiteProfissional.deleteMany({ where: { profissionalId: req.params.profissionalId } });
+  res.json({ ok: true });
+});
+
+// Importação única dos 13 perfis que já estavam publicados no site antes dessa mudança (Fase 75)
+// — casa cada um pelo slugSitePublico que a profissional já tinha vinculado (mesmo campo que já
+// fazia o popup de agendamento funcionar). Só cria quem ainda NÃO tem perfil de site (não
+// sobrescreve edição manual já feita) — pode ser chamada de novo sem medo de duplicar ou de
+// perder o que já foi ajustado na mão.
+router.post("/site/profissionais/importar-dados-atuais", async (req, res) => {
+  const seed = require("../data/perfisSiteSeed.json");
+  const resultado = { importados: [], semSlugVinculado: [], jaTinhaPerfil: [] };
+
+  for (const item of seed) {
+    const profissional = await prisma.profissional.findFirst({ where: { slugSitePublico: item.slugSitePublico } });
+    if (!profissional) {
+      resultado.semSlugVinculado.push(item.nomeExibicao);
+      continue;
+    }
+    const jaTemPerfil = await prisma.perfilSiteProfissional.findUnique({ where: { profissionalId: profissional.id } });
+    if (jaTemPerfil) {
+      resultado.jaTinhaPerfil.push(item.nomeExibicao);
+      continue;
+    }
+    const { slugSitePublico, ...dadosPerfil } = item;
+    await prisma.perfilSiteProfissional.create({ data: { profissionalId: profissional.id, ...dadosPerfil } });
+    resultado.importados.push(item.nomeExibicao);
+  }
+
+  res.json(resultado);
+});
+
 // ---------- Fechamento de caixa ----------
 // Dia a dia: lançamentos soltos (entrada/saída que não é pagamento de cliente) + conferência
 // contra o saldo informado do banco/Pix.

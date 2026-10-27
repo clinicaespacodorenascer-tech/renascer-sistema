@@ -77,6 +77,7 @@ export default function AreaDono() {
     { id: "formularios", label: "Formulários" },
     { id: "secretaria", label: "Secretaria" }, // Fase 47
     { id: "oportunidades", label: "Banco de Oportunidades" }, // Fase 71
+    { id: "site", label: "Site" }, // Fase 75
   ];
 
   const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
@@ -116,6 +117,7 @@ export default function AreaDono() {
       {aba === "formularios" && <AbaFormularios />}
       {aba === "secretaria" && <AbaSecretaria />}
       {aba === "oportunidades" && <AbaOportunidades />}
+      {aba === "site" && <AbaSite />}
     </LayoutNovo>
   );
 }
@@ -7729,6 +7731,384 @@ function ModalRegistrarIdeiaRapido({ onFechar, onSalvar }) {
           </button>
           <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
             Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ======================================================================================
+// ---------- Fase 75 — Site institucional: perfis dos profissionais editáveis daqui ----------
+// Antes, toda vez que precisava adicionar/editar/remover uma profissional do site público
+// (espacodorenascer.com/site), só dava editando à mão o arquivo estático do site. Agora isso é
+// um cadastro no banco (ver PerfilSiteProfissional no schema), editável aqui — e o site público
+// passa a ler esses dados de uma rota nova (GET /publico/site/profissionais) em vez de um objeto
+// fixo no código do front (ver frontend/public/site-assets/app.js).
+// ======================================================================================
+
+const GENERO_LABEL_SITE = { mulher: "Mulher", homem: "Homem" };
+
+function AbaSite() {
+  const [lista, setLista] = useState(null);
+  const [editandoId, setEditandoId] = useState(null); // id do Profissional sendo editado no modal
+  const [importando, setImportando] = useState(false);
+  const [resultadoImportacao, setResultadoImportacao] = useState(null);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/site/profissionais");
+    setLista(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function importarDadosAtuais() {
+    if (
+      !window.confirm(
+        'Isso preenche automaticamente o perfil de quem já estava publicado no site antes dessa tela existir — só quem AINDA NÃO tem perfil aqui (não sobrescreve ninguém que você já editou). Continuar?'
+      )
+    )
+      return;
+    setImportando(true);
+    setResultadoImportacao(null);
+    try {
+      const { data } = await api.post("/dono/site/profissionais/importar-dados-atuais");
+      setResultadoImportacao(data);
+      carregar();
+    } catch (e) {
+      alert(e?.response?.data?.erro || "Não deu pra importar.");
+    } finally {
+      setImportando(false);
+    }
+  }
+
+  // Reordenar com setinha pra cima/baixo, em vez de arrastar — mais simples e sem precisar de
+  // biblioteca nova só pra isso.
+  async function mover(profissional, direcao) {
+    const comPerfil = lista.filter((p) => p.perfilSite);
+    const idx = comPerfil.findIndex((p) => p.id === profissional.id);
+    const novoIdx = idx + direcao;
+    if (novoIdx < 0 || novoIdx >= comPerfil.length) return;
+    const copia = [...comPerfil];
+    const tmp = copia[idx];
+    copia[idx] = copia[novoIdx];
+    copia[novoIdx] = tmp;
+    setLista((atual) => {
+      const semPerfil = atual.filter((p) => !p.perfilSite);
+      return [...copia, ...semPerfil];
+    });
+    await api.put("/dono/site/profissionais/reordenar", { ids: copia.map((p) => p.perfilSite.id) });
+  }
+
+  async function alternarAtivo(p) {
+    await api.put(`/dono/site/profissionais/${p.id}`, {
+      nomeExibicao: p.perfilSite.nomeExibicao,
+      cargoExibicao: p.perfilSite.cargoExibicao,
+      ativo: !p.perfilSite.ativo,
+    });
+    carregar();
+  }
+
+  async function excluirPerfil(p) {
+    if (
+      !window.confirm(`Remover ${p.perfilSite.nomeExibicao} do site? Isso não mexe no cadastro dela dentro do sistema, só tira do site público.`)
+    )
+      return;
+    await api.delete(`/dono/site/profissionais/${p.id}`);
+    carregar();
+  }
+
+  if (!lista) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  const comPerfil = lista.filter((p) => p.perfilSite);
+  const semPerfil = lista.filter((p) => !p.perfilSite);
+  const editando = lista.find((p) => p.id === editandoId) || null;
+
+  return (
+    <div className="font-publicSans">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Site</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Quem aparece no site público e com qual foto/descrição — sem precisar mexer em código.</p>
+        </div>
+        <button type="button" className="btn-secondary text-sm" onClick={importarDadosAtuais} disabled={importando}>
+          {importando ? "Importando..." : "Importar dados atuais do site"}
+        </button>
+      </div>
+
+      {resultadoImportacao && (
+        <div className="nv-card mb-4 text-sm space-y-1">
+          {resultadoImportacao.importados.length > 0 && (
+            <p className="text-nv-green">Importados agora: {resultadoImportacao.importados.join(", ")}</p>
+          )}
+          {resultadoImportacao.jaTinhaPerfil.length > 0 && (
+            <p className="text-nv-muted3">Já tinham perfil (não mexi): {resultadoImportacao.jaTinhaPerfil.join(", ")}</p>
+          )}
+          {resultadoImportacao.semSlugVinculado.length > 0 && (
+            <p className="text-[#B0580F]">
+              Sem conta vinculada ainda, não deu pra importar: {resultadoImportacao.semSlugVinculado.join(", ")} — abra "Editar" na profissional
+              certa aqui embaixo e preencha o "Link do site" pra poder trazer os dados dela.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="nv-card-flat px-5">
+        <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-4 pb-1.5">No site, em ordem de exibição ({comPerfil.length})</p>
+        {comPerfil.length === 0 && <p className="text-sm text-nv-muted py-3">Ninguém publicado ainda.</p>}
+        {comPerfil.map((p, i) => (
+          <div key={p.id} className="flex items-center gap-3 py-3 border-t border-nv-borderLight">
+            <div className="flex flex-col gap-0.5 shrink-0">
+              <button type="button" disabled={i === 0} onClick={() => mover(p, -1)} className="text-nv-muted3 disabled:opacity-20 text-xs leading-none">
+                ▲
+              </button>
+              <button
+                type="button"
+                disabled={i === comPerfil.length - 1}
+                onClick={() => mover(p, 1)}
+                className="text-nv-muted3 disabled:opacity-20 text-xs leading-none"
+              >
+                ▼
+              </button>
+            </div>
+            {p.perfilSite.fotoBase64 ? (
+              <img src={p.perfilSite.fotoBase64} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+            ) : (
+              <span className="w-10 h-10 rounded-full bg-nv-bg shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-nv-ink2 truncate">{p.perfilSite.nomeExibicao}</p>
+              <p className="text-xs text-nv-muted3 truncate">
+                {p.perfilSite.cargoExibicao}
+                {!p.slugSitePublico && <span className="text-[#B0580F] font-semibold"> · sem link de agendamento vinculado</span>}
+              </p>
+            </div>
+            <span
+              className={`text-[11px] font-semibold rounded-full px-2.5 py-1 whitespace-nowrap ${
+                p.perfilSite.ativo ? "bg-nv-green/10 text-nv-green" : "bg-nv-bg text-nv-muted3"
+              }`}
+            >
+              {p.perfilSite.ativo ? "No site" : "Pausado"}
+            </span>
+            <button type="button" className="text-xs font-semibold text-nv-blue whitespace-nowrap" onClick={() => setEditandoId(p.id)}>
+              Editar
+            </button>
+            <button type="button" className="text-xs font-semibold text-nv-muted3 whitespace-nowrap" onClick={() => alternarAtivo(p)}>
+              {p.perfilSite.ativo ? "Pausar" : "Reativar"}
+            </button>
+            <button type="button" className="text-xs font-semibold text-red-600 whitespace-nowrap" onClick={() => excluirPerfil(p)}>
+              Excluir
+            </button>
+          </div>
+        ))}
+
+        <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide pt-5 pb-1.5">Ainda não estão no site ({semPerfil.length})</p>
+        {semPerfil.length === 0 && <p className="text-sm text-nv-muted py-3">Todo mundo já tem perfil criado.</p>}
+        {semPerfil.map((p) => (
+          <div key={p.id} className="flex items-center gap-3 py-3 border-t border-nv-borderLight">
+            <span className="w-10 h-10 rounded-full bg-nv-bg shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-nv-ink2 truncate">{p.user.nome}</p>
+              <p className="text-xs text-nv-muted3 truncate">{p.titulo}</p>
+            </div>
+            <button type="button" className="btn-secondary text-xs !py-1.5 !px-3" onClick={() => setEditandoId(p.id)}>
+              Criar perfil no site
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {editando && (
+        <ModalPerfilSite
+          profissional={editando}
+          onFechar={() => setEditandoId(null)}
+          onSalvar={() => {
+            setEditandoId(null);
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalPerfilSite({ profissional, onFechar, onSalvar }) {
+  const perfil = profissional.perfilSite;
+  const [nomeExibicao, setNomeExibicao] = useState(perfil?.nomeExibicao || profissional.user.nome);
+  const [cargoExibicao, setCargoExibicao] = useState(perfil?.cargoExibicao || profissional.titulo || "");
+  const [registro, setRegistro] = useState(perfil?.registro || "");
+  const [genero, setGenero] = useState(perfil?.genero || "");
+  const [bioTexto, setBioTexto] = useState((perfil?.bioParagrafos || []).join("\n\n"));
+  const [tagsTexto, setTagsTexto] = useState((perfil?.tags || []).join(", "));
+  const [quote, setQuote] = useState(perfil?.quote || "");
+  const [testemunhosTexto, setTestemunhosTexto] = useState((perfil?.testemunhos || []).join("\n"));
+  const [ativo, setAtivo] = useState(perfil?.ativo ?? true);
+  const [fotoBase64, setFotoBase64] = useState(perfil?.fotoBase64 || null);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [slug, setSlug] = useState(profissional.slugSitePublico || "");
+  const [salvandoSlug, setSalvandoSlug] = useState(false);
+  const [msgSlug, setMsgSlug] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function trocarFoto(e) {
+    const arquivo = e.target.files[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    setEnviandoFoto(true);
+    try {
+      const resultado = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(arquivo);
+      });
+      setFotoBase64(resultado);
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
+  async function salvarSlug() {
+    setSalvandoSlug(true);
+    setMsgSlug(null);
+    try {
+      await api.put(`/dono/profissionais/${profissional.id}/slug-site-publico`, { slugSitePublico: slug.trim() });
+      setMsgSlug({ tipo: "ok", texto: slug.trim() ? "Link salvo." : "Link removido." });
+    } catch (e) {
+      setMsgSlug({ tipo: "erro", texto: e.response?.data?.erro || "Não deu pra salvar o link." });
+    } finally {
+      setSalvandoSlug(false);
+    }
+  }
+
+  async function salvar() {
+    setErro("");
+    if (!nomeExibicao.trim() || !cargoExibicao.trim()) {
+      setErro("Preencha pelo menos o nome e o cargo/categoria.");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await api.put(`/dono/site/profissionais/${profissional.id}`, {
+        nomeExibicao,
+        cargoExibicao,
+        registro: registro || null,
+        genero: genero || null,
+        bioParagrafos: bioTexto.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean),
+        tags: tagsTexto.split(",").map((t) => t.trim()).filter(Boolean),
+        quote: quote || null,
+        testemunhos: testemunhosTexto.split("\n").map((t) => t.trim()).filter(Boolean),
+        ...(fotoBase64 && fotoBase64 !== perfil?.fotoBase64 && { fotoBase64 }),
+        ativo,
+      });
+      onSalvar();
+    } catch (e) {
+      setErro(e.response?.data?.erro || "Não deu pra salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onFechar}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-xl max-h-[90vh] overflow-y-auto space-y-3.5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-sora font-bold text-lg text-nv-ink">Perfil no site — {profissional.user.nome}</h3>
+
+        <div className="flex items-center gap-3">
+          {fotoBase64 ? (
+            <img src={fotoBase64} alt="" className="w-16 h-16 rounded-full object-cover shrink-0" />
+          ) : (
+            <span className="w-16 h-16 rounded-full bg-nv-bg shrink-0" />
+          )}
+          <label className="btn-secondary text-sm cursor-pointer">
+            {enviandoFoto ? "Carregando..." : "Trocar foto"}
+            <input type="file" accept="image/*" className="hidden" onChange={trocarFoto} disabled={enviandoFoto} />
+          </label>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Nome (como aparece no site)</label>
+            <input className="input" value={nomeExibicao} onChange={(e) => setNomeExibicao(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Cargo/categoria</label>
+            <input
+              className="input"
+              placeholder="Ex: Psicóloga Clínica"
+              value={cargoExibicao}
+              onChange={(e) => setCargoExibicao(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Registro (opcional)</label>
+            <input className="input" placeholder="Ex: CRP 00/00000" value={registro} onChange={(e) => setRegistro(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Gênero (filtro do site)</label>
+            <select className="input bg-white" value={genero} onChange={(e) => setGenero(e.target.value)}>
+              <option value="">Não informar</option>
+              {Object.entries(GENERO_LABEL_SITE).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Descrição (um parágrafo por bloco — deixe uma linha em branco entre eles)</label>
+          <textarea className="input !h-28" value={bioTexto} onChange={(e) => setBioTexto(e.target.value)} />
+        </div>
+
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Tags (separadas por vírgula)</label>
+          <input className="input" placeholder="Ex: Ansiedade, TCC, Autoestima" value={tagsTexto} onChange={(e) => setTagsTexto(e.target.value)} />
+        </div>
+
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Frase de destaque (opcional)</label>
+          <input className="input" value={quote} onChange={(e) => setQuote(e.target.value)} />
+        </div>
+
+        <div>
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">Depoimentos (um por linha, opcional)</label>
+          <textarea className="input !h-20" value={testemunhosTexto} onChange={(e) => setTestemunhosTexto(e.target.value)} />
+        </div>
+
+        <div className="border-t border-nv-borderLight pt-3">
+          <label className="text-[11px] font-semibold text-nv-muted2 block mb-1">
+            Link do site (o que faz o botão "Agendar" buscar os horários reais dela)
+          </label>
+          <div className="flex items-center gap-2">
+            <input className="input" placeholder="ex: andrea-santos" value={slug} onChange={(e) => setSlug(e.target.value)} />
+            <button type="button" className="btn-secondary text-xs !py-2 !px-3 whitespace-nowrap" onClick={salvarSlug} disabled={salvandoSlug}>
+              {salvandoSlug ? "Salvando..." : "Salvar link"}
+            </button>
+          </div>
+          {msgSlug && <p className={`text-xs mt-1 ${msgSlug.tipo === "ok" ? "text-nv-green" : "text-red-600"}`}>{msgSlug.texto}</p>}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-nv-ink2">
+          <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} />
+          Visível no site agora
+        </label>
+
+        {erro && <p className="text-red-600 text-sm">{erro}</p>}
+
+        <div className="flex items-center gap-2.5 pt-1">
+          <button type="button" disabled={salvando} onClick={salvar} className="btn-primary flex-1 !py-2.5 text-sm">
+            {salvando ? "Salvando..." : "Salvar perfil"}
+          </button>
+          <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
+            Fechar
           </button>
         </div>
       </div>

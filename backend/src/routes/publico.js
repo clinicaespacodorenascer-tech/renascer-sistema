@@ -71,4 +71,57 @@ router.get("/site/horarios/:slug", async (req, res) => {
   res.json({ profissional: { nome: profissional.user.nome, titulo: profissional.titulo }, duracao, dias });
 });
 
+// ======================================================================================
+// Fase 75 — perfis dos profissionais no site público, agora vindos do banco (ver
+// PerfilSiteProfissional em schema.prisma e as rotas de edição em dono.js) em vez do objeto
+// PROFISSIONAIS fixo que existia em frontend/public/site-assets/app.js. Só devolve quem está
+// com ativo=true (visível no site) e com o login ainda ativo — nunca quem está pausada/removida.
+// ======================================================================================
+
+const CAMPOS_PUBLICOS_PERFIL_SITE = {
+  nomeExibicao: true,
+  cargoExibicao: true,
+  registro: true,
+  genero: true,
+  bioParagrafos: true,
+  tags: true,
+  quote: true,
+  testemunhos: true,
+  fotoBase64: true,
+  ordem: true,
+};
+
+function formatarPerfilPublico(perfil) {
+  return {
+    slug: perfil.profissional.slugSitePublico,
+    nome: perfil.nomeExibicao,
+    cargo: perfil.cargoExibicao,
+    registro: perfil.registro,
+    genero: perfil.genero,
+    bio: perfil.bioParagrafos,
+    tags: perfil.tags,
+    quote: perfil.quote,
+    testemunhos: perfil.testemunhos,
+    foto: perfil.fotoBase64,
+  };
+}
+
+router.get("/site/profissionais", async (req, res) => {
+  const perfis = await prisma.perfilSiteProfissional.findMany({
+    where: { ativo: true, profissional: { slugSitePublico: { not: null }, user: { ativo: true } } },
+    select: { ...CAMPOS_PUBLICOS_PERFIL_SITE, profissional: { select: { slugSitePublico: true } } },
+    orderBy: { ordem: "asc" },
+  });
+  res.json(perfis.map(formatarPerfilPublico));
+});
+
+router.get("/site/profissionais/:slug", async (req, res) => {
+  const perfil = await prisma.perfilSiteProfissional.findFirst({
+    where: { ativo: true, profissional: { slugSitePublico: req.params.slug, user: { ativo: true } } },
+    select: { ...CAMPOS_PUBLICOS_PERFIL_SITE, profissional: { select: { slugSitePublico: true } } },
+  });
+  if (!perfil) return res.status(404).json({ erro: "Perfil não encontrado." });
+  res.json(formatarPerfilPublico(perfil));
+});
+
 module.exports = router;

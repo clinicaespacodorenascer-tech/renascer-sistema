@@ -327,10 +327,49 @@ model Profissional {
   mensagens        MensagemInterna[]    @relation("MensagensDoProfissional")
   tarefasCriadas   Tarefa[]             @relation("TarefasCriadasPeloProfissional")
   solicitacoesNovoPaciente SolicitacaoNovoPaciente[]
+  perfilSite       PerfilSiteProfissional?
 
   criadoEm     DateTime @default(now())
 
   @@map("profissionais")
+}
+
+// Fase 75 — "Banco de Oportunidades" teve seu momento; agora é a vez do site institucional parar
+// de ser um arquivo estático editado na mão (ver frontend/public/site-assets/app.js, objeto
+// PROFISSIONAIS) e passar a ler do banco, com uma tela de edição pro Dono em "Site". 1:1 com
+// Profissional — o vínculo público de verdade (pro link funcionar) continua sendo
+// Profissional.slugSitePublico, reaproveitado aqui também, pra não ter dois "slugs" conflitando.
+model PerfilSiteProfissional {
+  id             String       @id @default(cuid())
+  profissionalId String       @unique
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+
+  // Esses três podem divergir do cadastro "interno" da profissional (Profissional.titulo/bio) de
+  // propósito — o nome/cargo que aparece pro público nem sempre é igual ao do cadastro de dentro
+  // do sistema (ex: "Lê Baes" em vez do nome civil completo).
+  nomeExibicao  String
+  cargoExibicao String
+  registro      String?
+  // "mulher" | "homem" — alimenta o filtro "Mulheres/Homens" que já existe no site hoje
+  // (frontend/public/site-assets/body.html, botões .filter-btn). Null = não entra em nenhum dos
+  // dois filtros, mas continua aparecendo em "Todos".
+  genero        String?
+  bioParagrafos String[] @default([])
+  tags          String[] @default([])
+  quote         String?
+  testemunhos   String[] @default([])
+  // Foto própria do site — pode ser diferente da foto de perfil usada dentro do sistema. Mesmo
+  // padrão já usado em User.fotoUrl (base64 direto no banco; "fase 2: subir pra storage real" é
+  // uma dívida técnica antiga do projeto inteiro, não desta feature específica).
+  fotoBase64    String?  @db.Text
+
+  ativo  Boolean @default(true) // false = não aparece no site, sem precisar excluir o cadastro
+  ordem  Int     @default(0)    // ordem de exibição na lista (menor primeiro)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("perfis_site_profissionais")
 }
 
 model Disponibilidade {

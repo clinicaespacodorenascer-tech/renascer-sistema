@@ -1,4 +1,13 @@
-  (function(){
+  // Fase 75 — Rotatividade e filtro de gênero: antes, os dois rodavam em IIFEs separadas logo no
+  // carregamento do script, porque os cards (.pro-card) já existiam prontos no HTML estático. Com
+  // a lista agora vindo da API (ver IIFE principal mais abaixo, objeto PROFISSIONAIS), os cards só
+  // existem DEPOIS que a resposta chega — rodar isso aqui, como antes, resultaria numa grade vazia
+  // na primeira checagem (0 cards) e nunca mais rodaria de novo, e os botões de filtro ficariam
+  // "mudos" porque teriam capturado uma lista vazia de cards. Por isso virou uma função nomeada,
+  // pendurada em window (mesmo padrão já usado por window.__RENASCER_API_URL__ — ver
+  // frontend/src/pages/site/index.js) pra poder ser chamada de dentro da outra IIFE, DEPOIS que os
+  // cards de verdade forem montados.
+  window.__RENASCER_SITE_APLICAR_ROTATIVIDADE__ = function(){
     // Rotatividade: a cada 10 minutos, o ponto de partida da lista muda,
     // então um profissional diferente aparece primeiro — ao longo do dia,
     // todos passam pelo topo da lista com a mesma frequência (antes era
@@ -15,17 +24,18 @@
         grid.appendChild(card);
       });
     }
-  })();
+  };
 
   (function(){
     var buttons = document.querySelectorAll('.filter-btn');
-    var cards = document.querySelectorAll('.pro-card');
     buttons.forEach(function(btn){
       btn.addEventListener('click', function(){
         buttons.forEach(function(b){ b.classList.remove('active'); });
         btn.classList.add('active');
         var f = btn.getAttribute('data-filter');
-        cards.forEach(function(card){
+        // Fase 75 — busca os cards NA HORA do clique (em vez de uma lista capturada só uma vez no
+        // carregamento do script), porque agora eles são criados depois, de forma assíncrona.
+        document.querySelectorAll('.pro-card').forEach(function(card){
           var match = (f === 'all' || card.getAttribute('data-gender') === f);
           card.style.display = match ? '' : 'none';
         });
@@ -151,226 +161,92 @@
 
     var TURNOS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
 
-    var PROFISSIONAIS = {
-      'andrea-santos': {
-        nome: 'Andrea Santos',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['TCC', 'Neuropsicologia', 'Todas as idades'],
-        bio: [
-          'Psicóloga clínica com cerca de 8 anos de experiência, atendendo crianças, adolescentes e adultos. É especialista em Terapia Cognitivo-Comportamental (TCC) e em Psicopedagogia Clínica e Institucional, e atualmente é pós-graduanda em Neuropsicologia.',
-          'Tem experiência em psicoterapia individual e em grupo, Home Care e acompanhamento de pacientes com doenças crônicas, oncológicas e em reabilitação. Seu trabalho tem foco em ansiedade, depressão, trauma, burnout, luto e promoção da saúde mental.'
-        ],
-        quote: null,
-        testemunhos: [
-          'Me senti muito confortável na terapia com a Andrea e logo a primeira sessão trouxe um insight importante da causa da minha ansiedade. Admiro a dedicação dela. Quando precisar novamente, já sei a quem buscar.',
-          'A terapia mudou minha vida de forma incrível, trouxe mudanças profundas e positivas que eu nunca imaginei alcançar. Sou grata pela minha nova perspectiva, minha autoconfiança renovada e pela paz interior que encontrei.',
-          'Minha experiência com a Andrea tem sido excelente. Ela é uma profissional muito acolhedora, atenciosa e humana. Tenho percebido avanços reais desde o início das sessões.'
-        ],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'anderson-muller': {
-        nome: 'Anderson Muller',
-        cargo: 'Psicanalista',
-        registro: 'Mestrado livre em Psicanálise · Conselho Nacional de Psicanálise',
-        tags: ['Psicanálise', 'TDAH', 'Pesquisa acadêmica'],
-        bio: [
-          'Atua na área da saúde mental há um ano e meio, dedicado à psicanálise. É graduado em Pedagogia, com pós-graduações em Psicopedagogia Clínica e Institucional e em Psicanálise Clínica e Intervenções na Psicanálise, além de formações complementares em psicanálise para traumas familiares, psicanálise voltada ao TDAH e psicanálise forense.',
-          'Possui mestrado livre em Psicanálise pelo Conselho Nacional de Psicanálise, entidade à qual é filiado, e atualmente cursa o doutorado pela mesma instituição. Tem um artigo científico publicado, em parceria com uma neuropsicopedagoga e um médico, sobre inclusão, que fará parte do Congresso Internacional Movimentos Docentes 2026, além de um segundo artigo já aprovado na primeira etapa de avaliação do MEC para o caderno de educação inclusiva de 2027. Se descreve como um estudioso e pesquisador da mente humana.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'manha', nota: 'somente sexta-feira' },
-          { turno: 'tarde', nota: 'somente sexta-feira' },
-          { turno: 'noite', nota: 'segunda a sexta' }
-        ]
-      },
-      'lucyjane': {
-        nome: 'Lucyjane',
-        cargo: 'Psicanalista',
-        registro: '20 anos de experiência como terapeuta',
-        tags: ['Psicanálise', 'Acolhimento', '20 anos de experiência'],
-        bio: [
-          'Psicanalista com 20 anos de experiência como terapeuta. Conduz cada processo com sinceridade, dedicação e um cuidado genuíno por quem atende, criando um espaço de confiança para a jornada terapêutica.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }
-        ]
-      },
-      'carla-santos': {
-        nome: 'Carla Santos',
-        cargo: 'Psicanalista Clínica e Forense',
-        registro: 'Formada pela Academy PSMS',
-        tags: ['Autoconhecimento', 'Relacionamentos', 'Luto e mudanças'],
-        bio: [
-          'Psicanalista Clínica e Forense, formada pela Academy PSMS. Atua com autoconhecimento e desenvolvimento pessoal, autoestima e inseguranças, questões emocionais, conflitos familiares, dificuldades nos relacionamentos, luto, momentos de mudança, conflitos internos e questões profissionais.'
-        ],
-        quote: 'Um espaço seguro para você falar, ser ouvido(a) e olhar para si com mais atenção.',
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'tarde' }
-        ]
-      },
-      'laryssa-souza': {
-        nome: 'Laryssa Souza',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['Ansiedade', 'Depressão', 'Autoestima'],
-        bio: [
-          'Psicóloga formada em 2022, atualmente pós-graduanda em Psicanálise Clínica e Saúde Mental. Atua com depressão, ansiedade, término de relacionamentos, dificuldades de relacionamento familiar, autoconhecimento, autoestima e insegurança.'
-        ],
-        quote: null,
-        testemunhos: [
-          'Uma profissional super atenciosa! Cada sessão me sinto melhor. Em tão pouco tempo percebo mudanças nos meus atos e pensamentos. Hoje estou conseguindo enfrentar meus problemas com mais leveza, respeitando minha mente.',
-          'Me abrir para você foi a melhor coisa que eu fiz na vida, um sentimento libertador de falar sem ser julgado, sem ser culpado e sem se vitimizar. Hoje me encontro em um momento de vida melhor.',
-          'Ótimo atendimento, muito atenciosa, paciente, ótima ouvinte, já que na terapia falamos muito. Ótima terapeuta!'
-        ],
-        disponibilidade: [
-          { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'leticia-baes': {
-        nome: 'Letícia Baes Wieczorek',
-        cargo: 'Psicóloga (Lê Baes)',
-        registro: null,
-        tags: ['Ansiedade', 'Autoestima', 'LGBTQIAPN+'],
-        bio: [
-          'Psicóloga que atende sob a marca Lê Baes, com abordagem cognitivo-comportamental (TCC). Trabalha demandas de ansiedade, autoestima e relacionamentos, com um olhar acolhedor especialmente voltado ao público LGBTQIAPN+.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'stefani-simas': {
-        nome: 'Stefani Simas',
-        cargo: 'Psicoterapeuta',
-        registro: 'TCC · Psicanálise',
-        tags: ['Ansiedade', 'Terapia de Casal', 'Acolhimento'],
-        bio: [
-          'Psicoterapeuta com abordagem em TCC e Psicanálise, especialista em ansiedade e terapia de casal. Conduz o processo terapêutico com acolhimento, escuta e cuidado emocional, atendendo online em todo o Brasil.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'manha', nota: 'seg. a sáb.' },
-          { turno: 'tarde', nota: 'seg. a sex., até 13h no sáb.' },
-          { turno: 'noite', nota: 'seg. a sex., até 22h' }
-        ]
-      },
-      'liane-figueiredo': {
-        nome: 'Liane Figueirêdo',
-        cargo: 'Terapeuta ABA',
-        registro: 'Formação em Psicologia, Psicopedagogia e Terapia ABA',
-        tags: ['Neurodivergência', 'Aprendizagem', 'Terapia ABA'],
-        bio: [
-          'Terapeuta ABA e psicopedagoga, com um trabalho voltado ao cuidado, ao desenvolvimento e à promoção da saúde mental, respeitando a história e as necessidades de cada pessoa. Atende crianças, adolescentes e adultos de forma individualizada.',
-          'Principais áreas de atuação: dificuldades de aprendizagem, desenvolvimento infantil, neurodivergência, baixa autoestima, ansiedade, depressão, dificuldades de relação social, pessoal e sentimental, além de orientação e acolhimento às famílias. Atua como terapeuta ABA há dois anos, com passagem por estágio em Clínica Escola e pela Clínica Ser e Sentir, sempre com supervisão.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'raquel-aranha': {
-        nome: 'Raquel Aranha',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['ACP', 'Acolhimento', 'Relacionamentos'],
-        bio: [
-          'Psicóloga, graduada pelo CEUMA (Centro Universitário do Maranhão) e pós-graduada em Abordagem Centrada na Pessoa (ACP) pela faculdade Inspirar. Atua na psicologia há 8 anos.',
-          'Sensível e empática, conduz o processo terapêutico com escuta ativa e acolhimento, ajudando pessoas a atravessar relações difíceis e a se reconectar com o próprio valor.'
-        ],
-        quote: 'O autoconhecimento é a chave para a sua liberdade.',
-        testemunhos: [
-          'Cada encontro me faz sentir mais segura e mais feliz. Sei que fiz a escolha certa quando decidi fazer esse acompanhamento.',
-          'Fui muito bem acolhida, mesmo online me senti totalmente assistida. Passei por um relacionamento difícil e a terapia me ajudou muito além do que eu esperava; hoje me sinto muito mais forte.',
-          'A terapia está me ajudando a compreender e a trabalhar meu emocional depois de um relacionamento difícil, para não voltar para o mesmo ciclo.'
-        ],
-        disponibilidade: [
-          { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'thainnara-dias': {
-        nome: 'Thainnara Pereira Dias',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['TCC', '7 anos de experiência', 'Atendimento Online'],
-        bio: [
-          'Psicóloga, formada desde 2018 e atuando na área há 7 anos, com abordagem Cognitivo-Comportamental (TCC).'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'tarde', nota: 'terça e quinta-feira' },
-          { turno: 'noite', nota: 'terça e quinta-feira' }
-        ]
-      },
-      'barbara-santos': {
-        nome: 'Bárbara Santos',
-        cargo: 'Terapeuta TCC',
-        registro: 'Formação em Coaching e PNL',
-        tags: ['TCC', 'Coaching e PNL', 'Ansiedade e autoestima'],
-        bio: [
-          'Terapeuta especialista em Terapia Cognitivo-Comportamental (TCC), com formação em Coaching e PNL. Seu trabalho é pautado em acolhimento, empatia e escuta sem julgamentos.',
-          'Atua especialmente com dependência emocional, luto, ansiedade, autoestima, traumas e relacionamentos abusivos, ajudando cada pessoa a compreender suas emoções, ressignificar experiências e construir relações mais saudáveis consigo e com os outros.'
-        ],
-        quote: null,
-        testemunhos: [],
-        disponibilidade: [
-          { turno: 'tarde', nota: 'seg., a partir das 13h30' },
-          { turno: 'noite', nota: 'seg., até 20h' },
-          { turno: 'manha', nota: 'ter. a qui.' },
-          { turno: 'tarde', nota: 'ter. a qui.' },
-          { turno: 'noite', nota: 'ter. a qui., até 20h' }
-        ]
-      },
-      'daniela': {
-        nome: 'Daniela',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['TCC', 'Acolhimento', 'Autoconhecimento'],
-        bio: [
-          'Psicóloga clínica, trabalha com a abordagem da Terapia Cognitivo-Comportamental (TCC). Seu trabalho é voltado para compreender, junto ao paciente, a forma como pensamentos, emoções e comportamentos se relacionam, buscando desenvolver estratégias mais saudáveis para lidar com as situações do dia a dia.',
-          'Acredita em uma psicoterapia acolhedora, individualizada e construída em conjunto, respeitando a história, o momento e as necessidades de cada pessoa. Seu objetivo é que a terapia seja um espaço de escuta, compreensão e, principalmente, de construção de mudanças possíveis.'
-        ],
-        quote: null,
-        testemunhos: [
-          'Sua escuta e acolhimento fazem a diferença. Obrigada por me guiar com tanta sabedoria; seu tempo e dedicação transformam minha vida. Sou grata por me ajudar a ser mais forte.',
-          'Quero te agradecer pelo carinho durante todo o tempo em que estivemos em terapia. Você é extremamente atenciosa e só tenho elogios a fazer.',
-          'Aconteceram algumas coisas desde o nosso último encontro e queria agradecer pelas viradas de chave na minha cabeça. Foi pouco tempo, mas o suficiente para eu enxergar o que não estava conseguindo sozinha. Obrigada por me mostrar possibilidades de futuro.'
-        ],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }, { turno: 'noite' }
-        ]
-      },
-      'nathalia-moreno': {
-        nome: 'Nathalia Moreno',
-        cargo: 'Psicóloga Clínica',
-        registro: null,
-        tags: ['TCC', 'Ansiedade e depressão', 'Autoconhecimento'],
-        bio: [
-          'Psicóloga clínica há mais de 10 anos, com abordagem em Terapia Cognitivo-Comportamental (TCC). Seu objetivo é ajudar cada paciente a identificar, entender e modificar padrões de pensamento e comportamento que impactam negativamente a saúde mental e o bem-estar.',
-          'Atua com dependência emocional, ansiedade, depressão, estresse, medo e insegurança, burnout, luto, autocobrança, autoconhecimento e desenvolvimento pessoal, com atendimento para todo o Brasil.'
-        ],
-        quote: null,
-        testemunhos: [
-          'Tive muita sorte em te encontrar logo de primeira, quando eu mais precisava. Muita gente fica trocando de psicólogo, né.',
-          'Nem eu consigo acreditar que, um mês atrás, eu estava sem vontade e sem perspectiva de nada. Estou me sentindo bem melhor com as sessões. Você é a melhor, obrigada pela atenção de sempre.',
-          'A melhor escolha da minha vida foi ter procurado uma profissional, e você foi a melhor escolha possível. As orientações e os caminhos que me mostrou me ajudaram a chegar no controle. Gratidão pelo profissionalismo, pela atenção e pelo cuidado de sempre.'
-        ],
-        disponibilidade: [
-          { turno: 'manha' }, { turno: 'tarde' }
-        ]
+    // Fase 75 — antes, isso era um objeto fixo com os 13 perfis escritos à mão (cada vez que o
+    // Dono queria adicionar/editar/remover alguém do site, só dava editando este arquivo). Agora
+    // fica vazio aqui e é preenchido pela API (ver backend/src/routes/publico.js, rota
+    // GET /site/profissionais), que lê do cadastro editável em "Site" no painel do Dono.
+    var PROFISSIONAIS = {};
+
+    // Monta um card de profissional (mesma estrutura HTML que existia fixa no body.html antes da
+    // Fase 75 — texto/foto agora vêm de "p" em vez de estarem escritos na própria tag).
+    function montarCardProfissional(p){
+      var article = el('article','pro-card');
+      if (p.genero) article.setAttribute('data-gender', p.genero);
+
+      var top = el('div','pro-top');
+      var avatarWrap = el('div','avatar');
+      if (p.foto) {
+        var img = document.createElement('img');
+        img.src = p.foto;
+        img.alt = 'Foto de ' + p.nome;
+        img.width = 58;
+        img.height = 58;
+        avatarWrap.appendChild(img);
       }
-    };
+      top.appendChild(avatarWrap);
+      var nomeWrap = el('div');
+      nomeWrap.appendChild(el('div','pro-name',p.nome));
+      nomeWrap.appendChild(el('div','pro-role',p.cargo));
+      top.appendChild(nomeWrap);
+      article.appendChild(top);
+
+      // Teaser curto da bio na grade (o detalhe mostra todos os parágrafos completos) — corta no
+      // fim de uma palavra pra não quebrar no meio, igual um resumo editorial normal.
+      var primeiroParagrafo = (p.bio && p.bio[0]) || '';
+      var resumo = primeiroParagrafo.length > 220 ? primeiroParagrafo.slice(0, 220).replace(/\s+\S*$/, '') + '…' : primeiroParagrafo;
+      article.appendChild(el('p','pro-bio',resumo));
+
+      var tagsWrap = el('div','pro-tags');
+      (p.tags || []).forEach(function(t){ tagsWrap.appendChild(el('span','tag',t)); });
+      article.appendChild(tagsWrap);
+
+      var meta = el('div','pro-meta');
+      meta.appendChild(el('span', null, 'Online'));
+      meta.appendChild(el('span','pro-price','A partir de ' + PRECOS['30min'][1]));
+      article.appendChild(meta);
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary pro-card-btn';
+      btn.setAttribute('data-slug', p.slug);
+      btn.setAttribute('data-route', '#/profissional/' + p.slug);
+      btn.textContent = 'Ver perfil e agendar';
+      article.appendChild(btn);
+
+      return article;
+    }
+
+    // Busca a lista de profissionais ativos no site (API), preenche PROFISSIONAIS (mesmo formato
+    // que o objeto fixo de antes usava, pra não precisar mexer em renderDetail) e monta os cards
+    // na grade. Só depois disso a primeira rota da página é de fato aplicada (ver chamada de
+    // applyRoute mais abaixo) — assim um link direto pra "#/profissional/slug" (ex: vindo de
+    // anúncio) espera os dados chegarem antes de tentar renderizar o perfil, em vez de cair no
+    // "profissional não encontrada" só porque a lista ainda não tinha carregado.
+    function carregarProfissionaisEIniciarRota(){
+      var grid = document.getElementById('proGrid');
+      fetch(API_URL + '/publico/site/profissionais')
+        .then(function(r){ if (!r.ok) throw new Error('resposta ' + r.status); return r.json(); })
+        .then(function(lista){
+          lista.forEach(function(p){
+            PROFISSIONAIS[p.slug] = {
+              nome: p.nome, cargo: p.cargo, registro: p.registro, tags: p.tags || [],
+              bio: p.bio || [], quote: p.quote, testemunhos: p.testemunhos || [],
+              foto: p.foto, genero: p.genero, slug: p.slug
+            };
+          });
+          if (grid) {
+            grid.innerHTML = '';
+            lista.forEach(function(p){ grid.appendChild(montarCardProfissional(PROFISSIONAIS[p.slug])); });
+            if (window.__RENASCER_SITE_APLICAR_ROTATIVIDADE__) window.__RENASCER_SITE_APLICAR_ROTATIVIDADE__();
+          }
+        })
+        .catch(function(erro){
+          console.error('Não deu pra carregar a lista de profissionais:', erro);
+          if (grid) grid.innerHTML = '<p class="step-hint">Não conseguimos carregar a lista de profissionais agora. Atualize a página em alguns instantes — se continuar assim, fale com a gente pelo WhatsApp.</p>';
+        })
+        .then(function(){ applyRoute(window.location.hash, true); }); // roda sempre, deu certo ou não
+    }
+
 
     var VIEWS = {
       home: document.getElementById('homeView'),
@@ -420,12 +296,12 @@
 
       var avatarWrap = document.getElementById('detailAvatar');
       avatarWrap.innerHTML = '';
-      var card = document.querySelector('.pro-card-btn[data-slug="' + slug + '"]');
-      var srcImg = card ? card.closest('.pro-card').querySelector('.avatar img') : null;
-      if (srcImg) {
+      // Fase 75: antes buscava a foto no DOM (card já renderizado). Agora os dados já vêm
+      // prontos da API junto com o resto do perfil, então usa p.foto direto.
+      if (p.foto) {
         var img = document.createElement('img');
-        img.src = srcImg.src;
-        img.alt = srcImg.alt;
+        img.src = p.foto;
+        img.alt = p.nome;
         avatarWrap.appendChild(img);
       }
 
@@ -501,7 +377,10 @@
     }
 
     window.addEventListener('hashchange', function(){ applyRoute(window.location.hash, false); });
-    applyRoute(window.location.hash, true);
+    // Fase 75: antes chamava applyRoute direto (cards já existiam no HTML, fixos). Agora os
+    // cards vêm da API, então primeiro carrega os profissionais e só no final (dentro de
+    // carregarProfissionaisEIniciarRota, dê certo ou não) é que a rota inicial é aplicada.
+    carregarProfissionaisEIniciarRota();
 
     document.addEventListener('click', function(ev){
       var btn = ev.target.closest('[data-route]');
