@@ -1090,7 +1090,10 @@
     .site-fab{ right:12px; bottom:12px; gap:8px; }
     .fab-btn{ padding:12px 14px; font-size:0; gap:0; }
     .fab-btn-primary{ font-size:.82rem; padding:12px 16px; }
-    .fab-whatsapp-label{ display:none; }
+    /* o botão de WhatsApp mantém o texto visível (não vira só ícone) pra ficar bem identificável
+       no celular, só com fonte um pouco menor pra caber direitinho na tela */
+    .fab-btn-whatsapp{ font-size:.76rem; padding:12px 16px; gap:7px; }
+    .fab-btn-whatsapp svg{ width:19px; height:19px; }
   }
 
   /* ---------- Fase 78: modal genérico (falar no WhatsApp sem profissional) ----------

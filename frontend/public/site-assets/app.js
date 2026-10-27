@@ -883,8 +883,11 @@
         }
 
         var url = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg);
-        window.open(url, '_blank', 'noopener');
         fecharModalGenerico();
+        // Fase 78: navega na própria aba (em vez de abrir uma aba nova) pra evitar aquele
+        // flash de tela em branco/colorida que aparece bem rápido no celular antes de cair
+        // no WhatsApp, quando se usa window.open numa aba nova.
+        window.location.href = url;
       }
     }
 
