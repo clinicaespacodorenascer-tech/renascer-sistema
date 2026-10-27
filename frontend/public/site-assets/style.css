@@ -1007,3 +1007,113 @@
   }
   .cta-mid h2{font-size:clamp(1.5rem,2.8vw,2rem);}
   .cta-mid .hero-actions{justify-content:center;}
+
+  /* ---------- Fase 78: logo real no header/footer ---------- */
+  .logo-mark{
+    display:block;
+    width:34px;
+    height:34px;
+    object-fit:contain;
+    flex-shrink:0;
+  }
+
+  /* ---------- Fase 78: botão flutuante (FAB) ---------- */
+  .site-fab{
+    position:fixed;
+    right:16px;
+    bottom:16px;
+    z-index:60;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:10px;
+    pointer-events:none;
+  }
+  .site-fab .fab-btn{
+    pointer-events:auto;
+  }
+  .fab-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    border:none;
+    cursor:pointer;
+    font-family:inherit;
+    font-weight:700;
+    font-size:.86rem;
+    line-height:1;
+    padding:13px 18px;
+    border-radius:999px;
+    box-shadow:0 10px 26px var(--shadow);
+    transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+    white-space:nowrap;
+  }
+  .fab-btn:hover{ transform:translateY(-2px); }
+  .fab-btn:active{ transform:translateY(0); }
+
+  .fab-btn-primary{
+    background:var(--accent);
+    color:#fff;
+  }
+  .fab-btn-primary:hover{ background:var(--accent-strong); }
+  .fab-btn-primary.fab-btn-pulse{
+    animation:fabPulseGlow 2.1s ease-in-out infinite;
+  }
+  @keyframes fabPulseGlow{
+    0%, 100%{
+      box-shadow:0 10px 26px var(--shadow), 0 0 0 0 rgba(40,126,197,.55);
+    }
+    50%{
+      box-shadow:0 10px 26px var(--shadow), 0 0 0 10px rgba(40,126,197,0);
+    }
+  }
+
+  @media (max-width:480px){
+    .site-fab{ right:12px; bottom:12px; gap:8px; }
+  }
+
+  /* ---------- Fase 78: modal genérico (falar no WhatsApp sem profissional) ----------
+     Mesma estrutura de passos do modal de agendamento (#bookingModal), mas com classe própria
+     (.g-modal-step em vez de .modal-step) pra não entrar na mesma lista de passos usada pela
+     navegação do modal de agendamento (que seleciona .modal-step em todo o documento). */
+  .g-modal-step{ display:none; }
+  .g-modal-step.active{ display:block; animation: stepIn .28s ease both; }
+  .g-modal-step h3{ font-size:1.2rem; margin-bottom:6px; }
+  .g-modal-step .step-hint{
+    color:var(--ink-soft);
+    font-size:.88rem;
+    margin-bottom:16px;
+  }
+
+  /* ---------- Fase 78: botão de WhatsApp na lista de profissionais ---------- */
+  .filters-bar{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+  }
+  .btn-whatsapp-inline{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    border:none;
+    cursor:pointer;
+    font-family:inherit;
+    font-weight:700;
+    font-size:.84rem;
+    color:#fff;
+    background:#25D366;
+    padding:11px 16px;
+    border-radius:999px;
+    box-shadow:0 8px 20px var(--shadow);
+    transition:transform .18s ease, background .18s ease;
+    white-space:nowrap;
+  }
+  .btn-whatsapp-inline:hover{ background:#1ebe5a; transform:translateY(-1px); }
+  .btn-whatsapp-inline svg{ flex-shrink:0; }
+
+  @media (max-width:640px){
+    .filters-bar{ flex-direction:column; align-items:stretch; }
+    .btn-whatsapp-inline{ justify-content:center; white-space:normal; text-align:center; }
+  }

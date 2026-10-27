@@ -1,6 +1,6 @@
 <header>
   <div class="wrap nav">
-    <button type="button" class="logo" data-route="#/inicio" aria-label="Espaço do Renascer"><span class="bm-tag">ER</span><span class="logo-name">Espaço <span>do Renascer</span></span></button>
+    <button type="button" class="logo" data-route="#/inicio" aria-label="Espaço do Renascer"><img class="logo-mark" src="/logo.png" alt="" width="34" height="34"><span class="logo-name">Espaço <span>do Renascer</span></span></button>
     <nav class="nav-links">
       <div class="nav-links-collapse">
         <button type="button" data-route="#sobre">Sobre</button>
@@ -315,10 +315,21 @@
 
   <section id="lista" style="padding-top:0;">
     <div class="wrap">
-      <div class="filters" role="group" aria-label="Filtrar profissionais">
-        <button class="filter-btn active" data-filter="all">Todos</button>
-        <button class="filter-btn" data-filter="mulher">Mulheres</button>
-        <button class="filter-btn" data-filter="homem">Homens</button>
+      <div class="filters-bar">
+        <div class="filters" role="group" aria-label="Filtrar profissionais">
+          <button class="filter-btn active" data-filter="all">Todos</button>
+          <button class="filter-btn" data-filter="mulher">Mulheres</button>
+          <button class="filter-btn" data-filter="homem">Homens</button>
+        </div>
+
+        <!-- Fase 78: botão de WhatsApp aqui na lista, pra quem prefere falar com a equipe em vez
+             de escolher a profissional sozinho(a). Abre o mesmo pop-up genérico do botão
+             flutuante (sem profissional definida), com as mesmas perguntas, e já manda pro
+             WhatsApp no final. -->
+        <button type="button" class="btn-whatsapp-inline" id="listaWhatsappBtn">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.74.46 3.43 1.33 4.93L2.05 22l5.3-1.39a9.9 9.9 0 0 0 4.69 1.19h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m0 1.67c2.23 0 4.32.87 5.89 2.44a8.26 8.26 0 0 1 2.43 5.88c0 4.59-3.74 8.32-8.33 8.32a8.3 8.3 0 0 1-4.24-1.16l-.3-.18-3.15.82.84-3.07-.2-.32a8.27 8.27 0 0 1-1.27-4.42c0-4.59 3.74-8.33 8.33-8.33m-4.6 4.44c-.16 0-.43.06-.65.3-.23.24-.86.84-.86 2.05s.89 2.38 1.01 2.54c.12.17 1.73 2.78 4.28 3.78 2.12.84 2.55.67 3.01.63.46-.04 1.49-.6 1.7-1.19.21-.58.21-1.08.15-1.19-.06-.1-.23-.17-.47-.29-.25-.12-1.49-.73-1.72-.82-.23-.08-.4-.12-.56.12-.17.25-.65.82-.79.98-.15.17-.29.19-.54.07-.25-.13-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.38-1.72-.15-.25-.02-.38.11-.5.11-.11.25-.29.37-.44.12-.15.16-.25.24-.42.08-.17.04-.31-.02-.44-.06-.12-.56-1.37-.78-1.87-.2-.49-.41-.42-.56-.43z"/></svg>
+          <span>Não sabe quem escolher? Fale com a gente no WhatsApp</span>
+        </button>
       </div>
 
       <div class="pro-grid" id="proGrid"></div>
@@ -392,7 +403,7 @@
   <div class="wrap">
     <div class="footer-grid">
       <div class="footer-brand">
-        <button type="button" class="logo" data-route="#/inicio"><span class="bm-tag">ER</span>Espaço <span>do Renascer</span></button>
+        <button type="button" class="logo" data-route="#/inicio"><img class="logo-mark" src="/logo.png" alt="" width="34" height="34">Espaço <span>do Renascer</span></button>
         <p>Plataforma de saúde emocional que conecta você a psicólogas, terapeutas e psicanalistas parceiros, com ética, acolhimento e acesso facilitado ao cuidado.</p>
       </div>
       <div class="footer-col">
@@ -487,6 +498,110 @@
       <div class="modal-nav">
         <button class="btn btn-ghost" id="modalBackBtn" type="button">Voltar</button>
         <button class="btn btn-primary" id="modalNextBtn" type="button">Continuar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Fase 78 — botão flutuante: sempre visível na tela (não depende de rolar a página até
+     embaixo), pra facilitar agendar assim que a pessoa entra no perfil de uma profissional. O
+     texto/visibilidade muda sozinho conforme a tela (home, lista ou perfil de uma profissional) —
+     ver atualizarFabFlutuante() em app.js. O botão de WhatsApp genérico (sem profissional
+     escolhida) NÃO fica aqui — ele aparece só dentro da lista de profissionais, ver mais abaixo. -->
+<div class="site-fab" id="siteFab">
+  <button type="button" class="fab-btn fab-btn-primary" id="fabPrimaryBtn">
+    <span id="fabPrimaryLabel">Ver profissionais</span>
+  </button>
+</div>
+
+<!-- Fase 78 — "fale com a gente" genérico, pra quando a pessoa não sabe (ainda) qual profissional
+     quer: manda pro WhatsApp com o que ela busca (sem nome de profissional nenhum), pra equipe
+     indicar quem está disponível. Mesmas perguntas do agendamento normal (#bookingModal) — tema,
+     se já fez terapia, duração, pacote e dados finais — só troca a escolha de dia/horário real
+     (que depende de uma profissional específica) por turno + prioridade. Fica disponível só a
+     partir do botão da lista de profissionais (ver #listaWhatsappBtn), nunca solto em outra tela. -->
+<div class="modal-overlay" id="genericoModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="genericoModalTitle">
+    <div class="modal-head">
+      <div>
+        <p class="modal-pro" id="genericoModalTitle">Falar com a gente no WhatsApp</p>
+      </div>
+      <button class="modal-close" id="genericoCloseBtn" type="button" aria-label="Fechar">&times;</button>
+    </div>
+    <div class="modal-dots" id="gModalDots"></div>
+
+    <form id="genericoForm">
+      <div class="g-modal-step active" data-g-step="0">
+        <h3>O que você gostaria de tratar?</h3>
+        <p class="step-hint">Isso ajuda a equipe a indicar a profissional certa pra você.</p>
+        <select class="text-select" id="gTema">
+          <option value="Ansiedade">Ansiedade</option>
+          <option value="Depressão">Depressão</option>
+          <option value="Autoestima">Autoestima</option>
+          <option value="Relacionamentos">Relacionamentos / terapia de casal</option>
+          <option value="Luto">Luto e perdas</option>
+          <option value="Estresse / burnout">Estresse / burnout</option>
+          <option value="Autoconhecimento">Autoconhecimento</option>
+          <option value="Outro">Outro</option>
+        </select>
+        <label class="field-label" for="gTemaDetalhe">Quer contar mais alguma coisa? (opcional)</label>
+        <textarea class="text-area" id="gTemaDetalhe" placeholder="Fique à vontade para escrever em poucas palavras."></textarea>
+      </div>
+
+      <div class="g-modal-step" data-g-step="1">
+        <h3>Você já fez terapia antes?</h3>
+        <p class="step-hint">Assim a profissional indicada já chega com mais contexto.</p>
+        <div class="option-list">
+          <label class="option-item"><input type="radio" name="gPrimeiraVez" value="Não, é minha primeira vez">Não, é minha primeira vez</label>
+          <label class="option-item"><input type="radio" name="gPrimeiraVez" value="Sim, já fiz terapia antes">Sim, já fiz terapia antes</label>
+        </div>
+      </div>
+
+      <div class="g-modal-step" data-g-step="2">
+        <h3>Duração da sessão</h3>
+        <p class="step-hint">Os valores mudam de acordo com a duração escolhida.</p>
+        <div class="option-list">
+          <label class="option-item"><input type="radio" name="gDuracao" value="30min">30 minutos<span class="opt-price">a partir de R$ 60</span></label>
+          <label class="option-item"><input type="radio" name="gDuracao" value="50min">50 minutos<span class="opt-price">a partir de R$ 110</span></label>
+        </div>
+      </div>
+
+      <div class="g-modal-step" data-g-step="3">
+        <h3>Turno e prioridade</h3>
+        <p class="step-hint">Como ainda não escolheu a profissional, a equipe já organiza o horário certinho pra você.</p>
+        <label class="field-label" style="margin-top:0;">Prefere qual turno?</label>
+        <div class="option-list">
+          <label class="option-item"><input type="radio" name="gTurno" value="Manhã" checked>Manhã</label>
+          <label class="option-item"><input type="radio" name="gTurno" value="Tarde">Tarde</label>
+          <label class="option-item"><input type="radio" name="gTurno" value="Noite">Noite</label>
+        </div>
+        <label class="field-label">Com que prioridade você quer começar?</label>
+        <div class="option-list">
+          <label class="option-item"><input type="radio" name="gPrioridade" value="Hoje" checked>Hoje</label>
+          <label class="option-item"><input type="radio" name="gPrioridade" value="Essa semana">Essa semana</label>
+          <label class="option-item"><input type="radio" name="gPrioridade" value="Semana que vem">Semana que vem</label>
+        </div>
+      </div>
+
+      <div class="g-modal-step" data-g-step="4">
+        <h3>Qual pacote você prefere?</h3>
+        <p class="step-hint">Pacotes com mais sessões saem com valor melhor por sessão.</p>
+        <div class="option-list" id="gPacoteList"></div>
+      </div>
+
+      <div class="g-modal-step" data-g-step="5">
+        <h3>Só faltam seus dados</h3>
+        <p class="step-hint">Para a nossa equipe indicar quem está disponível e confirmar com você.</p>
+        <label class="field-label" for="gNome" style="margin-top:0;">Seu nome</label>
+        <input class="text-input" id="gNome" type="text" placeholder="Como podemos te chamar?" required>
+        <label class="field-label" for="gTelefone">Seu WhatsApp</label>
+        <input class="text-input" id="gTelefone" type="tel" placeholder="(00) 00000-0000" required>
+        <div class="summary-box" id="gSummaryBox" style="margin-top:18px;"></div>
+      </div>
+
+      <div class="modal-nav">
+        <button class="btn btn-ghost" id="gModalBackBtn" type="button">Voltar</button>
+        <button class="btn btn-primary" id="gModalNextBtn" type="button">Continuar</button>
       </div>
     </form>
   </div>

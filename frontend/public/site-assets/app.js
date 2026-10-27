@@ -339,6 +339,26 @@
 
     var HOME_ANCHORS = ['sobre','missao','como-funciona','compromisso','faq'];
 
+    // Fase 78: botão flutuante (FAB) — muda de cara dependendo da tela atual.
+    function atualizarFabFlutuante(){
+      var primaryBtn = document.getElementById('fabPrimaryBtn');
+      var primaryLabel = document.getElementById('fabPrimaryLabel');
+      if (!primaryBtn || !primaryLabel) return;
+      if (activeViewKey === 'lista') {
+        primaryBtn.hidden = true;
+        primaryBtn.classList.remove('fab-btn-pulse');
+        return;
+      }
+      primaryBtn.hidden = false;
+      if (activeViewKey === 'detail') {
+        primaryLabel.textContent = 'Agendar sessão';
+        primaryBtn.classList.add('fab-btn-pulse');
+      } else {
+        primaryLabel.textContent = 'Ver profissionais';
+        primaryBtn.classList.remove('fab-btn-pulse');
+      }
+    }
+
     function activateView(key, instant, slug, anchorId){
       if (key === 'detail' && !renderDetail(slug)) { key = 'home'; anchorId = null; }
       var target = VIEWS[key];
@@ -349,6 +369,7 @@
         activeViewKey = key;
       }
       document.body.classList.toggle('is-home', key === 'home');
+      atualizarFabFlutuante();
       var delay = (changed && !instant) ? 260 : 0;
       window.setTimeout(function(){
         if (anchorId) {
@@ -649,6 +670,217 @@
         openModal(currentSlug);
       }
     });
+
+    /* ---------------- Fase 78: FAB flutuante (sem o botão de WhatsApp genérico, que agora só
+       existe dentro da lista de profissionais) ---------------- */
+    var fabPrimaryBtn = document.getElementById('fabPrimaryBtn');
+
+    if (fabPrimaryBtn) {
+      fabPrimaryBtn.addEventListener('click', function(){
+        if (activeViewKey === 'detail') {
+          openModal(currentSlug);
+          return;
+        }
+        var href = '#/profissionais';
+        if (window.location.hash === href) { applyRoute(href, false); }
+        else { window.location.hash = href; }
+      });
+    }
+
+    /* ---------------- Fase 78: modal genérico de WhatsApp (sem profissional escolhida) ----------------
+       Mesmo wizard de passos do #bookingModal (tema, já fez terapia, duração, pacote, dados
+       finais), só troca a escolha de dia/horário real (passo que depende de uma profissional
+       específica) por turno + prioridade. Implementação própria, independente da do
+       #bookingModal, pra não disputar os mesmos ids/seletores globais (#modalDots,
+       #modalBackBtn, #modalNextBtn, .modal-step) usados pelo agendamento normal. Só é aberto a
+       partir do botão da lista de profissionais (#listaWhatsappBtn). */
+    var genericoModal = document.getElementById('genericoModal');
+
+    if (genericoModal) {
+      var gSteps = Array.prototype.slice.call(genericoModal.querySelectorAll('.g-modal-step'));
+      var gDotsWrap = document.getElementById('gModalDots');
+      var gBackBtn = document.getElementById('gModalBackBtn');
+      var gNextBtn = document.getElementById('gModalNextBtn');
+      var gStepIndex = 0;
+
+      gSteps.forEach(function(_, i){
+        var dot = el('span','modal-dot');
+        dot.dataset.i = i;
+        gDotsWrap.appendChild(dot);
+      });
+      var gDots = Array.prototype.slice.call(gDotsWrap.children);
+
+      function buildPacotesGenerico(){
+        var duracao = getVal('gDuracao');
+        var wrap = document.getElementById('gPacoteList');
+        if (!duracao) { wrap.innerHTML = ''; return; }
+        if (wrap.dataset.builtFor === duracao) return;
+        wrap.dataset.builtFor = duracao;
+        wrap.innerHTML = '';
+        var tabela = PRECOS[duracao];
+        var opcoes = [
+          { qtd: 1, label: 'Sessão única' },
+          { qtd: 2, label: '2 sessões' },
+          { qtd: 4, label: '4 sessões' }
+        ];
+        opcoes.forEach(function(o){
+          var label = document.createElement('label');
+          label.className = 'option-item';
+          var input = document.createElement('input');
+          input.type = 'radio';
+          input.name = 'gPacote';
+          input.value = o.label;
+          input.dataset.preco = tabela[o.qtd];
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(o.label));
+          label.appendChild(el('span','opt-price',tabela[o.qtd]));
+          wrap.appendChild(label);
+        });
+      }
+
+      function buildSummaryGenerico(){
+        var duracao = getVal('gDuracao');
+        var box = document.getElementById('gSummaryBox');
+        box.innerHTML = '';
+        var temaEl = document.getElementById('gTema');
+        var linhas = [
+          ['Tratar', getVal('gTema') || (temaEl ? temaEl.value : '')],
+          ['Duração', duracao === '50min' ? '50 minutos' : '30 minutos'],
+          ['Pacote', getVal('gPacote') || '—'],
+          ['Turno', getVal('gTurno') || 'Sem preferência'],
+          ['Prioridade', getVal('gPrioridade') || 'A combinar']
+        ];
+        linhas.forEach(function(l){
+          var line = document.createElement('div');
+          var strong = document.createElement('strong');
+          strong.textContent = l[0] + ': ';
+          line.appendChild(strong);
+          line.appendChild(document.createTextNode(l[1]));
+          box.appendChild(line);
+        });
+      }
+
+      function validateStepGenerico(i){
+        if (i === 1) return !!getVal('gPrimeiraVez');
+        if (i === 2) return !!getVal('gDuracao');
+        if (i === 3) return !!getVal('gTurno') && !!getVal('gPrioridade');
+        if (i === 4) return !!getVal('gPacote');
+        if (i === 5) {
+          var nome = document.getElementById('gNome').value.trim();
+          var tel = document.getElementById('gTelefone').value.trim();
+          return nome.length > 1 && tel.length > 7;
+        }
+        return true;
+      }
+
+      function goToStepGenerico(i){
+        gStepIndex = i;
+        gSteps.forEach(function(s){ s.classList.toggle('active', Number(s.dataset.gStep) === i); });
+        gDots.forEach(function(d,di){
+          d.classList.toggle('active', di === i);
+          d.classList.toggle('done', di < i);
+        });
+        gBackBtn.style.visibility = i === 0 ? 'hidden' : 'visible';
+        gNextBtn.textContent = (i === gSteps.length - 1) ? 'Falar no WhatsApp' : 'Continuar';
+        if (i === 4) buildPacotesGenerico();
+        if (i === 5) buildSummaryGenerico();
+      }
+
+      function abrirModalGenerico(){
+        var form = document.getElementById('genericoForm');
+        if (form) form.reset();
+        genericoModal.querySelectorAll('.option-item.checked').forEach(function(o){ o.classList.remove('checked'); });
+        genericoModal.querySelectorAll('.option-item').forEach(function(item){
+          var input = item.querySelector('input');
+          if (input && input.checked) item.classList.add('checked');
+        });
+        document.getElementById('gPacoteList').dataset.builtFor = '';
+        goToStepGenerico(0);
+        genericoModal.hidden = false;
+        document.body.style.overflow = 'hidden';
+      }
+
+      function fecharModalGenerico(){
+        genericoModal.hidden = true;
+        document.body.style.overflow = '';
+      }
+
+      var listaWhatsappBtn = document.getElementById('listaWhatsappBtn');
+      if (listaWhatsappBtn) {
+        listaWhatsappBtn.addEventListener('click', abrirModalGenerico);
+      }
+
+      var genericoCloseBtn = document.getElementById('genericoCloseBtn');
+      if (genericoCloseBtn) genericoCloseBtn.addEventListener('click', fecharModalGenerico);
+      genericoModal.addEventListener('click', function(ev){ if (ev.target === genericoModal) fecharModalGenerico(); });
+      document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && !genericoModal.hidden) fecharModalGenerico(); });
+
+      genericoModal.addEventListener('change', function(ev){
+        if (ev.target.type === 'radio' || ev.target.type === 'checkbox') {
+          var item = ev.target.closest('.option-item');
+          if (item) {
+            var siblings = item.parentElement.querySelectorAll('.option-item');
+            if (ev.target.type === 'radio') {
+              siblings.forEach(function(s){ s.classList.remove('checked'); });
+            }
+            item.classList.toggle('checked', ev.target.checked);
+          }
+        }
+      });
+
+      gBackBtn.addEventListener('click', function(){ if (gStepIndex > 0) goToStepGenerico(gStepIndex - 1); });
+
+      gNextBtn.addEventListener('click', function(){
+        if (!validateStepGenerico(gStepIndex)) {
+          gNextBtn.style.animation = 'none';
+          void gNextBtn.offsetWidth;
+          gNextBtn.style.animation = null;
+          return;
+        }
+        if (gStepIndex === gSteps.length - 1) {
+          finalizarContatoGenerico();
+          return;
+        }
+        goToStepGenerico(gStepIndex + 1);
+      });
+
+      function finalizarContatoGenerico(){
+        var tema = document.getElementById('gTema').value;
+        var temaDetalhe = document.getElementById('gTemaDetalhe').value.trim();
+        var primeiraVez = getVal('gPrimeiraVez');
+        var duracao = getVal('gDuracao');
+        var duracaoLabel = duracao === '50min' ? '50 minutos' : '30 minutos';
+        var pacote = getVal('gPacote');
+        var pacoteInput = document.querySelector('input[name="gPacote"]:checked');
+        var preco = pacoteInput ? pacoteInput.dataset.preco : '';
+        var turno = getVal('gTurno') || 'Sem preferência';
+        var prioridade = getVal('gPrioridade') || 'A combinar';
+        var nome = document.getElementById('gNome').value.trim();
+        var telefone = document.getElementById('gTelefone').value.trim();
+
+        var msg = 'Olá! Vim pelo site do Espaço do Renascer e ainda não escolhi uma profissional. 🌱\n\n' +
+          'Gostaria que a equipe me indicasse quem está disponível.\n\n' +
+          'O que gostaria de tratar: ' + tema + (temaDetalhe ? ', ' + temaDetalhe : '') + '\n' +
+          'Já fez terapia antes: ' + primeiraVez + '\n' +
+          'Duração da sessão: ' + duracaoLabel + '\n' +
+          'Pacote: ' + pacote + ' (' + preco + ')\n' +
+          'Turno de preferência: ' + turno + '\n' +
+          'Prioridade para começar: ' + prioridade + '\n\n' +
+          'Meu nome: ' + nome + '\n' +
+          'Meu WhatsApp: ' + telefone + '\n\n' +
+          'Podem me indicar qual profissional tem horário disponível?';
+
+        if (typeof fbq === 'function') {
+          fbq('track', 'Lead', {
+            content_category: 'Fale conosco (sem profissional escolhida)'
+          });
+        }
+
+        var url = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg);
+        window.open(url, '_blank', 'noopener');
+        fecharModalGenerico();
+      }
+    }
 
   })();
 
