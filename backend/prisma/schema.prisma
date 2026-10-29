@@ -129,6 +129,17 @@ enum CanalOrigem {
   OUTRO
 }
 
+// Fase 77 — "público buscado" pelo lead/cliente e "especialidades atendidas" pela profissional
+// (modalidade de atendimento, diferente de Profissional.especialidades que é foco clínico em
+// texto livre, ex: "Ansiedade"). Também usado em Campanha.publico, pra poder medir resultado por
+// público junto com o resultado por campanha.
+enum PublicoAtendimento {
+  INDIVIDUAL_ADULTO
+  INFANTIL_ADOLESCENTE
+  CASAL
+  GRUPO
+}
+
 enum TipoMovimentoCaixa {
   ENTRADA
   SAIDA
@@ -313,6 +324,10 @@ model Profissional {
   bio          String?  @db.Text
   idade        Int?     // idade da profissional, pra atendente conseguir filtrar/indicar melhor
   especialidades String[] @default([]) // "o que atende" / categorias (ex: Ansiedade, Relacionamentos, Autoestima)
+  // Fase 77 — modalidade/público atendido (diferente do campo acima, que é foco clínico em texto
+  // livre). Usado pra sugerir profissionais quando um lead é cadastrado com um público buscado
+  // específico (ver publicoBuscado em Cliente).
+  especialidadesAtendidas PublicoAtendimento[] @default([])
   abordagens   String?  // ex: "TCC, Psicanálise"
   percentualRepasse Float @default(50) // % que fica com a profissional (padrão 50/50)
   linkMeet     String?  // link fixo do Google Meet da profissional, usado em todas as sessões dela
@@ -335,6 +350,7 @@ model Profissional {
   perfilSite       PerfilSiteProfissional?
   rodizioSite      RodizioSiteProfissional[]
   excecoesRodizioSite RodizioSiteExcecao[]
+  gruposTerapeuticos GrupoTerapeutico[] @relation("ResponsavelDoGrupo")
 
   criadoEm     DateTime @default(now())
 
@@ -478,6 +494,15 @@ model Cliente {
   // não travar nenhum cadastro antigo nem novo que não souber a origem.
   canalOrigem    CanalOrigem?
 
+  // Fase 77 — módulo de leads por campanha e público: "lead" neste sistema é o próprio Cliente
+  // (não existe captura de lead antes disso — ver comentário em utils/meuDia.js), então a
+  // campanha/público ficam direto aqui, preenchidos no mesmo cadastro onde já se preenche
+  // canalOrigem acima. Os dois são opcionais, pra não travar cadastro de quem não veio de
+  // campanha nenhuma.
+  campanhaId     String?
+  campanha       Campanha? @relation(fields: [campanhaId], references: [id])
+  publicoBuscado PublicoAtendimento?
+
   contrato       Contrato?
   pacotes        Pacote[]
   agendamentos   Agendamento[]
@@ -491,13 +516,106 @@ model Cliente {
   historico      HistoricoCliente[]
   horariosFixos  Disponibilidade[] @relation("ClienteHorarioFixo")
   solicitacoesNovoPaciente SolicitacaoNovoPaciente[]
+  gruposParticipante GrupoParticipante[]
 
   criadoEm       DateTime @default(now())
 
   @@index([profissionalAtualId])
   @@index([situacao])
   @@index([canalOrigem])
+  @@index([campanhaId])
   @@map("clientes")
+}
+
+// Fase 77 — campanha de marketing cadastrada pelos donos (nome, público-alvo opcional, período e
+// valor investido), pra medir resultado por campanha: leads, quantos agendaram, quantos pagaram,
+// taxa de conversão, custo por lead e CAC (ver calcularRelatorioPorCampanha em utils/meuDia.js).
+// Lista fixa (igual Planos) — o cadastro de cliente só pode escolher entre campanhas já
+// cadastradas aqui, nunca texto livre, pra não bagunçar o relatório com nomes quase iguais.
+model Campanha {
+  id        String              @id @default(cuid())
+  nome      String
+  publico   PublicoAtendimento?
+  dataInicio DateTime?          @db.Date
+  dataFim    DateTime?          @db.Date
+  valorInvestido Float?
+  ativa     Boolean             @default(true)
+
+  clientes  Cliente[]
+
+  criadoEm  DateTime @default(now())
+
+  @@index([ativa])
+  @@map("campanhas")
+}
+
+// Fase 77 — Grupos Terapêuticos: sistema SEPARADO e mais simples (decisão aprovada pelo Dono) —
+// não gera Agendamento nem TransacaoFinanceira automaticamente, só controla vagas, participantes
+// e presença por encontro. Se um dia precisar integrar de verdade com Agenda/Financeiro, dá pra
+// evoluir depois sem quebrar o que já existe aqui.
+model GrupoTerapeutico {
+  id             String       @id @default(cuid())
+  tema           String
+  profissionalResponsavelId String
+  profissionalResponsavel   Profissional @relation("ResponsavelDoGrupo", fields: [profissionalResponsavelId], references: [id])
+
+  diaSemana      DiaSemana?
+  horaInicio     String?
+  vagasTotais    Int          @default(0)
+  valorPorParticipante Float?
+  ativo          Boolean      @default(true)
+
+  participantes  GrupoParticipante[]
+  encontros      GrupoEncontro[]
+
+  criadoEm       DateTime @default(now())
+
+  @@index([profissionalResponsavelId])
+  @@index([ativo])
+  @@map("grupos_terapeuticos")
+}
+
+model GrupoParticipante {
+  id        String           @id @default(cuid())
+  grupoId   String
+  grupo     GrupoTerapeutico @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  clienteId String
+  cliente   Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  entrouEm  DateTime  @default(now())
+  saiuEm    DateTime?
+
+  presencas GrupoPresenca[]
+
+  @@index([grupoId])
+  @@index([clienteId])
+  @@map("grupo_participantes")
+}
+
+model GrupoEncontro {
+  id       String           @id @default(cuid())
+  grupoId  String
+  grupo    GrupoTerapeutico @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  data     DateTime         @db.Date
+
+  presencas GrupoPresenca[]
+
+  criadoEm DateTime @default(now())
+
+  @@unique([grupoId, data])
+  @@map("grupo_encontros")
+}
+
+model GrupoPresenca {
+  id             String            @id @default(cuid())
+  encontroId     String
+  encontro       GrupoEncontro     @relation(fields: [encontroId], references: [id], onDelete: Cascade)
+  participanteId String
+  participante   GrupoParticipante @relation(fields: [participanteId], references: [id], onDelete: Cascade)
+  presente       Boolean           @default(false)
+
+  @@unique([encontroId, participanteId])
+  @@map("grupo_presencas")
 }
 
 // Fase 55 — "pedido de novo paciente": criado quando a Atendente ou o Dono cadastra um cliente
@@ -1317,6 +1435,17 @@ model Oportunidade {
   notaCustoTestar        Int?
   notaAlinhamento        Int?
   pontuacaoTotal         Int?
+
+  // Fase 77 — "prova/evidência" de cada nota (texto curto): a rota de salvar passa a EXIGIR que,
+  // toda vez que uma nota for enviada/alterada, a prova daquele critério específico venha
+  // preenchida também — senão rejeita o salvamento. Ficam opcionais aqui no banco só pra não
+  // quebrar oportunidades antigas que já tinham nota sem prova (essas continuam existindo/
+  // visíveis, só não dá pra editar a nota delas sem preencher a prova agora).
+  provaTamanhoProblema    String? @db.Text
+  provaDisposicaoPagar    String? @db.Text
+  provaCapacidadeExecutar String? @db.Text
+  provaCustoTestar        String? @db.Text
+  provaAlinhamento        String? @db.Text
 
   status              StatusOportunidade @default(IDEIA)
   motivoArquivamento  String?            @db.Text // só preenchido quando status = ARQUIVADA

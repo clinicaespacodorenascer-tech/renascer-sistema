@@ -279,4 +279,17 @@ router.post("/meu-dia/checklist/alternar", bloquearSemPainelDeGestao, async (req
   res.json({ concluido: true });
 });
 
+// Fase 77 — lista de campanhas ativas pra preencher o seletor "Campanha" no cadastro de cliente
+// (Atendente e Dono). Só o cadastro/CRUD de verdade (criar/editar/relatório) é exclusivo do Dono
+// (fica em dono.js) — aqui é só leitura, pra qualquer papel com painel de gestão poder escolher
+// uma campanha já cadastrada ao registrar um lead.
+router.get("/campanhas-ativas", bloquearSemPainelDeGestao, async (req, res) => {
+  const campanhas = await prisma.campanha.findMany({
+    where: { ativa: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true, publico: true },
+  });
+  res.json(campanhas);
+});
+
 module.exports = router;

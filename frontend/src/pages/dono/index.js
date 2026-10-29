@@ -78,6 +78,8 @@ export default function AreaDono() {
     { id: "secretaria", label: "Secretaria" }, // Fase 47
     { id: "oportunidades", label: "Banco de Oportunidades" }, // Fase 71
     { id: "site", label: "Site" }, // Fase 75
+    { id: "campanhas", label: "Campanhas" }, // Fase 77
+    { id: "grupos", label: "Grupos Terapêuticos" }, // Fase 77
   ];
 
   const mostrarPopupRenovacao = !popupRenovacaoFechado && renovarSemana.length > 0;
@@ -118,6 +120,8 @@ export default function AreaDono() {
       {aba === "secretaria" && <AbaSecretaria />}
       {aba === "oportunidades" && <AbaOportunidades />}
       {aba === "site" && <AbaSite />}
+      {aba === "campanhas" && <AbaCampanhas />}
+      {aba === "grupos" && <AbaGruposTerapeuticos />}
     </LayoutNovo>
   );
 }
@@ -1356,7 +1360,21 @@ const FORM_CLIENTE_VAZIO_DONO = {
   pagamentoParcial: false,
   valorPacoteTotal: "",
   canalOrigem: "",
+  campanhaId: "",
+  publicoBuscado: "",
 };
+// Fase 77 — mesma lista usada no cadastro da Atendente/perfil da profissional.
+const PUBLICO_BUSCADO_OPCOES_DONO = [
+  { valor: "", label: "Público buscado (opcional)" },
+  { valor: "INDIVIDUAL_ADULTO", label: "Individual adulto" },
+  { valor: "INFANTIL_ADOLESCENTE", label: "Infantil/adolescente" },
+  { valor: "CASAL", label: "Casal" },
+  { valor: "GRUPO", label: "Grupo" },
+];
+function sugerirProfissionaisPorPublicoDono(profissionais, publicoBuscado) {
+  if (!publicoBuscado) return null;
+  return profissionais.filter((p) => (p.especialidadesAtendidas || []).includes(publicoBuscado));
+}
 const DIAS_FIXOS_DONO = [
   ["SEGUNDA", "Segunda"],
   ["TERCA", "Terça"],
@@ -1413,6 +1431,11 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
   const [nomeCadastrado, setNomeCadastrado] = useState("");
   const [msg, setMsg] = useState("");
   const [copiado, setCopiado] = useState(false);
+  const [campanhas, setCampanhas] = useState([]);
+
+  useEffect(() => {
+    api.get("/comum/campanhas-ativas").then((r) => setCampanhas(r.data));
+  }, []);
 
   async function cadastrar() {
     setMsg("");
@@ -1439,6 +1462,8 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
         imagemBase64,
         mimeType: arquivo?.type,
         canalOrigem: form.canalOrigem || undefined,
+        campanhaId: form.campanhaId || undefined,
+        publicoBuscado: form.publicoBuscado || undefined,
       });
       setResultado(data);
       setNomeCadastrado(form.nome);
@@ -1483,6 +1508,17 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
       </div>
 
       <div className="mt-3">
+        <p className="text-xs text-nv-muted mb-1.5">Público buscado</p>
+        <select className="input" value={form.publicoBuscado} onChange={(e) => setForm({ ...form, publicoBuscado: e.target.value })}>
+          {PUBLICO_BUSCADO_OPCOES_DONO.map((o) => (
+            <option key={o.valor} value={o.valor}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-3">
         <p className="text-xs text-nv-muted mb-1.5">Profissional que vai atender *</p>
         <select className="input" value={form.profissionalAtualId} onChange={(e) => setForm({ ...form, profissionalAtualId: e.target.value })}>
           <option value="">Escolha a profissional</option>
@@ -1493,6 +1529,23 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
             </option>
           ))}
         </select>
+        {(() => {
+          const sugeridas = sugerirProfissionaisPorPublicoDono(profissionais, form.publicoBuscado);
+          if (!sugeridas) return null;
+          if (sugeridas.length === 0) {
+            return <p className="text-[11.5px] text-nv-muted3 mt-1">Nenhuma profissional marcou esse público no perfil ainda.</p>;
+          }
+          return (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <span className="text-[11.5px] text-nv-muted3">Atende esse público:</span>
+              {sugeridas.map((p) => (
+                <button key={p.id} type="button" className="nv-seg" onClick={() => setForm({ ...form, profissionalAtualId: p.id })}>
+                  {p.user.nome}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="border-t border-nv-borderLight mt-4 pt-4">
@@ -1704,6 +1757,14 @@ function NovoClienteDono({ profissionais, onCadastrado }) {
             {CANAL_ORIGEM_OPCOES_DONO.map((c) => (
               <option key={c.valor} value={c.valor}>
                 {c.label}
+              </option>
+            ))}
+          </select>
+          <select className="input" value={form.campanhaId} onChange={(e) => setForm({ ...form, campanhaId: e.target.value })}>
+            <option value="">Campanha (opcional)</option>
+            {campanhas.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
               </option>
             ))}
           </select>
@@ -7298,13 +7359,64 @@ const STATUS_OPORTUNIDADE_COR = {
   IMPLEMENTADA: "bg-nv-green/10 text-nv-green",
   ARQUIVADA: "bg-gray-200 text-gray-500",
 };
+// Fase 77 — régua com a descrição do que significa 1, 3 e 5 em cada critério (pedido do
+// Elismael, pra não depender de "feeling" na hora de avaliar) + o campo de prova obrigatório
+// correspondente (ver validarProvasObrigatorias no backend).
 const CRITERIOS_AVALIACAO_OPORTUNIDADE = [
-  { chave: "notaTamanhoProblema", label: "Tamanho do problema" },
-  { chave: "notaDisposicaoPagar", label: "Disposição de pagar" },
-  { chave: "notaCapacidadeExecutar", label: "Capacidade de executar com o que já temos" },
-  { chave: "notaCustoTestar", label: "Custo de testar (5 = muito barato)" },
-  { chave: "notaAlinhamento", label: "Alinhamento com a missão e as empresas atuais" },
+  {
+    chave: "notaTamanhoProblema",
+    prova: "provaTamanhoProblema",
+    label: "Tamanho do problema",
+    regua: { 1: "Poucas pessoas e dor leve", 3: "Bastante gente, sem urgência", 5: "Muita gente, dor forte e urgente" },
+  },
+  {
+    chave: "notaDisposicaoPagar",
+    prova: "provaDisposicaoPagar",
+    label: "Disposição de pagar",
+    regua: { 1: "Ninguém paga por algo parecido", 3: "Pagam com resistência ou pouco", 5: "Já pagam hoje com facilidade" },
+  },
+  {
+    chave: "notaCapacidadeExecutar",
+    prova: "provaCapacidadeExecutar",
+    label: "Capacidade de executar com o que já temos",
+    regua: { 1: "Preciso de tudo novo", 3: "Tenho metade", 5: "Tenho tudo e começo amanhã" },
+  },
+  {
+    chave: "notaCustoTestar",
+    prova: "provaCustoTestar",
+    label: "Custo de testar (5 = muito barato)",
+    regua: { 1: "Meses e milhares de reais", 3: "Semanas e centenas de reais", 5: "Poucos dias e quase nada" },
+  },
+  {
+    chave: "notaAlinhamento",
+    prova: "provaAlinhamento",
+    label: "Alinhamento com a missão e as empresas atuais",
+    regua: { 1: "Nada a ver, divide a atenção", 3: "Alguma relação", 5: "Fortalece diretamente o que já existe" },
+  },
 ];
+
+// Fase 77 — faixa automática pela pontuação total (selo SEPARADO do status manual — ver decisão
+// aprovada), sinal vermelho quando qualquer nota é 1, e "próximo passo" (menor nota, usando a
+// ordem fixa da régua acima pra desempatar quando mais de um critério tem a mesma nota mínima).
+const FAIXA_OPORTUNIDADE_POR_PONTUACAO = [
+  { min: 21, max: 25, label: "Prioridade", cor: "bg-red-100 text-red-700" },
+  { min: 16, max: 20, label: "Fila", cor: "bg-amber-100 text-amber-700" },
+  { min: 11, max: 15, label: "Guardar", cor: "bg-emerald-100 text-emerald-700" },
+  { min: 5, max: 10, label: "Arquivar", cor: "bg-gray-200 text-gray-500" },
+];
+function faixaOportunidade(pontuacaoTotal) {
+  if (pontuacaoTotal == null) return null;
+  return FAIXA_OPORTUNIDADE_POR_PONTUACAO.find((f) => pontuacaoTotal >= f.min && pontuacaoTotal <= f.max) || null;
+}
+function criteriosComNota1(o) {
+  return CRITERIOS_AVALIACAO_OPORTUNIDADE.filter((c) => o[c.chave] === 1);
+}
+function proximoPassoOportunidade(o) {
+  const comNota = CRITERIOS_AVALIACAO_OPORTUNIDADE.filter((c) => o[c.chave] != null);
+  if (comNota.length === 0) return null;
+  const menor = Math.min(...comNota.map((c) => o[c.chave]));
+  return comNota.find((c) => o[c.chave] === menor) || null;
+}
 
 function AbaOportunidades() {
   const [lista, setLista] = useState(null);
@@ -7360,23 +7472,41 @@ function AbaOportunidades() {
             As melhores pontuadas que ainda não estão em teste
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            {destaques.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => setModalAberto(o)}
-                className="text-left nv-card-flat px-4 py-3.5 hover:border-nv-blue/40 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <span className="font-sora font-bold text-[20px] text-nv-blue tabular-nums">{o.pontuacaoTotal}/25</span>
-                  <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
-                    {STATUS_OPORTUNIDADE_LABEL[o.status]}
-                  </span>
-                </div>
-                <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
-                <p className="text-[11.5px] text-nv-muted3 mt-0.5">{EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}</p>
-              </button>
-            ))}
+            {destaques.map((o) => {
+              const faixa = faixaOportunidade(o.pontuacaoTotal);
+              const notas1 = criteriosComNota1(o);
+              const proximoPasso = proximoPassoOportunidade(o);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => setModalAberto(o)}
+                  className="text-left nv-card-flat px-4 py-3.5 hover:border-nv-blue/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                    <span className="font-sora font-bold text-[20px] text-nv-blue tabular-nums">{o.pontuacaoTotal}/25</span>
+                    <div className="flex items-center gap-1.5">
+                      {faixa && (
+                        <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${faixa.cor}`}>{faixa.label}</span>
+                      )}
+                      <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
+                        {STATUS_OPORTUNIDADE_LABEL[o.status]}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
+                  <p className="text-[11.5px] text-nv-muted3 mt-0.5">{EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}</p>
+                  {notas1.map((c) => (
+                    <p key={c.chave} className="text-[11px] font-semibold text-red-600 mt-1.5">
+                      Sinal vermelho: resolver {c.label} antes de seguir
+                    </p>
+                  ))}
+                  {notas1.length === 0 && proximoPasso && (
+                    <p className="text-[11px] text-nv-muted3 mt-1.5">Próximo passo: melhorar {proximoPasso.label}</p>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -7426,31 +7556,48 @@ function AbaOportunidades() {
           <p className="text-[13px] text-nv-muted py-4">Nenhuma oportunidade com esses filtros ainda.</p>
         )}
         {lista &&
-          lista.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => setModalAberto(o)}
-              className="w-full text-left flex items-center justify-between gap-3 flex-wrap py-3 border-t border-nv-borderLight first:border-t-0"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="font-sora font-bold text-[16px] text-nv-ink tabular-nums w-[46px] shrink-0">
-                  {o.pontuacaoTotal != null ? `${o.pontuacaoTotal}/25` : "—"}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
-                  <p className="text-[11.5px] text-nv-muted3">
-                    {EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}
-                    {o.tipo ? ` · ${TIPO_OPORTUNIDADE_LABEL[o.tipo].split(" — ")[0]}` : ""}
-                    {o.fonte ? ` · ${FONTE_OPORTUNIDADE_LABEL[o.fonte]}` : ""}
-                  </p>
+          lista.map((o) => {
+            const faixa = faixaOportunidade(o.pontuacaoTotal);
+            const notas1 = criteriosComNota1(o);
+            const proximoPasso = proximoPassoOportunidade(o);
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setModalAberto(o)}
+                className="w-full text-left flex items-center justify-between gap-3 flex-wrap py-3 border-t border-nv-borderLight first:border-t-0"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-sora font-bold text-[16px] text-nv-ink tabular-nums w-[46px] shrink-0">
+                    {o.pontuacaoTotal != null ? `${o.pontuacaoTotal}/25` : "—"}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-semibold text-nv-ink2">{o.titulo}</p>
+                    <p className="text-[11.5px] text-nv-muted3">
+                      {EMPRESA_OPORTUNIDADE_LABEL[o.empresa]}
+                      {o.tipo ? ` · ${TIPO_OPORTUNIDADE_LABEL[o.tipo].split(" — ")[0]}` : ""}
+                      {o.fonte ? ` · ${FONTE_OPORTUNIDADE_LABEL[o.fonte]}` : ""}
+                    </p>
+                    {notas1.length > 0 ? (
+                      notas1.map((c) => (
+                        <p key={c.chave} className="text-[11px] font-semibold text-red-600 mt-0.5">
+                          Sinal vermelho: resolver {c.label} antes de seguir
+                        </p>
+                      ))
+                    ) : proximoPasso ? (
+                      <p className="text-[11px] text-nv-muted3 mt-0.5">Próximo passo: melhorar {proximoPasso.label}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
-                {STATUS_OPORTUNIDADE_LABEL[o.status]}
-              </span>
-            </button>
-          ))}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {faixa && <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${faixa.cor}`}>{faixa.label}</span>}
+                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${STATUS_OPORTUNIDADE_COR[o.status]}`}>
+                    {STATUS_OPORTUNIDADE_LABEL[o.status]}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
       </div>
 
       {modalAberto && (
@@ -7478,6 +7625,13 @@ function ModalOportunidade({ oportunidade, onFechar, onSalvar }) {
     notaCustoTestar: oportunidade?.notaCustoTestar ?? "",
     notaAlinhamento: oportunidade?.notaAlinhamento ?? "",
   });
+  const [provas, setProvas] = useState({
+    provaTamanhoProblema: oportunidade?.provaTamanhoProblema || "",
+    provaDisposicaoPagar: oportunidade?.provaDisposicaoPagar || "",
+    provaCapacidadeExecutar: oportunidade?.provaCapacidadeExecutar || "",
+    provaCustoTestar: oportunidade?.provaCustoTestar || "",
+    provaAlinhamento: oportunidade?.provaAlinhamento || "",
+  });
   const [status, setStatus] = useState(oportunidade?.status || "IDEIA");
   const [motivoArquivamento, setMotivoArquivamento] = useState(oportunidade?.motivoArquivamento || "");
   const [salvando, setSalvando] = useState(false);
@@ -7496,6 +7650,14 @@ function ModalOportunidade({ oportunidade, onFechar, onSalvar }) {
       setErro("Informe o motivo do arquivamento.");
       return;
     }
+    // Fase 77 — mesma regra do backend, checada aqui antes também pra dar feedback na hora (sem
+    // esperar o round-trip): toda nota preenchida precisa da prova daquele critério.
+    for (const c of CRITERIOS_AVALIACAO_OPORTUNIDADE) {
+      if (notas[c.chave] !== "" && !provas[c.prova].trim()) {
+        setErro(`Informe a prova/evidência de "${c.label}" antes de salvar essa nota.`);
+        return;
+      }
+    }
     setSalvando(true);
     setErro("");
     const payload = {
@@ -7509,6 +7671,11 @@ function ModalOportunidade({ oportunidade, onFechar, onSalvar }) {
       notaCapacidadeExecutar: notas.notaCapacidadeExecutar === "" ? null : Number(notas.notaCapacidadeExecutar),
       notaCustoTestar: notas.notaCustoTestar === "" ? null : Number(notas.notaCustoTestar),
       notaAlinhamento: notas.notaAlinhamento === "" ? null : Number(notas.notaAlinhamento),
+      provaTamanhoProblema: provas.provaTamanhoProblema || null,
+      provaDisposicaoPagar: provas.provaDisposicaoPagar || null,
+      provaCapacidadeExecutar: provas.provaCapacidadeExecutar || null,
+      provaCustoTestar: provas.provaCustoTestar || null,
+      provaAlinhamento: provas.provaAlinhamento || null,
       status,
       motivoArquivamento: motivoArquivamento || null,
     };
@@ -7611,22 +7778,36 @@ function ModalOportunidade({ oportunidade, onFechar, onSalvar }) {
                 {somaNotas != null ? `${somaNotas}/25` : "— /25"}
               </span>
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {CRITERIOS_AVALIACAO_OPORTUNIDADE.map((c) => (
-                <div key={c.chave} className="flex items-center justify-between gap-3">
-                  <p className="text-[12.5px] text-nv-ink2 flex-1">{c.label}</p>
-                  <select
-                    className="rounded-[8px] border border-nv-border px-2 py-1.5 text-[13px] bg-white w-[64px]"
-                    value={notas[c.chave]}
-                    onChange={(e) => setNotas((n) => ({ ...n, [c.chave]: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+                <div key={c.chave} className="bg-nv-bg2 rounded-lg px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[12.5px] font-semibold text-nv-ink2 flex-1">{c.label}</p>
+                    <select
+                      className="rounded-[8px] border border-nv-border px-2 py-1.5 text-[13px] bg-white w-[64px]"
+                      value={notas[c.chave]}
+                      onChange={(e) => setNotas((n) => ({ ...n, [c.chave]: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[10.5px] text-nv-muted3 mt-1 leading-snug">
+                    <span className="font-semibold">1</span> {c.regua[1]} · <span className="font-semibold">3</span> {c.regua[3]} ·{" "}
+                    <span className="font-semibold">5</span> {c.regua[5]}
+                  </p>
+                  {notas[c.chave] !== "" && (
+                    <input
+                      className="input !mt-2 !py-1.5 text-[12.5px]"
+                      placeholder="Prova/evidência dessa nota (obrigatório)"
+                      value={provas[c.prova]}
+                      onChange={(e) => setProvas((p) => ({ ...p, [c.prova]: e.target.value }))}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -8321,6 +8502,626 @@ function ModalPerfilSite({ profissional, onFechar, onSalvar }) {
             Fechar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- Fase 77 — CAMPANHAS (leads por campanha e público) ----------------
+// ================================================================================================
+
+const PUBLICO_CAMPANHA_LABEL = {
+  INDIVIDUAL_ADULTO: "Individual adulto",
+  INFANTIL_ADOLESCENTE: "Infantil/adolescente",
+  CASAL: "Casal",
+  GRUPO: "Grupo",
+};
+
+function primeiroDiaDoMesISO() {
+  const hoje = new Date();
+  return new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+}
+function ultimoDiaDoMesISO() {
+  const hoje = new Date();
+  return new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+}
+
+function formatarMoedaCampanha(v) {
+  if (v == null) return "—";
+  return `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function AbaCampanhas() {
+  const [relatorio, setRelatorio] = useState(null);
+  const [periodo, setPeriodo] = useState({ inicio: primeiroDiaDoMesISO(), fim: ultimoDiaDoMesISO() });
+  const [modalAberto, setModalAberto] = useState(null); // null | "nova" | objeto da campanha
+  const [comparar, setComparar] = useState([]); // ids selecionados pra comparação lado a lado
+
+  async function carregar() {
+    const { data } = await api.get(`/dono/campanhas/relatorio?inicio=${periodo.inicio}&fim=${periodo.fim}`);
+    setRelatorio(data.campanhas);
+  }
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo]);
+
+  function alternarComparar(id) {
+    setComparar((lista) => (lista.includes(id) ? lista.filter((x) => x !== id) : [...lista, id]));
+  }
+
+  async function pausarOuApagar(c) {
+    if (!window.confirm(`Pausar/remover a campanha "${c.nome}"? (se já tiver lead vinculado, só pausa — não apaga o histórico)`)) return;
+    await api.delete(`/dono/campanhas/${c.id}`);
+    carregar();
+  }
+
+  async function reativar(c) {
+    await api.put(`/dono/campanhas/${c.id}`, { ativa: true });
+    carregar();
+  }
+
+  const comparadas = relatorio ? relatorio.filter((c) => comparar.includes(c.id)) : [];
+
+  return (
+    <div className="space-y-5 font-publicSans">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Campanhas</h1>
+          <p className="text-nv-muted text-sm mt-0.5">
+            Resultado por campanha e por público: leads, quem agendou, quem pagou, conversão, custo por lead e CAC.
+          </p>
+        </div>
+        <button type="button" className="btn-primary !py-2.5 !px-4 text-sm" onClick={() => setModalAberto("nova")}>
+          + Nova campanha
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <label className="text-xs text-nv-muted">
+          De
+          <input
+            type="date"
+            className="input !w-auto ml-1.5"
+            value={periodo.inicio}
+            onChange={(e) => setPeriodo((p) => ({ ...p, inicio: e.target.value }))}
+          />
+        </label>
+        <label className="text-xs text-nv-muted">
+          Até
+          <input
+            type="date"
+            className="input !w-auto ml-1.5"
+            value={periodo.fim}
+            onChange={(e) => setPeriodo((p) => ({ ...p, fim: e.target.value }))}
+          />
+        </label>
+        <p className="text-[11.5px] text-nv-muted3">Leads contados pela data de cadastro dentro desse período.</p>
+      </div>
+
+      {comparadas.length > 0 && (
+        <div>
+          <h2 className="font-sora font-semibold text-[15px] text-nv-navy mb-2.5">Comparação lado a lado</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {comparadas.map((c) => (
+              <div key={c.id} className="nv-card-flat px-4 py-3.5">
+                <p className="text-[13.5px] font-semibold text-nv-ink2">{c.nome}</p>
+                <p className="text-[11px] text-nv-muted3 mb-2">{c.publico ? PUBLICO_CAMPANHA_LABEL[c.publico] : "Público geral"}</p>
+                <div className="grid grid-cols-2 gap-y-1 text-[12.5px] text-nv-ink2">
+                  <span className="text-nv-muted3">Leads</span>
+                  <span className="text-right font-semibold tabular-nums">{c.leads}</span>
+                  <span className="text-nv-muted3">Agendaram</span>
+                  <span className="text-right font-semibold tabular-nums">{c.leadsAgendaram}</span>
+                  <span className="text-nv-muted3">Pagaram</span>
+                  <span className="text-right font-semibold tabular-nums">{c.leadsPagaram}</span>
+                  <span className="text-nv-muted3">Conversão</span>
+                  <span className="text-right font-semibold tabular-nums">{c.taxaConversaoPercentual != null ? `${c.taxaConversaoPercentual}%` : "—"}</span>
+                  <span className="text-nv-muted3">Custo/lead</span>
+                  <span className="text-right font-semibold tabular-nums">{formatarMoedaCampanha(c.custoPorLead)}</span>
+                  <span className="text-nv-muted3">CAC</span>
+                  <span className="text-right font-semibold tabular-nums">{formatarMoedaCampanha(c.cac)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="nv-card-flat px-6 py-1 overflow-x-auto">
+        {relatorio === null && <p className="text-sm text-nv-muted py-4">Carregando...</p>}
+        {relatorio && relatorio.length === 0 && <p className="text-[13px] text-nv-muted py-4">Nenhuma campanha cadastrada ainda.</p>}
+        {relatorio && relatorio.length > 0 && (
+          <table className="w-full text-[12.5px] min-w-[860px]">
+            <thead>
+              <tr className="text-left text-nv-muted3 border-b border-nv-borderLight">
+                <th className="py-2.5 pr-2 font-medium">Comparar</th>
+                <th className="py-2.5 pr-2 font-medium">Campanha</th>
+                <th className="py-2.5 pr-2 font-medium">Investido</th>
+                <th className="py-2.5 pr-2 font-medium text-right">Leads</th>
+                <th className="py-2.5 pr-2 font-medium text-right">Agendaram</th>
+                <th className="py-2.5 pr-2 font-medium text-right">Pagaram</th>
+                <th className="py-2.5 pr-2 font-medium text-right">Conversão</th>
+                <th className="py-2.5 pr-2 font-medium text-right">Custo/lead</th>
+                <th className="py-2.5 pr-2 font-medium text-right">CAC</th>
+                <th className="py-2.5 pr-2 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {relatorio.map((c) => (
+                <tr key={c.id} className="border-b border-nv-borderLight last:border-0">
+                  <td className="py-2.5 pr-2">
+                    <input type="checkbox" checked={comparar.includes(c.id)} onChange={() => alternarComparar(c.id)} />
+                  </td>
+                  <td className="py-2.5 pr-2">
+                    <button type="button" className="text-nv-ink2 font-semibold hover:text-nv-blue" onClick={() => setModalAberto(c)}>
+                      {c.nome}
+                    </button>
+                    <p className="text-[11px] text-nv-muted3">
+                      {c.publico ? PUBLICO_CAMPANHA_LABEL[c.publico] : "Público geral"}
+                      {!c.ativa && " · pausada"}
+                    </p>
+                  </td>
+                  <td className="py-2.5 pr-2 tabular-nums">{formatarMoedaCampanha(c.valorInvestido)}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{c.leads}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{c.leadsAgendaram}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{c.leadsPagaram}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{c.taxaConversaoPercentual != null ? `${c.taxaConversaoPercentual}%` : "—"}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{formatarMoedaCampanha(c.custoPorLead)}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums">{formatarMoedaCampanha(c.cac)}</td>
+                  <td className="py-2.5 pr-2 text-right">
+                    {c.ativa ? (
+                      <button type="button" className="text-[11px] text-nv-muted3 underline" onClick={() => pausarOuApagar(c)}>
+                        Pausar/remover
+                      </button>
+                    ) : (
+                      <button type="button" className="text-[11px] text-nv-blue underline" onClick={() => reativar(c)}>
+                        Reativar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {modalAberto && (
+        <ModalCampanha
+          campanha={modalAberto === "nova" ? null : modalAberto}
+          onFechar={() => setModalAberto(null)}
+          onSalvar={() => {
+            setModalAberto(null);
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalCampanha({ campanha, onFechar, onSalvar }) {
+  const editando = !!campanha;
+  const [nome, setNome] = useState(campanha?.nome || "");
+  const [publico, setPublico] = useState(campanha?.publico || "");
+  const [dataInicio, setDataInicio] = useState(campanha?.dataInicio ? campanha.dataInicio.slice(0, 10) : "");
+  const [dataFim, setDataFim] = useState(campanha?.dataFim ? campanha.dataFim.slice(0, 10) : "");
+  const [valorInvestido, setValorInvestido] = useState(campanha?.valorInvestido ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function salvar() {
+    if (!nome.trim()) {
+      setErro("Informe o nome da campanha.");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    try {
+      const corpo = {
+        nome,
+        publico: publico || null,
+        dataInicio: dataInicio || null,
+        dataFim: dataFim || null,
+        valorInvestido: valorInvestido === "" ? null : Number(valorInvestido),
+      };
+      if (editando) await api.put(`/dono/campanhas/${campanha.id}`, corpo);
+      else await api.post("/dono/campanhas", corpo);
+      onSalvar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Erro ao salvar campanha.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onFechar}>
+      <div className="bg-white rounded-xl max-w-md w-full p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-sora font-semibold text-nv-ink">{editando ? "Editar campanha" : "Nova campanha"}</h2>
+        <input className="input" placeholder='Nome (ex: "Pais e filhos")' value={nome} onChange={(e) => setNome(e.target.value)} />
+        <select className="input" value={publico} onChange={(e) => setPublico(e.target.value)}>
+          <option value="">Público (opcional — campanha geral)</option>
+          {Object.entries(PUBLICO_CAMPANHA_LABEL).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs text-nv-muted">
+            Início
+            <input type="date" className="input mt-1" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+          </label>
+          <label className="text-xs text-nv-muted">
+            Fim
+            <input type="date" className="input mt-1" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+          </label>
+        </div>
+        <input
+          className="input"
+          placeholder="Valor investido (R$)"
+          value={valorInvestido}
+          onChange={(e) => setValorInvestido(e.target.value)}
+        />
+        {erro && <p className="text-red-600 text-sm">{erro}</p>}
+        <div className="flex items-center gap-2.5 pt-1">
+          <button type="button" disabled={salvando} onClick={salvar} className="btn-primary flex-1 !py-2.5 text-sm">
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================================================
+// ---------------- Fase 77 — GRUPOS TERAPÊUTICOS (sistema separado, sem Agenda/Financeiro) -------
+// ================================================================================================
+
+const DIAS_SEMANA_GRUPO = [
+  ["SEGUNDA", "Segunda"],
+  ["TERCA", "Terça"],
+  ["QUARTA", "Quarta"],
+  ["QUINTA", "Quinta"],
+  ["SEXTA", "Sexta"],
+  ["SABADO", "Sábado"],
+  ["DOMINGO", "Domingo"],
+];
+const DIA_SEMANA_GRUPO_LABEL = Object.fromEntries(DIAS_SEMANA_GRUPO);
+
+function AbaGruposTerapeuticos() {
+  const [grupos, setGrupos] = useState(null);
+  const [profissionais, setProfissionais] = useState([]);
+  const [modalAberto, setModalAberto] = useState(null); // null | "novo" | objeto do grupo
+  const [grupoExpandidoId, setGrupoExpandidoId] = useState(null);
+
+  async function carregar() {
+    const [g, p] = await Promise.all([api.get("/dono/grupos"), api.get("/dono/profissionais")]);
+    setGrupos(g.data);
+    setProfissionais(p.data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function apagar(g) {
+    if (!window.confirm(`Apagar o grupo "${g.tema}"? Isso remove participantes e presenças registradas.`)) return;
+    await api.delete(`/dono/grupos/${g.id}`);
+    carregar();
+  }
+
+  return (
+    <div className="space-y-5 font-publicSans">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="nv-eyebrow mb-1">Painel do Dono</p>
+          <h1 className="font-sora font-bold text-[28px] text-nv-ink leading-tight">Grupos Terapêuticos</h1>
+          <p className="text-nv-muted text-sm mt-0.5">Tema, profissional responsável, vagas, participantes e presença por encontro.</p>
+        </div>
+        <button type="button" className="btn-primary !py-2.5 !px-4 text-sm" onClick={() => setModalAberto("novo")}>
+          + Novo grupo
+        </button>
+      </div>
+
+      {grupos === null && <p className="text-sm text-nv-muted">Carregando...</p>}
+      {grupos && grupos.length === 0 && <p className="text-[13px] text-nv-muted">Nenhum grupo cadastrado ainda.</p>}
+
+      <div className="space-y-3">
+        {grupos &&
+          grupos.map((g) => (
+            <div key={g.id} className="nv-card-flat px-5 py-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-sora font-semibold text-[15px] text-nv-ink">{g.tema}</p>
+                    {!g.ativo && (
+                      <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500">Pausado</span>
+                    )}
+                  </div>
+                  <p className="text-[12.5px] text-nv-muted3 mt-0.5">
+                    {g.profissionalResponsavel?.user?.nome || "sem responsável"}
+                    {g.diaSemana ? ` · ${DIA_SEMANA_GRUPO_LABEL[g.diaSemana] || g.diaSemana}` : ""}
+                    {g.horaInicio ? ` às ${g.horaInicio}` : ""}
+                    {g.valorPorParticipante != null ? ` · ${formatarMoedaCampanha(g.valorPorParticipante)}/participante` : ""}
+                  </p>
+                  <p className="text-[12px] text-nv-ink2 mt-1">
+                    {g.participantes.length}/{g.vagasTotais} vagas ocupadas
+                    {g.vagasRestantes > 0 ? ` · ${g.vagasRestantes} restantes` : " · sem vagas"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <button type="button" className="text-nv-blue underline" onClick={() => setModalAberto(g)}>
+                    Editar
+                  </button>
+                  <button type="button" className="text-nv-muted3 underline" onClick={() => apagar(g)}>
+                    Apagar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary !py-1.5 !px-3"
+                    onClick={() => setGrupoExpandidoId((id) => (id === g.id ? null : g.id))}
+                  >
+                    {grupoExpandidoId === g.id ? "Fechar" : "Participantes e presença"}
+                  </button>
+                </div>
+              </div>
+
+              {grupoExpandidoId === g.id && <GrupoDetalhe grupo={g} onAtualizado={carregar} />}
+            </div>
+          ))}
+      </div>
+
+      {modalAberto && (
+        <ModalGrupo
+          grupo={modalAberto === "novo" ? null : modalAberto}
+          profissionais={profissionais}
+          onFechar={() => setModalAberto(null)}
+          onSalvar={() => {
+            setModalAberto(null);
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalGrupo({ grupo, profissionais, onFechar, onSalvar }) {
+  const editando = !!grupo;
+  const [tema, setTema] = useState(grupo?.tema || "");
+  const [profissionalResponsavelId, setProfissionalResponsavelId] = useState(grupo?.profissionalResponsavelId || "");
+  const [diaSemana, setDiaSemana] = useState(grupo?.diaSemana || "");
+  const [horaInicio, setHoraInicio] = useState(grupo?.horaInicio || "");
+  const [vagasTotais, setVagasTotais] = useState(grupo?.vagasTotais ?? 6);
+  const [valorPorParticipante, setValorPorParticipante] = useState(grupo?.valorPorParticipante ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function salvar() {
+    if (!tema.trim() || !profissionalResponsavelId) {
+      setErro("Informe o tema e a profissional responsável.");
+      return;
+    }
+    setSalvando(true);
+    setErro("");
+    try {
+      const corpo = {
+        tema,
+        profissionalResponsavelId,
+        diaSemana: diaSemana || null,
+        horaInicio: horaInicio || null,
+        vagasTotais: Number(vagasTotais) || 0,
+        valorPorParticipante: valorPorParticipante === "" ? null : Number(valorPorParticipante),
+      };
+      if (editando) await api.put(`/dono/grupos/${grupo.id}`, corpo);
+      else await api.post("/dono/grupos", corpo);
+      onSalvar();
+    } catch (e) {
+      setErro(e?.response?.data?.erro || "Erro ao salvar grupo.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onFechar}>
+      <div className="bg-white rounded-xl max-w-md w-full p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-sora font-semibold text-nv-ink">{editando ? "Editar grupo" : "Novo grupo terapêutico"}</h2>
+        <input className="input" placeholder='Tema (ex: "Ansiedade em grupo")' value={tema} onChange={(e) => setTema(e.target.value)} />
+        <select className="input" value={profissionalResponsavelId} onChange={(e) => setProfissionalResponsavelId(e.target.value)}>
+          <option value="">Profissional responsável</option>
+          {profissionais.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.user.nome}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-2 gap-2">
+          <select className="input" value={diaSemana} onChange={(e) => setDiaSemana(e.target.value)}>
+            <option value="">Dia da semana</option>
+            {DIAS_SEMANA_GRUPO.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+          <input type="time" className="input" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="number"
+            className="input"
+            placeholder="Vagas totais"
+            value={vagasTotais}
+            onChange={(e) => setVagasTotais(e.target.value)}
+          />
+          <input
+            className="input"
+            placeholder="Valor por participante (R$)"
+            value={valorPorParticipante}
+            onChange={(e) => setValorPorParticipante(e.target.value)}
+          />
+        </div>
+        {editando && (
+          <label className="flex items-center gap-2 text-sm text-nv-ink2">
+            <input
+              type="checkbox"
+              checked={grupo.ativo}
+              onChange={(e) => api.put(`/dono/grupos/${grupo.id}`, { ativo: e.target.checked }).then(onSalvar)}
+            />
+            Grupo ativo
+          </label>
+        )}
+        {erro && <p className="text-red-600 text-sm">{erro}</p>}
+        <div className="flex items-center gap-2.5 pt-1">
+          <button type="button" disabled={salvando} onClick={salvar} className="btn-primary flex-1 !py-2.5 text-sm">
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          <button type="button" onClick={onFechar} className="btn-secondary !py-2.5 !px-4 text-sm">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Participantes + presença por encontro de um grupo. Busca de cliente é local (filtra a lista
+// completa de clientes da clínica já carregada), igual outras buscas rápidas do painel do Dono.
+function GrupoDetalhe({ grupo, onAtualizado }) {
+  const [clientes, setClientes] = useState([]);
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [participantes, setParticipantes] = useState(grupo.participantes);
+  const [encontros, setEncontros] = useState(null);
+  const [dataEncontro, setDataEncontro] = useState(new Date().toISOString().slice(0, 10));
+  const [encontroAtual, setEncontroAtual] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api.get("/dono/clientes").then((r) => setClientes(r.data));
+    api.get(`/dono/grupos/${grupo.id}/encontros`).then((r) => setEncontros(r.data));
+  }, [grupo.id]);
+
+  const buscaLower = buscaCliente.trim().toLowerCase();
+  const sugestoesCliente = buscaLower
+    ? clientes.filter((c) => c.user.nome.toLowerCase().includes(buscaLower) && !participantes.some((p) => p.clienteId === c.id)).slice(0, 6)
+    : [];
+
+  async function adicionar(clienteId) {
+    setMsg("");
+    try {
+      const { data } = await api.post(`/dono/grupos/${grupo.id}/participantes`, { clienteId });
+      setParticipantes((lista) => [...lista, data]);
+      setBuscaCliente("");
+      onAtualizado();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao adicionar participante.");
+    }
+  }
+
+  async function remover(participanteId) {
+    if (!window.confirm("Remover esse participante do grupo?")) return;
+    await api.delete(`/dono/grupos/${grupo.id}/participantes/${participanteId}`);
+    setParticipantes((lista) => lista.filter((p) => p.id !== participanteId));
+    onAtualizado();
+  }
+
+  async function abrirEncontro() {
+    const { data } = await api.post(`/dono/grupos/${grupo.id}/encontros`, { data: dataEncontro });
+    setEncontroAtual(data);
+  }
+
+  async function marcarPresenca(participanteId, presente) {
+    await api.put(`/dono/grupos/encontros/${encontroAtual.id}/presenca`, { participanteId, presente });
+    setEncontroAtual((enc) => ({
+      ...enc,
+      presencas: [...enc.presencas.filter((p) => p.participanteId !== participanteId), { participanteId, presente }],
+    }));
+    api.get(`/dono/grupos/${grupo.id}/encontros`).then((r) => setEncontros(r.data));
+  }
+
+  return (
+    <div className="border-t border-nv-borderLight mt-3 pt-3 space-y-4">
+      <div>
+        <p className="text-xs font-semibold text-nv-ink2 mb-1.5">Participantes</p>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {participantes.map((p) => (
+            <span key={p.id} className="text-[12px] bg-nv-blue/10 text-nv-blue px-2.5 py-1 rounded-full flex items-center gap-1.5">
+              {p.cliente?.user?.nome || "Cliente"}
+              <button type="button" onClick={() => remover(p.id)} className="text-nv-blue/70 hover:text-nv-blue">
+                ×
+              </button>
+            </span>
+          ))}
+          {participantes.length === 0 && <span className="text-[12px] text-nv-muted3">Nenhum participante ainda.</span>}
+        </div>
+        <div className="relative max-w-xs">
+          <input
+            className="input !w-full"
+            placeholder="Buscar cliente pra adicionar..."
+            value={buscaCliente}
+            onChange={(e) => setBuscaCliente(e.target.value)}
+          />
+          {sugestoesCliente.length > 0 && (
+            <div className="absolute z-10 bg-white border border-nv-border rounded-lg mt-1 w-full shadow-sm">
+              {sugestoesCliente.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-nv-blue/5"
+                  onClick={() => adicionar(c.id)}
+                >
+                  {c.user.nome}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {msg && <p className="text-[12px] text-red-600 mt-1">{msg}</p>}
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-nv-ink2 mb-1.5">Presença por encontro</p>
+        <div className="flex items-center gap-2 mb-2">
+          <input type="date" className="input !w-auto" value={dataEncontro} onChange={(e) => setDataEncontro(e.target.value)} />
+          <button type="button" className="btn-secondary !py-1.5 !px-3 text-[12.5px]" onClick={abrirEncontro}>
+            Abrir encontro dessa data
+          </button>
+        </div>
+
+        {encontroAtual && (
+          <div className="space-y-1 mb-3">
+            {participantes.map((p) => {
+              const presenca = encontroAtual.presencas.find((pr) => pr.participanteId === p.id);
+              const presente = presenca?.presente || false;
+              return (
+                <label key={p.id} className="flex items-center gap-2 text-[13px] text-nv-ink2">
+                  <input type="checkbox" checked={presente} onChange={(e) => marcarPresenca(p.id, e.target.checked)} />
+                  {p.cliente?.user?.nome || "Cliente"}
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        {encontros && encontros.length > 0 && (
+          <div>
+            <p className="text-[11px] text-nv-muted3 mb-1">Encontros anteriores:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {encontros.map((e) => (
+                <span key={e.id} className="text-[11.5px] text-nv-muted3 bg-nv-bg2 px-2 py-0.5 rounded-full">
+                  {formatarDataCurta(e.data)} — {e.presencas.filter((p) => p.presente).length}/{participantes.length} presentes
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

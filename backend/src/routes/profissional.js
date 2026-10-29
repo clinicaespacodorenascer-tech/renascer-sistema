@@ -39,7 +39,7 @@ router.get("/perfil", async (req, res) => {
 // nome/foto (User) + o que atende/categorias + idade + abordagem
 router.put("/perfil", async (req, res) => {
   const profissionalId = await getProfissionalId(req);
-  const { nome, fotoBase64, titulo, registro, bio, idade, especialidades, abordagens, linkMeet } = req.body;
+  const { nome, fotoBase64, titulo, registro, bio, idade, especialidades, especialidadesAtendidas, abordagens, linkMeet } = req.body;
 
   if (nome || fotoBase64) {
     await prisma.user.update({
@@ -59,6 +59,7 @@ router.put("/perfil", async (req, res) => {
       ...(bio !== undefined && { bio }),
       ...(idade !== undefined && { idade: idade ? Number(idade) : null }),
       ...(especialidades !== undefined && { especialidades }),
+      ...(especialidadesAtendidas !== undefined && { especialidadesAtendidas }),
       ...(abordagens !== undefined && { abordagens }),
       ...(linkMeet !== undefined && { linkMeet: linkMeet || null }),
     },

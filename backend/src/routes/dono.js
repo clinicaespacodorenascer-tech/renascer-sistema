@@ -19,7 +19,9 @@ const {
   calcularTaxaFaltas,
   calcularTempoRespostaMedio,
   calcularCACPorCanal,
+  calcularRelatorioPorCampanha,
   calcularSaldoCaixaDoDia,
+  fimDoDia,
 } = require("../utils/meuDia");
 
 const router = express.Router();
@@ -1496,6 +1498,11 @@ router.delete("/meu-dia/decisoes/:id", async (req, res) => {
 // Todo este arquivo já é exclusivo de DONO (ver `router.use(autenticar, permitir("DONO"))` no
 // topo), então "só o dono acessa" não precisa de nenhuma regra extra aqui.
 
+// Fase 77 — em caso de empate na pontuação total, a de maior nota em "Custo de testar" vem
+// primeiro (pedido do Elismael: entre duas ideias igualmente boas, testar a mais barata/rápida
+// primeiro). criadoEm continua como último critério de desempate, igual já era.
+const ORDENACAO_OPORTUNIDADE = [{ pontuacaoTotal: "desc" }, { notaCustoTestar: "desc" }, { criadoEm: "desc" }];
+
 router.get("/oportunidades", async (req, res) => {
   const { empresa, tipo, status } = req.query;
   const lista = await prisma.oportunidade.findMany({
@@ -1504,7 +1511,7 @@ router.get("/oportunidades", async (req, res) => {
       ...(tipo && { tipo }),
       ...(status && { status }),
     },
-    orderBy: [{ pontuacaoTotal: "desc" }, { criadoEm: "desc" }],
+    orderBy: ORDENACAO_OPORTUNIDADE,
   });
   res.json(lista);
 });
@@ -1514,7 +1521,7 @@ router.get("/oportunidades", async (req, res) => {
 router.get("/oportunidades/destaques", async (req, res) => {
   const lista = await prisma.oportunidade.findMany({
     where: { status: { in: ["IDEIA", "AVALIADA"] }, pontuacaoTotal: { not: null } },
-    orderBy: { pontuacaoTotal: "desc" },
+    orderBy: ORDENACAO_OPORTUNIDADE,
     take: 3,
   });
   res.json(lista);
@@ -1545,6 +1552,30 @@ function calcularPontuacaoOportunidade(notas) {
   return valores.reduce((soma, n) => soma + n, 0);
 }
 
+// Fase 77 — toda nota de 1 a 5 exige a prova/evidência daquele critério junto (texto curto) —
+// sem isso, nem o valor da nota é salvo. `label` é o nome do critério usado na mensagem de erro.
+const CRITERIOS_OPORTUNIDADE = [
+  { nota: "notaTamanhoProblema", prova: "provaTamanhoProblema", label: "Tamanho do problema" },
+  { nota: "notaDisposicaoPagar", prova: "provaDisposicaoPagar", label: "Disposição de pagar" },
+  { nota: "notaCapacidadeExecutar", prova: "provaCapacidadeExecutar", label: "Capacidade de executar" },
+  { nota: "notaCustoTestar", prova: "provaCustoTestar", label: "Custo de testar" },
+  { nota: "notaAlinhamento", prova: "provaAlinhamento", label: "Alinhamento" },
+];
+
+// Checa em cima do estado FINAL (nota + prova já mescladas com o que já existia no registro),
+// não só do que veio nesse request — pra pegar também o caso de alguém trocar uma nota que já
+// tinha sido salva antes dessa regra existir, sem mexer na prova dela.
+function validarProvasObrigatorias(notasFinais, provasFinais) {
+  for (const c of CRITERIOS_OPORTUNIDADE) {
+    const nota = notasFinais[c.nota];
+    const prova = provasFinais[c.prova];
+    if (nota !== null && nota !== undefined && (!prova || !prova.trim())) {
+      return `Informe a prova/evidência de "${c.label}" antes de salvar essa nota.`;
+    }
+  }
+  return null;
+}
+
 // Cadastro — serve tanto o formulário completo quanto o atalho rápido "Registrar ideia" do
 // Fechamento do Meu dia (que manda só título + empresa, o resto fica undefined/vazio pra
 // preencher depois).
@@ -1560,12 +1591,21 @@ router.post("/oportunidades", async (req, res) => {
     notaCapacidadeExecutar,
     notaCustoTestar,
     notaAlinhamento,
+    provaTamanhoProblema,
+    provaDisposicaoPagar,
+    provaCapacidadeExecutar,
+    provaCustoTestar,
+    provaAlinhamento,
   } = req.body;
   if (!titulo || !titulo.trim() || !empresa) {
     return res.status(400).json({ erro: "Título e empresa são obrigatórios." });
   }
 
   const notas = { notaTamanhoProblema, notaDisposicaoPagar, notaCapacidadeExecutar, notaCustoTestar, notaAlinhamento };
+  const provas = { provaTamanhoProblema, provaDisposicaoPagar, provaCapacidadeExecutar, provaCustoTestar, provaAlinhamento };
+  const erroProva = validarProvasObrigatorias(notas, provas);
+  if (erroProva) return res.status(400).json({ erro: erroProva });
+
   const pontuacaoTotal = calcularPontuacaoOportunidade(notas);
 
   const criada = await prisma.oportunidade.create({
@@ -1580,6 +1620,11 @@ router.post("/oportunidades", async (req, res) => {
       notaCapacidadeExecutar: notaCapacidadeExecutar ?? null,
       notaCustoTestar: notaCustoTestar ?? null,
       notaAlinhamento: notaAlinhamento ?? null,
+      provaTamanhoProblema: provaTamanhoProblema || null,
+      provaDisposicaoPagar: provaDisposicaoPagar || null,
+      provaCapacidadeExecutar: provaCapacidadeExecutar || null,
+      provaCustoTestar: provaCustoTestar || null,
+      provaAlinhamento: provaAlinhamento || null,
       pontuacaoTotal,
       // se já veio com as 5 notas preenchidas (cadastro completo direto), já nasce "Avaliada" —
       // senão fica "Ideia" até alguém dar as notas depois.
@@ -1605,6 +1650,11 @@ router.put("/oportunidades/:id", async (req, res) => {
     notaCapacidadeExecutar,
     notaCustoTestar,
     notaAlinhamento,
+    provaTamanhoProblema,
+    provaDisposicaoPagar,
+    provaCapacidadeExecutar,
+    provaCustoTestar,
+    provaAlinhamento,
     status,
     motivoArquivamento,
   } = req.body;
@@ -1617,10 +1667,11 @@ router.put("/oportunidades/:id", async (req, res) => {
     ...(fonte !== undefined && { fonte: fonte || null }),
   };
 
-  // Só recalcula a pontuação se alguma nota veio nesse PUT — senão ela fica como já estava
-  // (editar só o título, por exemplo, não deve mexer na nota).
+  // Só recalcula a pontuação se alguma nota (ou prova) veio nesse PUT — senão elas ficam como já
+  // estavam (editar só o título, por exemplo, não deve mexer na nota).
   const notasRecebidas = { notaTamanhoProblema, notaDisposicaoPagar, notaCapacidadeExecutar, notaCustoTestar, notaAlinhamento };
-  if (Object.values(notasRecebidas).some((n) => n !== undefined)) {
+  const provasRecebidas = { provaTamanhoProblema, provaDisposicaoPagar, provaCapacidadeExecutar, provaCustoTestar, provaAlinhamento };
+  if (Object.values(notasRecebidas).some((n) => n !== undefined) || Object.values(provasRecebidas).some((p) => p !== undefined)) {
     const notasFinais = {
       notaTamanhoProblema: notaTamanhoProblema !== undefined ? notaTamanhoProblema : atual.notaTamanhoProblema,
       notaDisposicaoPagar: notaDisposicaoPagar !== undefined ? notaDisposicaoPagar : atual.notaDisposicaoPagar,
@@ -1628,7 +1679,17 @@ router.put("/oportunidades/:id", async (req, res) => {
       notaCustoTestar: notaCustoTestar !== undefined ? notaCustoTestar : atual.notaCustoTestar,
       notaAlinhamento: notaAlinhamento !== undefined ? notaAlinhamento : atual.notaAlinhamento,
     };
-    Object.assign(dados, notasFinais);
+    const provasFinais = {
+      provaTamanhoProblema: provaTamanhoProblema !== undefined ? provaTamanhoProblema : atual.provaTamanhoProblema,
+      provaDisposicaoPagar: provaDisposicaoPagar !== undefined ? provaDisposicaoPagar : atual.provaDisposicaoPagar,
+      provaCapacidadeExecutar: provaCapacidadeExecutar !== undefined ? provaCapacidadeExecutar : atual.provaCapacidadeExecutar,
+      provaCustoTestar: provaCustoTestar !== undefined ? provaCustoTestar : atual.provaCustoTestar,
+      provaAlinhamento: provaAlinhamento !== undefined ? provaAlinhamento : atual.provaAlinhamento,
+    };
+    const erroProva = validarProvasObrigatorias(notasFinais, provasFinais);
+    if (erroProva) return res.status(400).json({ erro: erroProva });
+
+    Object.assign(dados, notasFinais, provasFinais);
     const novaPontuacao = calcularPontuacaoOportunidade(notasFinais);
     dados.pontuacaoTotal = novaPontuacao;
     // acabou de completar a avaliação (5ª nota) e ainda estava em "Ideia", sem pedido explícito de
@@ -2001,6 +2062,237 @@ router.put("/meu-dia/metas/:id", async (req, res) => {
 router.delete("/meu-dia/metas/:id", async (req, res) => {
   await prisma.metaTrimestre.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
+});
+
+// ======================================================================================
+// ---------- Fase 77 — Campanhas (leads por campanha e público) ----------
+// ======================================================================================
+
+router.get("/campanhas", async (req, res) => {
+  const campanhas = await prisma.campanha.findMany({ orderBy: { criadoEm: "desc" } });
+  res.json(campanhas);
+});
+
+router.post("/campanhas", async (req, res) => {
+  const { nome, publico, dataInicio, dataFim, valorInvestido } = req.body;
+  if (!nome || !nome.trim()) return res.status(400).json({ erro: "Informe o nome da campanha." });
+  const campanha = await prisma.campanha.create({
+    data: {
+      nome: nome.trim(),
+      publico: publico || null,
+      dataInicio: dataInicio ? new Date(dataInicio) : null,
+      dataFim: dataFim ? new Date(dataFim) : null,
+      valorInvestido: valorInvestido !== undefined && valorInvestido !== "" ? Number(valorInvestido) : null,
+    },
+  });
+  res.json(campanha);
+});
+
+router.put("/campanhas/:id", async (req, res) => {
+  const { nome, publico, dataInicio, dataFim, valorInvestido, ativa } = req.body;
+  try {
+    const campanha = await prisma.campanha.update({
+      where: { id: req.params.id },
+      data: {
+        ...(nome !== undefined && { nome: nome.trim() }),
+        ...(publico !== undefined && { publico: publico || null }),
+        ...(dataInicio !== undefined && { dataInicio: dataInicio ? new Date(dataInicio) : null }),
+        ...(dataFim !== undefined && { dataFim: dataFim ? new Date(dataFim) : null }),
+        ...(valorInvestido !== undefined && { valorInvestido: valorInvestido !== "" ? Number(valorInvestido) : null }),
+        ...(ativa !== undefined && { ativa: !!ativa }),
+      },
+    });
+    res.json(campanha);
+  } catch (e) {
+    res.status(404).json({ erro: "Campanha não encontrada." });
+  }
+});
+
+// Nunca apaga de verdade uma campanha que já tem lead vinculado (perderia a referência dos
+// relatórios antigos) — só pausa (ativa = false). Só apaga mesmo quando ainda não tem nenhum
+// cliente ligado a ela (ex: cadastrada errada, apagada na hora).
+router.delete("/campanhas/:id", async (req, res) => {
+  const emUso = await prisma.cliente.count({ where: { campanhaId: req.params.id } });
+  if (emUso > 0) {
+    await prisma.campanha.update({ where: { id: req.params.id }, data: { ativa: false } });
+    return res.json({ ok: true, pausada: true });
+  }
+  await prisma.campanha.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
+// Relatório por campanha (leads, agendaram, pagaram, conversão, custo por lead, CAC) no período
+// informado — alimenta tanto a listagem quanto a comparação lado a lado (o front escolhe quais
+// campanhas comparar em cima da mesma lista). Sem inicio/fim, usa o mês atual.
+router.get("/campanhas/relatorio", async (req, res) => {
+  const { inicio, fim } = req.query;
+  const periodo = !inicio && !fim ? periodoDoMes() : null;
+  const dataInicio = inicio ? inicioDoDia(inicio) : periodo.inicio;
+  const dataFim = fim ? fimDoDia(fim) : periodo.fim;
+  const campanhas = await calcularRelatorioPorCampanha({ inicio: dataInicio, fim: dataFim });
+  res.json({ inicio: dataInicio, fim: dataFim, campanhas });
+});
+
+// Fase 77 — convite rápido pro Dono já deixar configurado o que cada profissional atende
+// (modalidade), sem depender dela entrar no próprio perfil pra preencher. Mesmo padrão de
+// PUT /profissionais/:id/percentual-repasse acima.
+router.put("/profissionais/:id/especialidades-atendidas", async (req, res) => {
+  const { especialidadesAtendidas } = req.body;
+  if (!Array.isArray(especialidadesAtendidas)) {
+    return res.status(400).json({ erro: "Informe a lista de públicos atendidos." });
+  }
+  try {
+    const atualizado = await prisma.profissional.update({
+      where: { id: req.params.id },
+      data: { especialidadesAtendidas },
+      select: { id: true, especialidadesAtendidas: true },
+    });
+    res.json(atualizado);
+  } catch (e) {
+    res.status(404).json({ erro: "Profissional não encontrada." });
+  }
+});
+
+// ======================================================================================
+// ---------- Fase 77 — Grupos Terapêuticos ----------
+// Sistema SEPARADO do Agenda/Financeiro (decisão aprovada pelo Dono): controla só vagas,
+// participantes e presença por encontro — não gera Agendamento nem TransacaoFinanceira.
+// ======================================================================================
+
+router.get("/grupos", async (req, res) => {
+  const grupos = await prisma.grupoTerapeutico.findMany({
+    include: {
+      profissionalResponsavel: { select: { id: true, user: { select: { nome: true } } } },
+      participantes: {
+        where: { saiuEm: null },
+        include: { cliente: { include: { user: { select: { nome: true } } } } },
+      },
+      _count: { select: { encontros: true } },
+    },
+    orderBy: { criadoEm: "desc" },
+  });
+  res.json(
+    grupos.map((g) => ({
+      ...g,
+      vagasRestantes: Math.max(0, g.vagasTotais - g.participantes.length),
+    }))
+  );
+});
+
+router.post("/grupos", async (req, res) => {
+  const { tema, profissionalResponsavelId, diaSemana, horaInicio, vagasTotais, valorPorParticipante } = req.body;
+  if (!tema || !tema.trim() || !profissionalResponsavelId) {
+    return res.status(400).json({ erro: "Informe o tema e a profissional responsável do grupo." });
+  }
+  const grupo = await prisma.grupoTerapeutico.create({
+    data: {
+      tema: tema.trim(),
+      profissionalResponsavelId,
+      diaSemana: diaSemana || null,
+      horaInicio: horaInicio || null,
+      vagasTotais: vagasTotais ? Number(vagasTotais) : 0,
+      valorPorParticipante: valorPorParticipante !== undefined && valorPorParticipante !== "" ? Number(valorPorParticipante) : null,
+    },
+  });
+  res.json(grupo);
+});
+
+router.put("/grupos/:id", async (req, res) => {
+  const { tema, profissionalResponsavelId, diaSemana, horaInicio, vagasTotais, valorPorParticipante, ativo } = req.body;
+  try {
+    const grupo = await prisma.grupoTerapeutico.update({
+      where: { id: req.params.id },
+      data: {
+        ...(tema !== undefined && { tema: tema.trim() }),
+        ...(profissionalResponsavelId !== undefined && { profissionalResponsavelId }),
+        ...(diaSemana !== undefined && { diaSemana: diaSemana || null }),
+        ...(horaInicio !== undefined && { horaInicio: horaInicio || null }),
+        ...(vagasTotais !== undefined && { vagasTotais: Number(vagasTotais) }),
+        ...(valorPorParticipante !== undefined && {
+          valorPorParticipante: valorPorParticipante !== "" ? Number(valorPorParticipante) : null,
+        }),
+        ...(ativo !== undefined && { ativo: !!ativo }),
+      },
+    });
+    res.json(grupo);
+  } catch (e) {
+    res.status(404).json({ erro: "Grupo não encontrado." });
+  }
+});
+
+router.delete("/grupos/:id", async (req, res) => {
+  await prisma.grupoTerapeutico.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
+// Adicionar participante — barra se não tiver vaga (contando só quem está ativo no grupo).
+router.post("/grupos/:id/participantes", async (req, res) => {
+  const { clienteId } = req.body;
+  if (!clienteId) return res.status(400).json({ erro: "Escolha o cliente." });
+  const grupo = await prisma.grupoTerapeutico.findUnique({
+    where: { id: req.params.id },
+    include: { participantes: { where: { saiuEm: null } } },
+  });
+  if (!grupo) return res.status(404).json({ erro: "Grupo não encontrado." });
+  if (grupo.participantes.length >= grupo.vagasTotais) {
+    return res.status(400).json({ erro: "Esse grupo já está com todas as vagas ocupadas." });
+  }
+  const jaParticipa = grupo.participantes.some((p) => p.clienteId === clienteId);
+  if (jaParticipa) return res.status(400).json({ erro: "Esse cliente já está nesse grupo." });
+
+  const participante = await prisma.grupoParticipante.create({
+    data: { grupoId: req.params.id, clienteId },
+    include: { cliente: { include: { user: { select: { nome: true } } } } },
+  });
+  res.json(participante);
+});
+
+// "Remover" participante = marcar saída (saiuEm), não apagar — mantém o histórico de presença
+// dele nos encontros em que já participou.
+router.delete("/grupos/:grupoId/participantes/:participanteId", async (req, res) => {
+  const participante = await prisma.grupoParticipante.update({
+    where: { id: req.params.participanteId },
+    data: { saiuEm: new Date() },
+  });
+  res.json(participante);
+});
+
+// Cria (ou retorna, se já existir) o encontro de uma data — idempotente, pra tela poder chamar
+// direto ao abrir a data sem checar antes se já existe.
+router.post("/grupos/:id/encontros", async (req, res) => {
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ erro: "Informe a data do encontro." });
+  const dataEncontro = new Date(`${data}T00:00:00`);
+  const encontro = await prisma.grupoEncontro.upsert({
+    where: { grupoId_data: { grupoId: req.params.id, data: dataEncontro } },
+    update: {},
+    create: { grupoId: req.params.id, data: dataEncontro },
+    include: { presencas: true },
+  });
+  res.json(encontro);
+});
+
+// Marca/desmarca presença de um participante nesse encontro (upsert pela unique compound).
+router.put("/grupos/encontros/:encontroId/presenca", async (req, res) => {
+  const { participanteId, presente } = req.body;
+  if (!participanteId) return res.status(400).json({ erro: "Informe o participante." });
+  const presenca = await prisma.grupoPresenca.upsert({
+    where: { encontroId_participanteId: { encontroId: req.params.encontroId, participanteId } },
+    update: { presente: !!presente },
+    create: { encontroId: req.params.encontroId, participanteId, presente: !!presente },
+  });
+  res.json(presenca);
+});
+
+// Lista de encontros de um grupo com a presença de cada participante ATIVO (pra tela de
+// "controle de presença" conseguir montar a grade encontro x participante).
+router.get("/grupos/:id/encontros", async (req, res) => {
+  const encontros = await prisma.grupoEncontro.findMany({
+    where: { grupoId: req.params.id },
+    include: { presencas: true },
+    orderBy: { data: "desc" },
+  });
+  res.json(encontros);
 });
 
 module.exports = router;

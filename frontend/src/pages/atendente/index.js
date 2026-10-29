@@ -648,7 +648,28 @@ const FORM_CLIENTE_VAZIO = {
   pagamentoParcial: false,
   valorPacoteTotal: "",
   canalOrigem: "",
+  campanhaId: "",
+  publicoBuscado: "",
 };
+
+// Fase 77 — público/modalidade buscado pelo lead, pra sugerir profissional com especialidade
+// compatível (ver sugerirProfissionaisPorPublico abaixo). Mesma lista usada no perfil da
+// profissional (especialidadesAtendidas) e no cadastro de Campanha.
+const PUBLICO_BUSCADO_OPCOES = [
+  { valor: "", label: "Público buscado (opcional)" },
+  { valor: "INDIVIDUAL_ADULTO", label: "Individual adulto" },
+  { valor: "INFANTIL_ADOLESCENTE", label: "Infantil/adolescente" },
+  { valor: "CASAL", label: "Casal" },
+  { valor: "GRUPO", label: "Grupo" },
+];
+
+// Profissionais com a especialidade atendida compatível com o público buscado — null quando não
+// há público selecionado (não filtra nada nesse caso). Só sugestão visual, não bloqueia escolher
+// outra profissional qualquer.
+function sugerirProfissionaisPorPublico(profissionais, publicoBuscado) {
+  if (!publicoBuscado) return null;
+  return profissionais.filter((p) => (p.especialidadesAtendidas || []).includes(publicoBuscado));
+}
 
 // Fase 54 — mesmo formulário visual da Profissional (canvas), com a diferença de que aqui a
 // profissional é escolhida (obrigatório), não fixa. "Dia e horário fixo" preenchidos já criam a
@@ -724,16 +745,19 @@ function Clientes() {
   const [copiado, setCopiado] = useState(false);
   const [recentes, setRecentes] = useState([]);
   const [excluindoId, setExcluindoId] = useState(null);
+  const [campanhas, setCampanhas] = useState([]);
 
   async function carregar() {
-    const [c, p, r] = await Promise.all([
+    const [c, p, r, camp] = await Promise.all([
       api.get("/atendente/clientes"),
       api.get("/atendente/profissionais"),
       api.get("/atendente/clientes/recentes"),
+      api.get("/comum/campanhas-ativas"),
     ]);
     setLista(c.data);
     setProfissionais(p.data);
     setRecentes(r.data);
+    setCampanhas(camp.data);
   }
   useEffect(() => {
     carregar();
@@ -764,6 +788,8 @@ function Clientes() {
         imagemBase64,
         mimeType: arquivo?.type,
         canalOrigem: form.canalOrigem || undefined,
+        campanhaId: form.campanhaId || undefined,
+        publicoBuscado: form.publicoBuscado || undefined,
       });
       setResultado(data);
       setNomeCadastrado(form.nome);
@@ -843,6 +869,21 @@ function Clientes() {
           </div>
 
           <div className="mt-3">
+            <p className="text-xs text-nv-muted mb-1.5">Público buscado</p>
+            <select
+              className="input"
+              value={form.publicoBuscado}
+              onChange={(e) => setForm({ ...form, publicoBuscado: e.target.value })}
+            >
+              {PUBLICO_BUSCADO_OPCOES.map((o) => (
+                <option key={o.valor} value={o.valor}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-3">
             <p className="text-xs text-nv-muted mb-1.5">Profissional que vai atender *</p>
             <select
               className="input"
@@ -857,6 +898,28 @@ function Clientes() {
                 </option>
               ))}
             </select>
+            {(() => {
+              const sugeridas = sugerirProfissionaisPorPublico(profissionais, form.publicoBuscado);
+              if (!sugeridas) return null;
+              if (sugeridas.length === 0) {
+                return <p className="text-[11.5px] text-nv-muted3 mt-1">Nenhuma profissional marcou esse público no perfil ainda.</p>;
+              }
+              return (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <span className="text-[11.5px] text-nv-muted3">Atende esse público:</span>
+                  {sugeridas.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="nv-seg"
+                      onClick={() => setForm({ ...form, profissionalAtualId: p.id })}
+                    >
+                      {p.user.nome}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="border-t border-nv-borderLight mt-4 pt-4">
@@ -1068,6 +1131,14 @@ function Clientes() {
                 {CANAL_ORIGEM_OPCOES.map((c) => (
                   <option key={c.valor} value={c.valor}>
                     {c.label}
+                  </option>
+                ))}
+              </select>
+              <select className="input" value={form.campanhaId} onChange={(e) => setForm({ ...form, campanhaId: e.target.value })}>
+                <option value="">Campanha (opcional)</option>
+                {campanhas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
                   </option>
                 ))}
               </select>

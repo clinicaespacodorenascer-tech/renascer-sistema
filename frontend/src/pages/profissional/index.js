@@ -53,6 +53,16 @@ const CATEGORIAS_SUGERIDAS = [
   "Autoconhecimento",
 ];
 
+// Fase 77 — "o que atende" por modalidade/público (diferente da lista de categorias acima, que é
+// foco clínico em texto livre). Usado tanto aqui no perfil quanto no cadastro de cliente
+// (atendente/dono), pra sugerir profissional certa quando o lead já diz o público que busca.
+export const PUBLICOS_ATENDIMENTO = [
+  { valor: "INDIVIDUAL_ADULTO", label: "Individual adulto" },
+  { valor: "INFANTIL_ADOLESCENTE", label: "Infantil/adolescente" },
+  { valor: "CASAL", label: "Casal" },
+  { valor: "GRUPO", label: "Grupo" },
+];
+
 const STATUS_COR = {
   AGENDADO: "bg-blue-100 text-blue-700",
   CONFIRMADO: "bg-emerald-100 text-emerald-700",
@@ -2335,12 +2345,17 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   const [abordagens, setAbordagens] = useState(perfil.abordagens || "");
   const [linkMeet, setLinkMeet] = useState(perfil.linkMeet || "");
   const [especialidades, setEspecialidades] = useState(perfil.especialidades || []);
+  const [especialidadesAtendidas, setEspecialidadesAtendidas] = useState(perfil.especialidadesAtendidas || []);
   const [foto, setFoto] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState("");
 
   function alternarCategoria(cat) {
     setEspecialidades((atual) => (atual.includes(cat) ? atual.filter((c) => c !== cat) : [...atual, cat]));
+  }
+
+  function alternarPublico(valor) {
+    setEspecialidadesAtendidas((atual) => (atual.includes(valor) ? atual.filter((c) => c !== valor) : [...atual, valor]));
   }
 
   function lerArquivo(file) {
@@ -2364,6 +2379,7 @@ function PerfilCompleto({ perfil, onAtualizado }) {
         bio,
         abordagens,
         especialidades,
+        especialidadesAtendidas,
         linkMeet,
         ...(fotoBase64 && { fotoBase64 }),
       });
@@ -2413,6 +2429,24 @@ function PerfilCompleto({ perfil, onAtualizado }) {
               }`}
             >
               {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-sm text-nv-muted mb-1">Público/modalidade que você atende (pra recepção te sugerir quando um lead já disser o que busca)</p>
+        <div className="flex flex-wrap gap-2">
+          {PUBLICOS_ATENDIMENTO.map((p) => (
+            <button
+              key={p.valor}
+              type="button"
+              onClick={() => alternarPublico(p.valor)}
+              className={`text-sm px-3 py-1.5 rounded-full border ${
+                especialidadesAtendidas.includes(p.valor) ? "bg-nv-blue text-white border-nv-blue" : "border-nv-border text-nv-ink2"
+              }`}
+            >
+              {p.label}
             </button>
           ))}
         </div>

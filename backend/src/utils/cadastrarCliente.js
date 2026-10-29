@@ -122,6 +122,8 @@ async function cadastrarClienteComProfissional({
   mimeType,
   observacao,
   canalOrigem,
+  campanhaId, // Fase 77 — campanha de marketing (lista fixa cadastrada pelo Dono), opcional
+  publicoBuscado, // Fase 77 — público/modalidade buscado (individual adulto, infantil/adolescente, casal, grupo), opcional
   cadastradoPorId, // id de Atendente, opcional — fica null quando quem cadastra é o Dono
   registradoPor, // { id, nome } de quem está logado (req.user), pro histórico e avisos
 }) {
@@ -201,6 +203,8 @@ async function cadastrarClienteComProfissional({
           cadastradoPorId: cadastradoPorId || null,
           whatsappCadastro: telefone || null,
           canalOrigem: canalOrigem || null,
+          campanhaId: campanhaId || null,
+          publicoBuscado: publicoBuscado || null,
         },
       },
     },

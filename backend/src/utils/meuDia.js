@@ -183,6 +183,64 @@ async function calcularCACPorCanal({ inicio, fim }) {
   return { porCanal, totalGastoAnuncios, totalClientesNovos };
 }
 
+// Fase 77 — relatório por campanha: pra cada Campanha cadastrada, conta os leads (Cliente com
+// campanhaId = essa, criado dentro do período), quantos já agendaram (têm pelo menos 1
+// Agendamento) e quantos já pagaram (têm pelo menos 1 TransacaoFinanceira com valor > 0 — decisão
+// do Dono: qualquer pagamento registrado conta, mesmo parcial ou de sessão única, não só pacote
+// fechado). CAC e custo por lead só saem com número quando há investimento E o respectivo
+// denominador — igual ao padrão já usado em calcularCACPorCanal acima, nunca inventa número com
+// base zero.
+async function calcularRelatorioPorCampanha({ inicio, fim }) {
+  const campanhas = await prisma.campanha.findMany({ orderBy: { criadoEm: "desc" } });
+
+  const resultado = [];
+  for (const camp of campanhas) {
+    const leadsDoPeriodo = await prisma.cliente.findMany({
+      where: { campanhaId: camp.id, criadoEm: { gte: inicio, lt: fim } },
+      select: { id: true },
+    });
+    const leadsIds = leadsDoPeriodo.map((c) => c.id);
+    const leads = leadsIds.length;
+
+    let leadsAgendaram = 0;
+    let leadsPagaram = 0;
+    if (leads > 0) {
+      const [comAgendamento, comPagamento] = await Promise.all([
+        prisma.agendamento.findMany({
+          where: { clienteId: { in: leadsIds } },
+          select: { clienteId: true },
+          distinct: ["clienteId"],
+        }),
+        prisma.transacaoFinanceira.findMany({
+          where: { clienteId: { in: leadsIds }, valorTotal: { gt: 0 } },
+          select: { clienteId: true },
+          distinct: ["clienteId"],
+        }),
+      ]);
+      leadsAgendaram = comAgendamento.length;
+      leadsPagaram = comPagamento.length;
+    }
+
+    const investido = camp.valorInvestido || 0;
+    resultado.push({
+      id: camp.id,
+      nome: camp.nome,
+      publico: camp.publico,
+      ativa: camp.ativa,
+      dataInicio: camp.dataInicio,
+      dataFim: camp.dataFim,
+      valorInvestido: investido,
+      leads,
+      leadsAgendaram,
+      leadsPagaram,
+      taxaConversaoPercentual: leads > 0 ? Number(((leadsPagaram / leads) * 100).toFixed(1)) : null,
+      custoPorLead: investido > 0 && leads > 0 ? Number((investido / leads).toFixed(2)) : null,
+      cac: investido > 0 && leadsPagaram > 0 ? Number((investido / leadsPagaram).toFixed(2)) : null,
+    });
+  }
+  return resultado;
+}
+
 // ---------- Fechamento de caixa ----------
 
 // Saldo que o SISTEMA calcula pra um dia: tudo que a clínica recebeu direto de cliente nesse dia
@@ -229,5 +287,6 @@ module.exports = {
   calcularGastoAnuncioPorCanal,
   calcularClientesNovosPorCanal,
   calcularCACPorCanal,
+  calcularRelatorioPorCampanha,
   calcularSaldoCaixaDoDia,
 };
