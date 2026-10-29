@@ -549,6 +549,30 @@ model Campanha {
   @@map("campanhas")
 }
 
+// Fase 79 — configuração do site público, editável pelo Dono em vez de ficar fixa no código
+// estático de frontend/public/site-assets/. Tabela "singleton" (sempre tem só UMA linha) — ver
+// obterOuCriarConfiguracaoSite() em backend/src/utils/configuracaoSite.js.
+model ConfiguracaoSite {
+  id        String   @id @default("config")
+
+  // Fase 79 — quando false, o pop-up de agendamento volta a pedir só o turno (manhã/tarde/noite),
+  // como era antes da Fase 62 trazer a escolha de horário real vindo da agenda da profissional.
+  permitirEscolherHorario Boolean @default(true)
+
+  // Preços exibidos em todo o site (card da profissional, opções de duração, pacotes) — mesma
+  // tabela que antes era fixa (PRECOS) em app.js.
+  precoSessao30min   Float @default(60)
+  precoPacote2x30min Float @default(100)
+  precoPacote4x30min Float @default(170)
+  precoSessao50min   Float @default(110)
+  precoPacote2x50min Float @default(180)
+  precoPacote4x50min Float @default(320)
+
+  atualizadoEm DateTime @updatedAt
+
+  @@map("configuracao_site")
+}
+
 // Fase 77 — Grupos Terapêuticos: sistema SEPARADO e mais simples (decisão aprovada pelo Dono) —
 // não gera Agendamento nem TransacaoFinanceira automaticamente, só controla vagas, participantes
 // e presença por encontro. Se um dia precisar integrar de verdade com Agenda/Financeiro, dá pra

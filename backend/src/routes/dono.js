@@ -9,6 +9,7 @@ const { notificar, notificarDonos, notificarAtendentes } = require("../utils/not
 const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
 const { parseValorMonetario, valorDoPlano, calcularRepasse, transacaoDuplicada } = require("../utils/financeiro");
 const { obterConfiguracaoIA } = require("../utils/configuracaoIA");
+const { obterOuCriarConfiguracaoSite, atualizarConfiguracaoSite } = require("../utils/configuracaoSite");
 const {
   hojeBrasil,
   inicioDoDia,
@@ -2293,6 +2294,26 @@ router.get("/grupos/:id/encontros", async (req, res) => {
     orderBy: { data: "desc" },
   });
   res.json(encontros);
+});
+
+// ======================================================================================
+// Fase 79 — configuração do site público (toggle de horário real x turno, preços exibidos no
+// site). Ver backend/src/utils/configuracaoSite.js e GET /publico/site/configuracao (rota sem
+// login, lida pelo site estático).
+// ======================================================================================
+
+router.get("/site/configuracao", async (req, res) => {
+  const config = await obterOuCriarConfiguracaoSite();
+  res.json(config);
+});
+
+router.put("/site/configuracao", async (req, res) => {
+  try {
+    const config = await atualizarConfiguracaoSite(req.body);
+    res.json(config);
+  } catch (e) {
+    res.status(400).json({ erro: e.message || "Não deu pra salvar a configuração." });
+  }
 });
 
 module.exports = router;

@@ -3,6 +3,7 @@ const rateLimit = require("express-rate-limit");
 const prisma = require("../lib/prisma");
 const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { hojeBrasil } = require("../utils/meuDia");
+const { obterOuCriarConfiguracaoSite } = require("../utils/configuracaoSite");
 
 // Fase 62 — rotas públicas (sem login) usadas pelo site institucional em /site. Pensadas pra
 // expor só o estritamente necessário pra alguém de fora marcar um horário: a disponibilidade
@@ -159,6 +160,21 @@ router.get("/site/profissionais/:slug", async (req, res) => {
   });
   if (!perfil) return res.status(404).json({ erro: "Perfil não encontrado." });
   res.json(formatarPerfilPublico(perfil));
+});
+
+// Fase 79 — configuração do site (preços + se mostra horário real ou só turno), editável pelo
+// Dono em /dono/site/configuracao. Sem login, lida pelo app.js estático assim que a página abre.
+router.get("/site/configuracao", async (req, res) => {
+  const config = await obterOuCriarConfiguracaoSite();
+  res.json({
+    permitirEscolherHorario: config.permitirEscolherHorario,
+    precoSessao30min: config.precoSessao30min,
+    precoPacote2x30min: config.precoPacote2x30min,
+    precoPacote4x30min: config.precoPacote4x30min,
+    precoSessao50min: config.precoSessao50min,
+    precoPacote2x50min: config.precoPacote2x50min,
+    precoPacote4x50min: config.precoPacote4x50min,
+  });
 });
 
 module.exports = router;

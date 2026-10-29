@@ -8047,9 +8047,17 @@ function AbaSite() {
         >
           Rodízio
         </button>
+        <button
+          type="button"
+          onClick={() => setSubAba("config")}
+          className={`text-xs font-semibold px-3.5 py-1.5 rounded-full ${subAba === "config" ? "bg-nv-ink text-white" : "bg-nv-bg text-nv-muted3"}`}
+        >
+          Config
+        </button>
       </div>
 
       {subAba === "rodizio" && <RodizioSite />}
+      {subAba === "config" && <ConfigSite />}
 
       {subAba === "perfis" && resultadoImportacao && (
         <div className="nv-card mb-4 text-sm space-y-1">
@@ -8161,6 +8169,147 @@ const DIAS_RODIZIO = [
   { id: "SABADO", label: "Sáb" },
   { id: "DOMINGO", label: "Dom" },
 ];
+
+// Fase 79 — configuração do site público: liga/desliga a escolha de horário real no pop-up de
+// agendamento (desligado = volta a pedir só o turno, como era antes da Fase 62) e os preços
+// exibidos em todo o site (card da profissional, opções de duração, pacotes).
+function ConfigSite() {
+  const [config, setConfig] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [mensagem, setMensagem] = useState(null);
+
+  async function carregar() {
+    const { data } = await api.get("/dono/site/configuracao");
+    setConfig(data);
+  }
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  function alterarCampo(campo, valor) {
+    setConfig((atual) => ({ ...atual, [campo]: valor }));
+    setMensagem(null);
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setMensagem(null);
+    try {
+      const { data } = await api.put("/dono/site/configuracao", config);
+      setConfig(data);
+      setMensagem({ tipo: "ok", texto: "Salvo! Já vale pro site a partir de agora." });
+    } catch (e) {
+      setMensagem({ tipo: "erro", texto: e?.response?.data?.erro || "Não deu pra salvar." });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (!config) return <p className="text-sm text-nv-muted">Carregando...</p>;
+
+  return (
+    <div className="nv-card-flat px-5 py-4 space-y-5 font-publicSans">
+      <div>
+        <label className="flex items-center gap-2 text-sm font-semibold text-nv-ink2">
+          <input
+            type="checkbox"
+            checked={config.permitirEscolherHorario}
+            onChange={(e) => alterarCampo("permitirEscolherHorario", e.target.checked)}
+          />
+          Deixar a cliente escolher o horário real no pop-up de agendamento
+        </label>
+        <p className="text-xs text-nv-muted mt-1 ml-6">
+          Desligado, o pop-up volta a pedir só o turno (manhã/tarde/noite) — como era antes, sem puxar a agenda real da profissional.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-[11.5px] font-bold text-nv-muted2 uppercase tracking-wide mb-2">Preços exibidos no site</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div>
+            <p className="text-xs font-semibold text-nv-ink2 mb-1.5">Sessão de 30 minutos</p>
+            <label className="text-xs text-nv-muted block mb-2">
+              Sessão única
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoSessao30min}
+                onChange={(e) => alterarCampo("precoSessao30min", e.target.value)}
+              />
+            </label>
+            <label className="text-xs text-nv-muted block mb-2">
+              Pacote de 2 sessões
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoPacote2x30min}
+                onChange={(e) => alterarCampo("precoPacote2x30min", e.target.value)}
+              />
+            </label>
+            <label className="text-xs text-nv-muted block">
+              Pacote de 4 sessões
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoPacote4x30min}
+                onChange={(e) => alterarCampo("precoPacote4x30min", e.target.value)}
+              />
+            </label>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-nv-ink2 mb-1.5">Sessão de 50 minutos</p>
+            <label className="text-xs text-nv-muted block mb-2">
+              Sessão única
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoSessao50min}
+                onChange={(e) => alterarCampo("precoSessao50min", e.target.value)}
+              />
+            </label>
+            <label className="text-xs text-nv-muted block mb-2">
+              Pacote de 2 sessões
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoPacote2x50min}
+                onChange={(e) => alterarCampo("precoPacote2x50min", e.target.value)}
+              />
+            </label>
+            <label className="text-xs text-nv-muted block">
+              Pacote de 4 sessões
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input mt-1"
+                value={config.precoPacote4x50min}
+                onChange={(e) => alterarCampo("precoPacote4x50min", e.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+        <p className="text-xs text-nv-muted mt-2">Vale pra todo lugar do site que mostra valor: card da profissional, opções de duração e pacotes.</p>
+      </div>
+
+      {mensagem && <p className={`text-xs ${mensagem.tipo === "ok" ? "text-nv-green" : "text-red-600"}`}>{mensagem.texto}</p>}
+
+      <button type="button" className="btn-primary text-sm" onClick={salvar} disabled={salvando}>
+        {salvando ? "Salvando..." : "Salvar configuração"}
+      </button>
+    </div>
+  );
+}
 
 function diaDeHojeRodizio() {
   const mapaJs = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
@@ -8343,6 +8492,7 @@ function ModalPerfilSite({ profissional, onFechar, onSalvar }) {
   const [msgSlug, setMsgSlug] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [copiouLink, setCopiouLink] = useState(false); // Fase 79
 
   async function trocarFoto(e) {
     const arquivo = e.target.files[0];
@@ -8372,6 +8522,24 @@ function ModalPerfilSite({ profissional, onFechar, onSalvar }) {
       setMsgSlug({ tipo: "erro", texto: e.response?.data?.erro || "Não deu pra salvar o link." });
     } finally {
       setSalvandoSlug(false);
+    }
+  }
+
+  // Fase 79 — link do site INDIVIDUAL dessa profissional (página própria, sem menu, só o perfil
+  // dela + botão de WhatsApp direto, sem pop-up de perguntas) — pra copiar e mandar pro cliente,
+  // Instagram etc. Usa o mesmo "Link do site" (slugSitePublico) já salvo acima.
+  function linkIndividual() {
+    const origem = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || "https://espacodorenascer.com");
+    return `${origem}/site?perfil=${encodeURIComponent(slug.trim())}`;
+  }
+
+  async function copiarLinkIndividual() {
+    try {
+      await navigator.clipboard.writeText(linkIndividual());
+      setCopiouLink(true);
+      setTimeout(() => setCopiouLink(false), 2500);
+    } catch {
+      window.prompt("Copie o link:", linkIndividual());
     }
   }
 
@@ -8486,6 +8654,20 @@ function ModalPerfilSite({ profissional, onFechar, onSalvar }) {
           </div>
           {msgSlug && <p className={`text-xs mt-1 ${msgSlug.tipo === "ok" ? "text-nv-green" : "text-red-600"}`}>{msgSlug.texto}</p>}
         </div>
+
+        {slug.trim() && (
+          <div className="bg-nv-bg rounded-xl p-3">
+            <p className="text-[11px] font-semibold text-nv-muted2 mb-1">
+              Site individual dela (só o perfil + WhatsApp direto, sem menu nem perguntas — pra mandar pro cliente, Instagram, etc.)
+            </p>
+            <div className="flex items-center gap-2">
+              <input className="input !bg-white text-xs" readOnly value={linkIndividual()} onClick={(e) => e.target.select()} />
+              <button type="button" className="btn-secondary text-xs !py-2 !px-3 whitespace-nowrap" onClick={copiarLinkIndividual}>
+                {copiouLink ? "Copiado!" : "Copiar link"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <label className="flex items-center gap-2 text-sm text-nv-ink2">
           <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} />

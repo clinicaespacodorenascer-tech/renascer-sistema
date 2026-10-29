@@ -143,6 +143,24 @@
 
     var WHATSAPP_NUMBER = '5575983203429';
 
+    // Fase 79 — "site individual" de uma profissional: link /site?perfil=<slug> pra ela (ou o
+    // Dono) copiar e mandar direto pro cliente/Instagram, sem o resto do site junto — só o
+    // perfil dela, sem menu, e o botão de agendar manda direto pro WhatsApp com uma mensagem
+    // simples, sem abrir o pop-up de perguntas. Reaproveita o roteamento por hash que já existe
+    // (#/profissional/<slug>) só setando a hash certa antes de tudo rodar — assim nenhuma outra
+    // parte do roteamento/activateView precisa saber desse modo existe.
+    var MODO_PORTFOLIO = false;
+    var SLUG_PORTFOLIO = null;
+    (function(){
+      var params = new URLSearchParams(window.location.search);
+      var slug = params.get('perfil');
+      if (!slug) return;
+      MODO_PORTFOLIO = true;
+      SLUG_PORTFOLIO = slug;
+      document.body.classList.add('modo-portfolio');
+      window.location.hash = '#/profissional/' + encodeURIComponent(slug);
+    })();
+
     // Fase 62 — base da API (mesmo sistema de agenda/disponibilidade de verdade), injetada pela
     // página Next.js antes de carregar este arquivo (ver frontend/src/pages/site/index.js). Sem
     // isso definido (ex: alguém abrindo este arquivo solto), cai num endereço local de
@@ -154,12 +172,67 @@
       QUINTA: 'Quinta-feira', SEXTA: 'Sexta-feira', SABADO: 'Sábado'
     };
 
+    // Fase 79 — valores padrão (fallback), usados até a config real chegar da API ou se a busca
+    // falhar — ver carregarConfiguracaoSite(). Depois da Fase 79, o Dono edita isso na aba
+    // Site > Config do painel, sem precisar mexer em código.
     var PRECOS = {
       '30min': { rotulo: '30 minutos', 1: 'R$ 60', 2: 'R$ 100', 4: 'R$ 170' },
       '50min': { rotulo: '50 minutos', 1: 'R$ 110', 2: 'R$ 180', 4: 'R$ 320' }
     };
+    var PERMITIR_ESCOLHER_HORARIO = true;
 
     var TURNOS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
+
+    function formatarPreco(valor){
+      var n = Number(valor);
+      if (!isFinite(n)) return '0';
+      return (n % 1 === 0) ? String(n) : n.toFixed(2).replace('.', ',');
+    }
+
+    // Atualiza os textos de preço que já vêm escritos no HTML (opções de duração nos dois
+    // pop-ups e a resposta do FAQ) — os preços nos cards das profissionais já são montados em JS
+    // e leem PRECOS direto, então se atualizam sozinhos.
+    function atualizarTextosDePrecoEstaticos(){
+      var f30 = document.getElementById('fDuracao30Price');
+      var f50 = document.getElementById('fDuracao50Price');
+      var g30 = document.getElementById('gDuracao30Price');
+      var g50 = document.getElementById('gDuracao50Price');
+      if (f30) f30.textContent = 'a partir de ' + PRECOS['30min'][1];
+      if (f50) f50.textContent = 'a partir de ' + PRECOS['50min'][1];
+      if (g30) g30.textContent = 'a partir de ' + PRECOS['30min'][1];
+      if (g50) g50.textContent = 'a partir de ' + PRECOS['50min'][1];
+      var faq = document.getElementById('faqPrecoMinimo');
+      if (faq) faq.textContent = PRECOS['30min'][1];
+      var ctaDetalhe = document.getElementById('detailCtaPreco');
+      if (ctaDetalhe) ctaDetalhe.textContent = 'A partir de ' + PRECOS['30min'][1];
+    }
+
+    // Fase 79 — busca a configuração do site (se mostra horário real ou só turno, e os preços)
+    // antes de montar os cards das profissionais, pra tudo já nascer certo na tela. Se a busca
+    // falhar, segue com os valores padrão acima — nunca trava o site por causa disso.
+    function carregarConfiguracaoSite(){
+      return fetch(API_URL + '/publico/site/configuracao')
+        .then(function(r){ if (!r.ok) throw new Error('falhou'); return r.json(); })
+        .then(function(cfg){
+          PERMITIR_ESCOLHER_HORARIO = !!cfg.permitirEscolherHorario;
+          PRECOS = {
+            '30min': {
+              rotulo: '30 minutos',
+              1: 'R$ ' + formatarPreco(cfg.precoSessao30min),
+              2: 'R$ ' + formatarPreco(cfg.precoPacote2x30min),
+              4: 'R$ ' + formatarPreco(cfg.precoPacote4x30min)
+            },
+            '50min': {
+              rotulo: '50 minutos',
+              1: 'R$ ' + formatarPreco(cfg.precoSessao50min),
+              2: 'R$ ' + formatarPreco(cfg.precoPacote2x50min),
+              4: 'R$ ' + formatarPreco(cfg.precoPacote4x50min)
+            }
+          };
+          atualizarTextosDePrecoEstaticos();
+        })
+        .catch(function(){ /* mantém os valores padrão já definidos acima */ });
+    }
 
     // Fase 75 — antes, isso era um objeto fixo com os 13 perfis escritos à mão (cada vez que o
     // Dono queria adicionar/editar/remover alguém do site, só dava editando este arquivo). Agora
@@ -407,7 +480,12 @@
     // Fase 75: antes chamava applyRoute direto (cards já existiam no HTML, fixos). Agora os
     // cards vêm da API, então primeiro carrega os profissionais e só no final (dentro de
     // carregarProfissionaisEIniciarRota, dê certo ou não) é que a rota inicial é aplicada.
-    carregarProfissionaisEIniciarRota();
+    // Fase 79 — busca a config (preços + horário real x turno) antes de montar os cards, pra
+    // página já nascer com os valores certos em vez de trocar na frente do usuário.
+    carregarConfiguracaoSite().then(function(){
+      configurarModoHorarioBooking();
+      carregarProfissionaisEIniciarRota();
+    });
 
     document.addEventListener('click', function(ev){
       var btn = ev.target.closest('[data-route]');
@@ -547,15 +625,21 @@
       var duracao = getVal('fDuracao');
       var box = document.getElementById('summaryBox');
       box.innerHTML = '';
-      var horarioLabel = horarioEscolhido
-        ? (formatarDiaLabel(horarioEscolhido.data, horarioEscolhido.diaSemana) + ' às ' + horarioEscolhido.horaInicio)
-        : 'A combinar pelo WhatsApp';
+      var linhaHorario;
+      if (PERMITIR_ESCOLHER_HORARIO) {
+        var horarioLabel = horarioEscolhido
+          ? (formatarDiaLabel(horarioEscolhido.data, horarioEscolhido.diaSemana) + ' às ' + horarioEscolhido.horaInicio)
+          : 'A combinar pelo WhatsApp';
+        linhaHorario = ['Dia e horário', horarioLabel];
+      } else {
+        linhaHorario = ['Turno', getVal('fTurno') || 'A combinar'];
+      }
       var linhas = [
         ['Profissional', p.nome],
         ['Tratar', getVal('fTema') || document.getElementById('fTema').value],
         ['Duração', duracao === '50min' ? '50 minutos' : '30 minutos'],
         ['Pacote', getVal('fPacote') || '—'],
-        ['Dia e horário', horarioLabel]
+        linhaHorario
       ];
       linhas.forEach(function(l){
         var line = document.createElement('div');
@@ -570,7 +654,7 @@
     function validateStep(i){
       if (i === 1) return !!getVal('fPrimeiraVez');
       if (i === 2) return !!getVal('fDuracao');
-      if (i === 3) return !!horarioEscolhido || horariosIndisponiveis;
+      if (i === 3) return PERMITIR_ESCOLHER_HORARIO ? (!!horarioEscolhido || horariosIndisponiveis) : !!getVal('fTurno');
       if (i === 4) return !!getVal('fPacote');
       if (i === 5) {
         var nome = document.getElementById('fNome').value.trim();
@@ -589,15 +673,42 @@
       });
       backBtn.style.visibility = i === 0 ? 'hidden' : 'visible';
       nextBtn.textContent = (i === steps.length - 1) ? 'Garantir minha vaga agora' : 'Continuar';
-      if (i === 3) buildHorarios();
+      if (i === 3 && PERMITIR_ESCOLHER_HORARIO) buildHorarios();
       if (i === 4) buildPacotes();
       if (i === 5) buildSummary();
+    }
+
+    // Fase 79 — mostra o passo 3 no formato de horário real (já existia) ou, quando o Dono
+    // desliga isso na config do site, no formato antigo de só escolher o turno. Chamado uma vez,
+    // assim que a config chega da API (ver carregarConfiguracaoSite()).
+    function configurarModoHorarioBooking(){
+      var horariosWrap = document.getElementById('horariosList');
+      var turnoWrap = document.getElementById('turnoBookingWrap');
+      var titulo = document.getElementById('horariosTitulo');
+      var hint = document.getElementById('horariosHint');
+      if (PERMITIR_ESCOLHER_HORARIO) {
+        if (horariosWrap) horariosWrap.hidden = false;
+        if (turnoWrap) turnoWrap.hidden = true;
+        if (titulo) titulo.textContent = 'Escolha o dia e horário';
+        if (hint) hint.textContent = 'Estes são os horários realmente livres da agenda dela nos próximos dias.';
+      } else {
+        if (horariosWrap) horariosWrap.hidden = true;
+        if (turnoWrap) turnoWrap.hidden = false;
+        if (titulo) titulo.textContent = 'Prefere qual turno?';
+        if (hint) hint.textContent = 'A equipe confirma o dia certinho com você pelo WhatsApp.';
+      }
     }
 
     function openModal(slug){
       currentSlug = slug;
       document.getElementById('bookingForm').reset();
       document.querySelectorAll('.option-item.checked, .avail-chip.checked').forEach(function(o){ o.classList.remove('checked'); });
+      // Fase 79 — depois do reset(), o rádio "Manhã" do turno continua marcado (tem o atributo
+      // checked no HTML), só a classe visual .checked é que se perde — reaplica.
+      document.querySelectorAll('#turnoBookingWrap .option-item').forEach(function(item){
+        var input = item.querySelector('input');
+        if (input && input.checked) item.classList.add('checked');
+      });
       document.getElementById('pacoteList').dataset.builtFor = '';
       horarioEscolhido = null;
       horariosIndisponiveis = false;
@@ -642,11 +753,20 @@
       var pacote = getVal('fPacote');
       var pacoteInput = document.querySelector('input[name="fPacote"]:checked');
       var preco = pacoteInput ? pacoteInput.dataset.preco : '';
-      var horarioLabel = horarioEscolhido
-        ? (formatarDiaLabel(horarioEscolhido.data, horarioEscolhido.diaSemana) + ' às ' + horarioEscolhido.horaInicio)
-        : 'a combinar com a equipe (sem horário fixo escolhido no site)';
       var nome = document.getElementById('fNome').value.trim();
       var telefone = document.getElementById('fTelefone').value.trim();
+
+      // Fase 79 — linha de horário/turno muda conforme a configuração do Dono
+      // (PERMITIR_ESCOLHER_HORARIO) — ver configurarModoHorarioBooking().
+      var linhaHorario;
+      if (PERMITIR_ESCOLHER_HORARIO) {
+        var horarioLabel = horarioEscolhido
+          ? (formatarDiaLabel(horarioEscolhido.data, horarioEscolhido.diaSemana) + ' às ' + horarioEscolhido.horaInicio)
+          : 'a combinar com a equipe (sem horário fixo escolhido no site)';
+        linhaHorario = 'Dia e horário escolhido: ' + horarioLabel;
+      } else {
+        linhaHorario = 'Turno de preferência: ' + (getVal('fTurno') || 'a combinar');
+      }
 
       var msg = 'Olá! Vim pelo site do Espaço do Renascer e quero garantir minha vaga agora, antes que as vagas da semana se esgotem. 🌱\n\n' +
         'Profissional escolhido(a): ' + p.nome + '\n' +
@@ -654,7 +774,7 @@
         'Já fez terapia antes: ' + primeiraVez + '\n' +
         'Duração da sessão: ' + duracaoLabel + '\n' +
         'Pacote: ' + pacote + ' (' + preco + ')\n' +
-        'Dia e horário escolhido: ' + horarioLabel + '\n\n' +
+        linhaHorario + '\n\n' +
         'Meu nome: ' + nome + '\n' +
         'Meu WhatsApp: ' + telefone + '\n\n' +
         'Já estou sendo direcionado(a) para a equipe finalizar meu atendimento e receber o Pix ou o link de pagamento com cartão.';
@@ -671,8 +791,23 @@
       closeModal();
     }
 
+    // Fase 79 — no "site individual" (MODO_PORTFOLIO) o botão de agendar não abre o pop-up de
+    // perguntas: manda direto pro WhatsApp com uma mensagem simples, já citando o nome da
+    // profissional, tipo "gostei do perfil, quero agendar".
+    function enviarWhatsappDireto(slug){
+      var p = PROFISSIONAIS[slug];
+      var nome = p ? p.nome : '';
+      var msg = 'Olá! Vim pelo site do Espaço do Renascer, vi o perfil de ' + nome + ' e gostei. Quero agendar uma sessão com ela. 🌱';
+      if (typeof fbq === 'function') {
+        fbq('track', 'Lead', { content_name: nome, content_category: 'Site individual (sem pop-up)' });
+      }
+      var url = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg);
+      window.location.href = url;
+    }
+
     document.addEventListener('click', function(ev){
       if (ev.target.id === 'detailAgendarBtn') {
+        if (MODO_PORTFOLIO) { enviarWhatsappDireto(currentSlug); return; }
         openModal(currentSlug);
       }
     });
@@ -684,6 +819,7 @@
     if (fabPrimaryBtn) {
       fabPrimaryBtn.addEventListener('click', function(){
         if (activeViewKey === 'detail') {
+          if (MODO_PORTFOLIO) { enviarWhatsappDireto(currentSlug); return; }
           openModal(currentSlug);
           return;
         }

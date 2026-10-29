@@ -270,7 +270,7 @@
         </details>
         <details>
           <summary>Quanto custa uma sessão?<span class="chev">+</span></summary>
-          <div class="faq-answer">Trabalhamos com sessões de 30 ou 50 minutos, avulsas ou em pacotes, a partir de R$ 60. Os valores exatos de cada profissional aparecem na bio do seu perfil.</div>
+          <div class="faq-answer">Trabalhamos com sessões de 30 ou 50 minutos, avulsas ou em pacotes, a partir de <span id="faqPrecoMinimo">R$ 60</span>. Os valores exatos de cada profissional aparecem na bio do seu perfil.</div>
         </details>
         <details>
           <summary>Como faço para agendar?<span class="chev">+</span></summary>
@@ -379,7 +379,7 @@
     <div class="wrap">
       <div>
         <div style="font-weight:700;">Pronta(o) para começar?</div>
-        <div class="detail-cta-price">A partir de R$ 60 · 100% online</div>
+        <div class="detail-cta-price"><span id="detailCtaPreco">A partir de R$ 60</span> · 100% online</div>
         <div class="urgency-note">Vagas limitadas conforme a agenda da semana</div>
       </div>
       <button class="btn btn-primary" id="detailAgendarBtn" type="button">Agendar sessão</button>
@@ -456,15 +456,24 @@
         <h3>Duração da sessão</h3>
         <p class="step-hint">Os valores mudam de acordo com a duração escolhida.</p>
         <div class="option-list">
-          <label class="option-item"><input type="radio" name="fDuracao" value="30min">30 minutos<span class="opt-price">a partir de R$ 60</span></label>
-          <label class="option-item"><input type="radio" name="fDuracao" value="50min">50 minutos<span class="opt-price">a partir de R$ 110</span></label>
+          <label class="option-item"><input type="radio" name="fDuracao" value="30min">30 minutos<span class="opt-price" id="fDuracao30Price">a partir de R$ 60</span></label>
+          <label class="option-item"><input type="radio" name="fDuracao" value="50min">50 minutos<span class="opt-price" id="fDuracao50Price">a partir de R$ 110</span></label>
         </div>
       </div>
 
+      <!-- Fase 79 — passo 3 tem dois formatos possíveis, alternados por JS (ver
+           atualizarModoHorarioBooking() em app.js) conforme a configuração do Dono
+           (permitirEscolherHorario): o de horário real (como já era) ou, quando desligado, volta
+           a pedir só o turno — comportamento de antes da Fase 62. -->
       <div class="modal-step" data-step="3">
-        <h3>Escolha o dia e horário</h3>
+        <h3 id="horariosTitulo">Escolha o dia e horário</h3>
         <p class="step-hint" id="horariosHint">Estes são os horários realmente livres da agenda dela nos próximos dias.</p>
         <div class="option-list" id="horariosList"></div>
+        <div class="option-list" id="turnoBookingWrap" hidden>
+          <label class="option-item"><input type="radio" name="fTurno" value="Manhã" checked>Manhã</label>
+          <label class="option-item"><input type="radio" name="fTurno" value="Tarde">Tarde</label>
+          <label class="option-item"><input type="radio" name="fTurno" value="Noite">Noite</label>
+        </div>
       </div>
 
       <div class="modal-step" data-step="4">
@@ -556,8 +565,8 @@
         <h3>Duração da sessão</h3>
         <p class="step-hint">Os valores mudam de acordo com a duração escolhida.</p>
         <div class="option-list">
-          <label class="option-item"><input type="radio" name="gDuracao" value="30min">30 minutos<span class="opt-price">a partir de R$ 60</span></label>
-          <label class="option-item"><input type="radio" name="gDuracao" value="50min">50 minutos<span class="opt-price">a partir de R$ 110</span></label>
+          <label class="option-item"><input type="radio" name="gDuracao" value="30min">30 minutos<span class="opt-price" id="gDuracao30Price">a partir de R$ 60</span></label>
+          <label class="option-item"><input type="radio" name="gDuracao" value="50min">50 minutos<span class="opt-price" id="gDuracao50Price">a partir de R$ 110</span></label>
         </div>
       </div>
 

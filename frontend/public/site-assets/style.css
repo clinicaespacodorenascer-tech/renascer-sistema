@@ -1108,3 +1108,12 @@
     font-size:.88rem;
     margin-bottom:16px;
   }
+
+  /* ---------- Fase 79: site individual de uma profissional (/site?perfil=slug) ----------
+     Página limpa, sem o cabeçalho/menu nem o rodapé do site normal — só o perfil dela e o botão
+     de agendar (que no JS, em MODO_PORTFOLIO, manda direto pro WhatsApp, sem abrir o pop-up). */
+  body.modo-portfolio header,
+  body.modo-portfolio footer,
+  body.modo-portfolio #detailBack{
+    display:none;
+  }

@@ -2349,6 +2349,25 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   const [foto, setFoto] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState("");
+  const [copiouLink, setCopiouLink] = useState(false); // Fase 79
+
+  // Fase 79 — link do seu site individual (página só sua, sem menu, com botão de WhatsApp
+  // direto) — pra copiar e mandar pro cliente, Instagram etc. Só existe se o Dono já vinculou
+  // o "Link do site" dela lá no painel dele (perfil.slugSitePublico).
+  function linkIndividual() {
+    const origem = typeof window !== "undefined" ? window.location.origin : "https://espacodorenascer.com";
+    return `${origem}/site?perfil=${encodeURIComponent(perfil.slugSitePublico)}`;
+  }
+
+  async function copiarLinkIndividual() {
+    try {
+      await navigator.clipboard.writeText(linkIndividual());
+      setCopiouLink(true);
+      setTimeout(() => setCopiouLink(false), 2500);
+    } catch {
+      window.prompt("Copie o link:", linkIndividual());
+    }
+  }
 
   function alternarCategoria(cat) {
     setEspecialidades((atual) => (atual.includes(cat) ? atual.filter((c) => c !== cat) : [...atual, cat]));
@@ -2396,6 +2415,24 @@ function PerfilCompleto({ perfil, onAtualizado }) {
   return (
     <div className="nv-card space-y-3">
       <h2 className="font-sora font-semibold text-nv-ink">Seu perfil (o que a atendente e o time vê de você)</h2>
+
+      {perfil.slugSitePublico && (
+        <div className="bg-nv-bg rounded-xl p-3">
+          <p className="text-[11px] font-semibold text-nv-muted2 mb-1">
+            Seu site (só o seu perfil, sem menu — a pessoa que receber já cai direto no botão de falar com você no WhatsApp)
+          </p>
+          <div className="flex items-center gap-2">
+            <input className="input !bg-white text-xs" readOnly value={linkIndividual()} onClick={(e) => e.target.select()} />
+            <button type="button" className="btn-secondary text-xs !py-2 !px-3 whitespace-nowrap" onClick={copiarLinkIndividual}>
+              {copiouLink ? "Copiado!" : "Copiar link"}
+            </button>
+            <a href={linkIndividual()} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs !py-2 !px-3 whitespace-nowrap">
+              Ver
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-4">
         <img
           src={foto ? URL.createObjectURL(foto) : perfil.user.fotoUrl || "https://via.placeholder.com/80?text=Foto"}
