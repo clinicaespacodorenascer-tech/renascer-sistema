@@ -632,6 +632,71 @@ function RegistrarPacote({ clienteId, onRegistrado }) {
   );
 }
 
+// Fase 80 — sugestão trazida por profissionais: corrigir a duração e o contador de sessões
+// (usadas/total) do pacote ATUAL do cliente, sem precisar marcar sessões passadas uma por uma só
+// pra acertar o número — útil pra cliente que já estava em atendimento antes de entrar no
+// sistema. Não mexe em valor/financeiro, só no acompanhamento.
+function EditarPacoteCliente({ pacote, rotaBase, onSalvo }) {
+  const [duracao, setDuracao] = useState(pacote.duracao);
+  const [totalSessoes, setTotalSessoes] = useState(pacote.totalSessoes);
+  const [sessoesUsadas, setSessoesUsadas] = useState(pacote.sessoesUsadas);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function salvar() {
+    setSalvando(true);
+    setMsg("");
+    try {
+      await api.put(`${rotaBase}/pacotes/${pacote.id}`, {
+        duracao,
+        totalSessoes: Number(totalSessoes),
+        sessoesUsadas: Number(sessoesUsadas),
+      });
+      setMsg("Pacote atualizado!");
+      onSalvo?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-renascer/10 rounded-lg p-2.5 space-y-2">
+      <p className="text-xs text-nv-muted">
+        Editar pacote atual — corrige duração e quantas sessões já foram usadas (não muda o valor pago nem o financeiro).
+      </p>
+      <div className="flex flex-wrap gap-2 items-center">
+        <select className="input !w-auto" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+          <option value="MIN30">30 minutos</option>
+          <option value="MIN50">50 minutos</option>
+        </select>
+        <input
+          type="number"
+          min="0"
+          className="input !w-36"
+          placeholder="Sessões usadas"
+          value={sessoesUsadas}
+          onChange={(e) => setSessoesUsadas(e.target.value)}
+        />
+        <span className="text-sm text-nv-muted">de</span>
+        <input
+          type="number"
+          min="1"
+          className="input !w-28"
+          placeholder="Total"
+          value={totalSessoes}
+          onChange={(e) => setTotalSessoes(e.target.value)}
+        />
+        <button className="btn-secondary" onClick={salvar} disabled={salvando}>
+          {salvando ? "Salvando..." : "Salvar"}
+        </button>
+      </div>
+      {msg && <p className="text-sm mt-1">{msg}</p>}
+    </div>
+  );
+}
+
 // Fase 51 — cadastro simplificado (igual canvas): nome + WhatsApp + valor, com login gerado
 // automaticamente (sem campo de e-mail/senha manual aqui).
 const FORM_CLIENTE_VAZIO = {
@@ -1269,6 +1334,7 @@ function Clientes() {
             {expandido === c.id && (
               <div className="pb-4 space-y-3 bg-nv-bg -mx-5 px-5 pt-3">
                 <MetricasCliente clienteId={c.id} rotaBase="/atendente" />
+                {pacote && <EditarPacoteCliente pacote={pacote} rotaBase="/atendente" onSalvo={carregar} />}
                 <NotificacaoECliente cliente={c} rotaBase="/atendente" onExcluido={carregar} podeExcluir />
                 <HistoricoPagamentos clienteId={c.id} rotaBase="/atendente" />
                 <SituacaoCliente clienteId={c.id} rotaBase="/atendente" onMudou={carregar} />

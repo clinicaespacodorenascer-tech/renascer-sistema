@@ -1354,6 +1354,7 @@ function FichaDados({ detalhe, pacote, horarioFixo, onAtualizado, onMudouSituaca
       <div className="flex gap-2 flex-wrap">
         {[
           ["pacote", "Registrar pacote / renovação"],
+          ...(pacote ? [["editar-pacote", "Editar pacote atual"]] : []),
           ["notificacao", "Contato de notificação e renovação"],
           ["login", "Corrigir login"],
         ].map(([id, label]) => (
@@ -1373,6 +1374,11 @@ function FichaDados({ detalhe, pacote, horarioFixo, onAtualizado, onMudouSituaca
       {abrirMais === "pacote" && (
         <div className="border-t border-nv-borderLight pt-3.5">
           <NovoPacoteCliente clienteId={detalhe.id} onRegistrado={onAtualizado} />
+        </div>
+      )}
+      {abrirMais === "editar-pacote" && pacote && (
+        <div className="border-t border-nv-borderLight pt-3.5">
+          <EditarPacoteCliente pacote={pacote} rotaBase="/profissional" onSalvo={onAtualizado} />
         </div>
       )}
       {abrirMais === "notificacao" && (
@@ -1751,6 +1757,71 @@ function NovoPacoteCliente({ clienteId, onRegistrado }) {
         <input className="input !w-40" placeholder="Valor (opcional)" value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} />
         <button className="btn-primary" onClick={registrar}>
           Registrar pacote
+        </button>
+      </div>
+      {msg && <p className="text-sm mt-1">{msg}</p>}
+    </div>
+  );
+}
+
+// Fase 80 — sugestão trazida por profissionais: corrigir a duração e o contador de sessões
+// (usadas/total) do pacote ATUAL do cliente, sem precisar marcar sessões passadas uma por uma só
+// pra acertar o número — útil pra cliente que já estava em atendimento antes de entrar no
+// sistema. Não mexe em valor/financeiro, só no acompanhamento.
+function EditarPacoteCliente({ pacote, rotaBase, onSalvo }) {
+  const [duracao, setDuracao] = useState(pacote.duracao);
+  const [totalSessoes, setTotalSessoes] = useState(pacote.totalSessoes);
+  const [sessoesUsadas, setSessoesUsadas] = useState(pacote.sessoesUsadas);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function salvar() {
+    setSalvando(true);
+    setMsg("");
+    try {
+      await api.put(`${rotaBase}/pacotes/${pacote.id}`, {
+        duracao,
+        totalSessoes: Number(totalSessoes),
+        sessoesUsadas: Number(sessoesUsadas),
+      });
+      setMsg("Pacote atualizado!");
+      onSalvo?.();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-renascer-ink/50">
+        Corrige a duração e quantas sessões já foram usadas do pacote atual — não muda o valor pago nem o financeiro.
+      </p>
+      <div className="flex flex-wrap gap-2 items-center">
+        <select className="input !w-auto" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+          <option value="MIN30">30 minutos</option>
+          <option value="MIN50">50 minutos</option>
+        </select>
+        <input
+          type="number"
+          min="0"
+          className="input !w-36"
+          placeholder="Sessões usadas"
+          value={sessoesUsadas}
+          onChange={(e) => setSessoesUsadas(e.target.value)}
+        />
+        <span className="text-sm text-nv-muted">de</span>
+        <input
+          type="number"
+          min="1"
+          className="input !w-28"
+          placeholder="Total"
+          value={totalSessoes}
+          onChange={(e) => setTotalSessoes(e.target.value)}
+        />
+        <button className="btn-primary" onClick={salvar} disabled={salvando}>
+          {salvando ? "Salvando..." : "Salvar"}
         </button>
       </div>
       {msg && <p className="text-sm mt-1">{msg}</p>}

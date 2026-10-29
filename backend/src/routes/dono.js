@@ -637,6 +637,40 @@ router.post("/clientes/:id/pacotes", async (req, res) => {
   res.json({ pacote, transacao });
 });
 
+// Fase 80 — corrige a duração e o contador de sessões (usadas/total) de um pacote já existente,
+// sem precisar marcar sessões passadas uma por uma — útil pra cliente que já estava em
+// atendimento antes de entrar no sistema. NÃO mexe no valorTotal/financeiro.
+router.put("/pacotes/:id", async (req, res) => {
+  const pacote = await prisma.pacote.findUnique({ where: { id: req.params.id } });
+  if (!pacote) return res.status(404).json({ erro: "Pacote não encontrado." });
+
+  const { duracao, totalSessoes, sessoesUsadas } = req.body;
+  const data = {};
+  if (duracao !== undefined) {
+    if (!["MIN30", "MIN50"].includes(duracao)) return res.status(400).json({ erro: "Duração inválida." });
+    data.duracao = duracao;
+  }
+  if (totalSessoes !== undefined) {
+    const n = Number(totalSessoes);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: "Número de sessões inválido." });
+    data.totalSessoes = n;
+  }
+  if (sessoesUsadas !== undefined) {
+    const n = Number(sessoesUsadas);
+    if (!Number.isInteger(n) || n < 0) return res.status(400).json({ erro: "Sessões usadas inválido." });
+    data.sessoesUsadas = n;
+  }
+
+  const totalFinal = data.totalSessoes !== undefined ? data.totalSessoes : pacote.totalSessoes;
+  const usadasFinal = data.sessoesUsadas !== undefined ? data.sessoesUsadas : pacote.sessoesUsadas;
+  if (usadasFinal > totalFinal) {
+    return res.status(400).json({ erro: "Sessões usadas não pode ser maior que o total do pacote." });
+  }
+
+  const atualizado = await prisma.pacote.update({ where: { id: pacote.id }, data });
+  res.json(atualizado);
+});
+
 // Contrato assinado (foto do documento, foto do rosto, CPF/nome informados e data do aceite) —
 // o dono pode ver de qualquer cliente, pra conferência/auditoria. Se o cliente ainda não aceitou
 // o contrato, devolve null (ainda não existe registro).
