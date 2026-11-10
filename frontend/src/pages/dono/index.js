@@ -903,6 +903,7 @@ function VincularSitePublico({ profissionalId, valorAtual }) {
   const [valor, setValor] = useState(valorAtual || "");
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [copiouLink, setCopiouLink] = useState(false); // Fase 81 — link individual direto na ficha da Profissionais
 
   const mudou = valor.trim() !== (valorAtual || "");
 
@@ -916,6 +917,24 @@ function VincularSitePublico({ profissionalId, valorAtual }) {
       setMsg({ tipo: "erro", texto: e.response?.data?.erro || "Não deu pra salvar." });
     } finally {
       setSalvando(false);
+    }
+  }
+
+  // Fase 81 — mesmo link do site individual (página de apresentação sem menu, botão "Fale com a
+  // gente" manda direto pro WhatsApp — sem agendar nada por lá) já usado na aba Site (Fase 79),
+  // só que acessível direto por aqui, na ficha da profissional.
+  function linkIndividual() {
+    const origem = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || "https://espacodorenascer.com");
+    return `${origem}/site?perfil=${encodeURIComponent((valorAtual || "").trim())}`;
+  }
+
+  async function copiarLinkIndividual() {
+    try {
+      await navigator.clipboard.writeText(linkIndividual());
+      setCopiouLink(true);
+      setTimeout(() => setCopiouLink(false), 2500);
+    } catch {
+      window.prompt("Copie o link:", linkIndividual());
     }
   }
 
@@ -949,19 +968,44 @@ function VincularSitePublico({ profissionalId, valorAtual }) {
           {valorAtual ? "Vinculada — o popup do site busca a agenda real dela." : "Sem vínculo — o popup do site pede pra combinar o horário pelo WhatsApp."}
         </p>
       )}
+      {valorAtual && !mudou && (
+        <div className="flex items-center gap-2 mt-2">
+          <a
+            href={linkIndividual()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold text-white bg-nv-green rounded-lg px-3 py-1.5 text-center"
+          >
+            Ver site dela
+          </a>
+          <button
+            type="button"
+            onClick={copiarLinkIndividual}
+            className="text-xs font-semibold text-nv-blue border border-nv-border rounded-lg px-3 py-1.5"
+          >
+            {copiouLink ? "Copiado!" : "Copiar link"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function Profissionais() {
   const [lista, setLista] = useState([]);
+  const [clientes, setClientes] = useState([]); // Fase 81 — pra poder escolher o cliente ao agendar
   const [busca, setBusca] = useState("");
   const [selecionadaId, setSelecionadaId] = useState(null);
+  const [verHorarios, setVerHorarios] = useState(false); // Fase 81 — "Ver horários e agendar"
+
+  async function carregar() {
+    const [p, c] = await Promise.all([api.get("/dono/profissionais"), api.get("/dono/clientes")]);
+    setLista(p.data);
+    setClientes(c.data);
+    if (p.data.length > 0) setSelecionadaId((atual) => atual || p.data[0].id);
+  }
   useEffect(() => {
-    api.get("/dono/profissionais").then((r) => {
-      setLista(r.data);
-      if (r.data.length > 0) setSelecionadaId((atual) => atual || r.data[0].id);
-    });
+    carregar();
   }, []);
 
   const buscaLower = busca.trim().toLowerCase();
@@ -975,6 +1019,11 @@ function Profissionais() {
 
   const selecionada = filtrada.find((p) => p.id === selecionadaId) || filtrada[0];
   const presencaSel = selecionada ? formatarPresenca(selecionada.user.ultimoAcessoEm) : null;
+
+  function selecionar(id) {
+    setSelecionadaId(id);
+    setVerHorarios(false);
+  }
 
   return (
     <div className="font-publicSans">
@@ -1014,7 +1063,7 @@ function Profissionais() {
               <button
                 key={p.id}
                 type="button"
-                onClick={() => setSelecionadaId(p.id)}
+                onClick={() => selecionar(p.id)}
                 className={`nv-card text-left flex flex-col gap-3 ${selecionada?.id === p.id ? "!border-nv-blue" : ""}`}
               >
                 <div className="flex items-center gap-2.5">
@@ -1137,10 +1186,102 @@ function Profissionais() {
                   </div>
                 </div>
               )}
+
+              <div className="border-t border-nv-borderLight pt-3.5">
+                <button className="btn-secondary text-sm" onClick={() => setVerHorarios((v) => !v)}>
+                  {verHorarios ? "Fechar" : "Ver horários e agendar"}
+                </button>
+              </div>
+              {verHorarios && <AgendarComProfissionalDono profissional={selecionada} clientes={clientes} onAgendado={carregar} />}
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Fase 81 — Dono também consegue ver os horários livres de verdade (por data específica,
+// descontando o que já está agendado) e marcar a sessão direto pro cliente — igual a Atendente já
+// fazia na tela "Profissionais e agendar" dela (antes só Atendente e a própria Profissional
+// tinham essa possibilidade).
+function AgendarComProfissionalDono({ profissional, clientes, onAgendado }) {
+  const [clienteId, setClienteId] = useState("");
+  const [data, setData] = useState("");
+  const [duracao, setDuracao] = useState("MIN50");
+  const [horarios, setHorarios] = useState(null);
+  const [horaEscolhida, setHoraEscolhida] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function buscarHorarios() {
+    if (!data) return;
+    setMsg("");
+    setHoraEscolhida("");
+    const { data: resp } = await api.get(`/dono/profissionais/${profissional.id}/horarios`, {
+      params: { data, duracao, clienteId: clienteId || undefined },
+    });
+    setHorarios(resp);
+  }
+
+  async function confirmar() {
+    if (!clienteId || !data || !horaEscolhida) {
+      setMsg("Escolha o cliente, a data e o horário.");
+      return;
+    }
+    try {
+      await api.post("/dono/agendamentos", { clienteId, profissionalId: profissional.id, data, horaInicio: horaEscolhida, duracao });
+      setMsg("Sessão agendada com sucesso!");
+      setHoraEscolhida("");
+      onAgendado();
+    } catch (e) {
+      setMsg(e?.response?.data?.erro || "Erro ao agendar.");
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-nv-borderLight pt-3 space-y-2">
+      <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+        <option value="">Escolha o cliente</option>
+        {clientes.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.user.nome}
+          </option>
+        ))}
+      </select>
+      <div className="flex flex-wrap gap-2">
+        <input type="date" className="input flex-1 min-w-[150px]" value={data} onChange={(e) => setData(e.target.value)} />
+        <select className="input !w-40" value={duracao} onChange={(e) => setDuracao(e.target.value)}>
+          <option value="MIN30">30 minutos</option>
+          <option value="MIN50">50 minutos</option>
+        </select>
+        <button className="btn-secondary whitespace-nowrap" onClick={buscarHorarios}>
+          Ver horários livres
+        </button>
+      </div>
+
+      {horarios && (
+        <div className="flex flex-wrap gap-2">
+          {horarios.livres.length === 0 && (
+            <p className="text-sm text-[#B0580F]">Nenhum horário livre nesse dia ({horarios.diaSemana}).</p>
+          )}
+          {horarios.livres.map((h) => (
+            <button
+              key={h}
+              onClick={() => setHoraEscolhida(h)}
+              className={`text-sm px-3 py-1.5 rounded-full border ${
+                horaEscolhida === h ? "bg-nv-blue text-white border-nv-blue" : "border-nv-border text-nv-ink2"
+              }`}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button className="btn-primary" onClick={confirmar} disabled={!horaEscolhida}>
+        Confirmar agendamento
+      </button>
+      {msg && <p className="text-sm text-nv-ink">{msg}</p>}
     </div>
   );
 }

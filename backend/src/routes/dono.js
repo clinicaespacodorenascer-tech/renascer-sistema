@@ -5,6 +5,7 @@ const { autenticar, permitir } = require("../middleware/auth");
 const { calcularMetricasCliente } = require("../utils/metricas");
 const { calcularStatusCliente } = require("../utils/statusCliente");
 const { excluirUsuarioPorId, excluirCliente } = require("../utils/excluirUsuario");
+const { diaSemanaDeData, horariosLivres } = require("../utils/horarios");
 const { notificar, notificarDonos, notificarAtendentes } = require("../utils/notificar");
 const { cadastrarClienteComProfissional } = require("../utils/cadastrarCliente");
 const { parseValorMonetario, valorDoPlano, calcularRepasse, transacaoDuplicada } = require("../utils/financeiro");
@@ -259,6 +260,114 @@ router.get("/profissionais", async (req, res) => {
   });
 
   res.json(comTaxaRenovacao);
+});
+
+// Fase 81 — horários livres de uma profissional numa data específica, já descontando o que
+// está ocupado — mesma rota que a atendente já tem, só que pro Dono também conseguir ver e
+// agendar direto (antes só existia pra atendente.js e profissional.js).
+router.get("/profissionais/:id/horarios", async (req, res) => {
+  const { data, duracao, clienteId } = req.query;
+  if (!data) return res.status(400).json({ erro: "Informe a data (YYYY-MM-DD)." });
+
+  const diaSemana = diaSemanaDeData(data);
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({
+      where: {
+        profissionalId: req.params.id,
+        diaSemana,
+        ativo: true,
+        // Um horário que já é fixo de outro cliente não aparece como livre — a não ser que seja
+        // livre mesmo (ninguém ocupando) ou já seja fixo desse MESMO cliente (ele reagendando).
+        OR: [{ ocupadoPorClienteId: null }, { ocupadoPorClienteId: clienteId || "__nenhum__" }],
+      },
+    }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId: req.params.id,
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: duracao || "MIN50" });
+  res.json({ diaSemana, livres });
+});
+
+// ---------- Agendar para o cliente (o Dono escolhe o horário exato que ele quer) ----------
+router.post("/agendamentos", async (req, res) => {
+  const { clienteId, profissionalId, data, horaInicio, duracao } = req.body;
+  if (!clienteId || !profissionalId || !data || !horaInicio) {
+    return res.status(400).json({ erro: "Informe cliente, profissional, data e horário." });
+  }
+
+  const diaSemana = diaSemanaDeData(data);
+
+  // Revalida que o horário ainda está livre (evita choque se duas pessoas marcarem junto)
+  const [disponibilidadesDoDia, agendamentosDoDia] = await Promise.all([
+    prisma.disponibilidade.findMany({ where: { profissionalId, diaSemana, ativo: true } }),
+    prisma.agendamento.findMany({
+      where: {
+        profissionalId,
+        status: { in: ["AGENDADO", "CONFIRMADO", "REALIZADO"] },
+        data: { gte: new Date(`${data}T00:00:00`), lt: new Date(`${data}T23:59:59`) },
+      },
+      select: { horaInicio: true, duracao: true },
+    }),
+  ]);
+  const livres = horariosLivres({ disponibilidadesDoDia, agendamentosDoDia, duracao: duracao || "MIN50" });
+  if (!livres.includes(horaInicio)) {
+    return res.status(400).json({ erro: "Esse horário não está mais disponível. Escolha outro." });
+  }
+
+  const pacote = await prisma.pacote.findFirst({ where: { clienteId, profissionalId, status: "ATIVO" }, orderBy: { iniciadoEm: "desc" } });
+  if (!pacote || pacote.sessoesUsadas >= pacote.totalSessoes) {
+    return res.status(400).json({
+      erro: "Esse cliente não tem sessões disponíveis com essa profissional. Registre o pacote pago antes de agendar.",
+      semPacoteAtivo: true,
+    });
+  }
+
+  // Garante que o cliente está vinculado a essa profissional
+  await prisma.cliente.update({ where: { id: clienteId }, data: { profissionalAtualId: profissionalId } });
+
+  const agendamento = await prisma.agendamento.create({
+    data: { profissionalId, clienteId, pacoteId: pacote.id, data: new Date(data), diaSemana, horaInicio, duracao: duracao || "MIN50" },
+  });
+
+  // Esse dia+horário passa a ser o horário FIXO desse cliente com essa profissional — mesma regra
+  // da atendente (Fase 76: só trava como recorrente quando o pacote tem mais de 1 sessão).
+  if (pacote.totalSessoes > 1) {
+    const slotFixo = await prisma.disponibilidade.findFirst({ where: { profissionalId, diaSemana, horaInicio, ativo: true } });
+    if (slotFixo) {
+      await prisma.disponibilidade.updateMany({
+        where: { profissionalId, ocupadoPorClienteId: clienteId, NOT: { id: slotFixo.id } },
+        data: { ocupadoPorClienteId: null, ocupadoEm: null },
+      });
+      await prisma.disponibilidade.update({
+        where: { id: slotFixo.id },
+        data: { ocupadoPorClienteId: clienteId, ocupadoEm: new Date() },
+      });
+    }
+  }
+
+  // Avisa a profissional que uma nova sessão foi marcada pra ela
+  const [profissionalAgendada, clienteAgendado] = await Promise.all([
+    prisma.profissional.findUnique({ where: { id: profissionalId }, select: { userId: true } }),
+    prisma.cliente.findUnique({ where: { id: clienteId }, include: { user: true } }),
+  ]);
+  if (profissionalAgendada) {
+    await notificar(profissionalAgendada.userId, {
+      titulo: "Nova sessão agendada",
+      mensagem: `${clienteAgendado?.user?.nome || "Um cliente"} tem uma sessão marcada para ${new Date(data).toLocaleDateString("pt-BR")} às ${horaInicio}.`,
+      tipo: "sistema",
+      referenciaTipo: "CLIENTE",
+      referenciaId: clienteId,
+    });
+  }
+
+  res.json(agendamento);
 });
 
 // Fase 51 — editar a % de repasse (quanto fica com a profissional x quanto fica com a clínica)
