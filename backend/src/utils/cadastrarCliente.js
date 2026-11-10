@@ -266,7 +266,13 @@ async function cadastrarClienteComProfissional({
   // perceber. Usa o mesmo enviarEmail (grátis via Gmail) que já manda lembrete de sessão/renovação.
   const horarioTexto =
     diaSemanaFixo && horaFixa ? `${DIA_SEMANA_EXTENSO[diaSemanaFixo] || diaSemanaFixo} às ${horaFixa}` : "a combinar com a clínica";
-  await enviarEmail(
+  // Fase 82 — o Gmail (SMTP grátis usado aqui) pode demorar vários segundos pra responder, às
+  // vezes bem mais que isso. Como esse e-mail era esperado (await) antes de devolver a resposta
+  // pro Dono/Atendente, o cadastro inteiro ficava "travado" na tela enquanto só o e-mail
+  // carregava — o cliente/pacote/notificação já tinham sido criados normalmente, só a resposta
+  // HTTP que demorava. Agora segue em segundo plano, igual o push de notificar() já faz (.catch
+  // pra nunca derrubar o cadastro por causa de um e-mail que falhou ou demorou).
+  enviarEmail(
     profissional.user.email,
     "Novo paciente aguardando seu aceite — Espaço do Renascer",
     `Oba, novo paciente na área!\n\n` +
@@ -277,7 +283,7 @@ async function cadastrarClienteComProfissional({
       `Quantidade de sessões: ${totalSessoes || "a combinar"}\n` +
       `Profissional: ${profissional.user.nome}\n\n` +
       `Já pode entrar no sistema e dar o aceite desse paciente novo, pra contar certinho no seu repasse!`
-  );
+  ).catch((erro) => console.error("E-mail de novo paciente falhou:", erro));
 
   return { user, cliente: user.cliente, senha, solicitacao };
 }
